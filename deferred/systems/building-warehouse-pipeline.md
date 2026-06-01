@@ -32,10 +32,13 @@ import, "fix" duy nhất là copy engine vào clone = đúng cái bệnh vừa c
 
 ## 3 tầng
 
+3 trách nhiệm ở 3 chỗ KHÁC NHAU (chốt 2026-06-01: archplan KHÔNG nhúng project — xem dưới):
+
 | Tầng | Là gì | Ở đâu | Clone? | Drift? |
 |---|---|---|---|---|
-| **LÕI / nhà máy** | building-kit: turtle, wallAssembly, wallMaterials, parts/, BuildingFromPlan | **THREEJS root** (`threejs-modules/building`) — three-specific | ❌ share package | 1 nguồn, không drift |
-| **VỎ / editor** | archplan: GUI, slider, pick/paint/move, app shell | **per-project**, tùy biến tự do | ✅ clone vỏ (import lõi từ package) | vô hại (không chứa logic) |
+| **LÕI / nhà máy** | building-kit: turtle, wallAssembly, wallMaterials, parts/, renderer, **BuildingState schema**, BuildingFromPlan | **THREEJS root** (`threejs-modules/building`) — three-specific, **headless (no DOM)** | ❌ share package | 1 nguồn, không drift |
+| **TOOL authoring 1 căn** | archplan: GUI, slider, pick/paint/move | **standalone, KHÔNG nhúng project nào** | — (không clone) | — |
+| **City-planning** | layout, xếp lô, match-by-tag, LOD | **per-project** (Doraemon/World) — *mỗi project 1 kế hoạch* | ❌ project-specific | — |
 | **KHO / thành phẩm** | building baked (glTF) + meta/tags + REGISTRY | **Engine root** (`assets/buildings/`) — cross-engine | ❌ kéo theo tag | bake lại khi engine đổi |
 
 **Chỉnh vị trí kho:** baked glTF là engine-agnostic (load cả three lẫn babylon) → ở `Engine/assets/buildings/`
@@ -125,6 +128,20 @@ building-kit **procedural** → bước "bake" khác:
 | Block assembly (instance/merge/LOD) | ❌ chưa có → [[neighborhood-block-assembly-lod]] |
 
 ---
+
+## Quyết định ĐÃ CHỐT (2026-06-01)
+
+1. **archplan KHÔNG nhúng vào project nào.** archplan (authoring 1 căn) và Doraemon (quy hoạch khu phố)
+   là HAI việc khác nhau, không phải 2 bản 1 việc → không clone, không drift. Doraemon đâu cần editor
+   1-căn; nó cần tool xếp-nhiều-căn (city-planning riêng).
+2. **"Đẩy tối đa logic vào lõi" có ranh giới — 3 thùng:**
+   - ✅ Vào lõi: logic DỰNG-NHÀ (renderer, BuildingState schema, assembler) — gồm ~2180 dòng đang kẹt
+     trong archplan (ArchPlanLab 1396 + state 646 + persistence 138). Đây là "bước-0 thin out".
+   - ❌ KHÔNG vào lõi: GUI/DOM/lil-gui/pick-paint-move → giữ ở vỏ archplan (lõi phải headless, no DOM —
+     luật threejs-modules; nhét GUI vào = Doraemon import kéo theo DOM thừa).
+   - ❌ KHÔNG vào lõi: city-planning → ở project (mỗi project 1 kế hoạch).
+3. **Tradeoff chấp nhận:** Doraemon mất sửa-nội-thất-1-căn in-context. Đổi nhà → archplan sửa →
+   re-export/bake → Doraemon nhặt bản mới. Doraemon chỉ XẾP + XEM, không SỬA từng căn.
 
 ## Quyết định mở (chốt trước khi code)
 
