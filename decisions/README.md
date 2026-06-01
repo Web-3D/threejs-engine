@@ -20,3 +20,5 @@ Mỗi quyết định kiến trúc quan trọng có 1 file. Format chuẩn:
 | 001 | GlobalUniforms v2 — exported TSL nodes | 2026-05-16 | Accepted   |
 | 002 | TSL-first shader policy              | 2026-05-16 | Accepted   |
 | 003 | No singleton cho shared state        | 2026-05-16 | Accepted   |
+| 004 | Rendering quality baseline (pixelRatio/shadow/light) | 2026-05-24 | Accepted   |
+| 005 | building-kit là LÕI — dồn logic dựng-nhà, retire AP4, 1 renderer | 2026-06-01 | Accepted   |
