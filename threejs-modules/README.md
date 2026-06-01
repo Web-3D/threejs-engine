@@ -158,17 +158,21 @@
 | -------------------- | ------------------------------------------------------------------ |
 | `building/parts/*`   | Wall/Roof/Structure/Stair/Windows/Door… → `THREE.Mesh`/`Group`     |
 | `building/tokens`    | `WALL_COLORS`, `PartResult`, dimension tokens — hằng số chung      |
-| `building/turtle`    | **Pure plan geometry** (turtle-walk + center/rotate → vị trí tường). NGUỒN SỰ THẬT chung cho editor (`build.ts`) lẫn headless (`BuildingFromPlan`). |
+| `building/turtle`    | **Pure plan geometry** (turtle-walk + center/rotate → vị trí tường). Chung editor + headless. |
+| `building/wallAssembly` | **Shared wall assembler** — `assembleWall` dispatch 5 nhánh material + `mergeWalls`. Chung editor + headless. |
+| `building/wallMaterials` | **Wall material engine** — `WallMaterialCache` + surface shaders + brick-tex PBR (+`textures/bricks/`). |
 | `building/Building`  | Assembler preset → Group + config types (city runtime — Doraemon)  |
-| `building/BuildingFromPlan` | **Headless assembler** `FloorPlanJSON (AP4) → THREE.Group` (không GUI). Dùng `turtle`. Đích cho "bảo bối". |
+| `building/BuildingFromPlan` | **Headless assembler** `FloorPlanJSON (AP4) → THREE.Group` (không GUI). Dùng `turtle`+`wallAssembly`. Đích cho "bảo bối". |
 
 ### Trạng thái headless (2026-06-01)
 
 - ✅ `turtle.ts` = single source — editor & headless hết chép tay turtle-walk (xoá drift KI-001).
 - ✅ `BuildingFromPlan` đọc **wallH per-segment** (trước ép `floorH=max` → san phẳng tường cao khác nhau).
-- ⏳ **Material fidelity (deferred):** `BuildingFromPlan` vẫn dùng `MeshToonMaterial` + `WALL_COLORS`,
-  CHƯA tái dựng shader-surface (brick/wood/…) như editor → nhà "bảo bối" trông phẳng hơn preview.
-  Cần đưa logic `WallMaterialCache` (archplan `build/materials.ts`) vào kit. → `01-Doraemon/deferred/`.
+- ✅ **Material fidelity (Gap 1 ĐÓNG):** `wallAssembly.ts` + `wallMaterials.ts` chung → headless render
+  ĐÚNG shader-surface (brick/concrete/wood/metal/brick-tex) + brick-3d/wood-3d/wood-strip instanced,
+  hết toon phẳng. AP4 export chở đủ field material.
+- ⏳ **Gap 2 (còn):** AP4 vẫn rút gọn vài chỗ → 100% khớp editor = assembler nhận thẳng `BuildingState`.
+  → `01-Doraemon/deferred/features/building-gadget-gameplay.md`.
 
 ---
 
