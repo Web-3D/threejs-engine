@@ -2,7 +2,7 @@
  * VỊ TRÍ   — building-kit/wallAssembly.ts
  * VAI TRÒ  — Dựng 1 tường → mesh, dispatch theo material: surface-shader (merge bucket) ·
  *            brick-3d/wood-3d/wood-strip (component instanced). NGUỒN SỰ THẬT chung cho editor
- *            (archplan) lẫn headless (BuildingFromPlan) → chống drift KI-001 (Gap 1 unify).
+ *            (archplan) lẫn headless (BuildingFromState/BuildingRenderer) → chống drift KI-001 (Gap 1 unify).
  * LIÊN HỆ  — Input CHUẨN HOÁ (mét): WallPlace + WallSpec. Editor/headless tự convert type của mình.
  *            Ctx mang cache + buckets + group + mảng tracking để caller dispose (editor & headless
  *            truyền field riêng vào). Pick box / undo / persist = việc RIÊNG của editor, KHÔNG ở đây.

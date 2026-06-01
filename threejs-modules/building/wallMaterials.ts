@@ -2,7 +2,7 @@
  * VỊ TRÍ   — building-kit/wallMaterials.ts
  * VAI TRÒ  — Wall material subsystem (ENGINE, dùng chung): surface shader (brick/concrete/wood/metal),
  *            brick-tex PBR triplanar, + cache material theo key (WallMaterialCache) để merge tường.
- * LIÊN HỆ  — NGUỒN SỰ THẬT chung cho editor (archplan) lẫn headless (BuildingFromPlan). Pure, không host,
+ * LIÊN HỆ  — NGUỒN SỰ THẬT chung cho editor (archplan) lẫn headless (BuildingFromState). Pure, không host,
  *            KHÔNG phụ thuộc archplan-type — nhận `WallMatInput` (struct), SegmentState/SegmentJSON đều thoả.
  *            Tách từ archplan/build/materials.ts 2026-06-01 (Gap 1 unify — chống drift KI-001).
  *

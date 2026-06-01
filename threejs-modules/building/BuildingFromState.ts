@@ -44,7 +44,7 @@ import {
   type WallPlace,
   type WallSpec,
 } from './wallAssembly'
-import { type WallMaterialCache } from './wallMaterials'
+import { WallMaterialCache } from './wallMaterials'
 
 // Vị trí + kích thước 1 pick-box (caller tạo mesh vô hình từ đây). cx/cy/cz tâm, sx/sy/sz size, rotDeg
 // xoay quanh Y, ud = userData định danh element (instId + segIdx/opIdx/key).
@@ -500,4 +500,66 @@ class StateRenderer {
 // Dựng BuildingState vào ctx (caller sở hữu resource) → trả Placement[] cho caller gắn pick-box.
 export function renderBuildingState(state: BuildingState, ctx: BuildRenderCtx): Placement[] {
   return new StateRenderer(ctx).run(state)
+}
+
+/**
+ * Wrapper HEADLESS — tự sở hữu ctx (group + arrays + WallMaterialCache) + dispose. Cho consumer NGOÀI
+ * editor (Doraemon-từ-archplan, warehouse bake): `new BuildingRenderer(state)` → `getGroup()` → `dispose()`.
+ * Editor KHÔNG dùng class này (nó tự quản resource + lớp pick, gọi thẳng renderBuildingState).
+ * Thay thế BuildingFromPlan (đã retire) — đọc BuildingState lossless thay vì AP4 lossy → full fidelity.
+ * DISPOSE: dispose() giải phóng geos + mats + components (brick3d/wood/strip) + wallCache; group tự clear.
+ */
+export class BuildingRenderer {
+  private readonly group = new THREE.Group()
+  private readonly wallCache = new WallMaterialCache()
+  private geos: THREE.BufferGeometry[] = []
+  private mats: THREE.Material[] = []
+  private brick3d: InstancedBrickWall[] = []
+  private wood: WoodSidingWall[] = []
+  private strip: WoodSidingStrip[] = []
+  private isDisposed = false
+
+  constructor(state?: BuildingState) {
+    if (state) this.rebuild(state)
+  }
+
+  getGroup(): THREE.Group {
+    return this.group
+  }
+
+  // Dựng lại từ state (clear bản cũ trước). Trả Placement[] nếu caller cần lớp pick (vd editor nhúng).
+  rebuild(state: BuildingState): Placement[] {
+    if (this.isDisposed) throw new Error('BuildingRenderer: đã dispose')
+    this.clear()
+    return renderBuildingState(state, {
+      wallCache: this.wallCache,
+      group: this.group,
+      geos: this.geos,
+      mats: this.mats,
+      brick3d: this.brick3d,
+      wood: this.wood,
+      strip: this.strip,
+    })
+  }
+
+  private clear(): void {
+    for (const g of this.geos) g.dispose()
+    for (const m of this.mats) m.dispose()
+    for (const w of this.brick3d) w.dispose()
+    for (const w of this.wood) w.dispose()
+    for (const w of this.strip) w.dispose()
+    this.geos = []
+    this.mats = []
+    this.brick3d = []
+    this.wood = []
+    this.strip = []
+    this.group.clear()
+  }
+
+  dispose(): void {
+    if (this.isDisposed) return
+    this.clear()
+    this.wallCache.dispose() // material cache + brick textures
+    this.isDisposed = true
+  }
 }

@@ -1,7 +1,8 @@
 /**
  * VỊ TRÍ   — building-kit/parts/Stair.ts
  * VAI TRÒ  — Cầu thang thẳng (straight-run): treads + stringers
- * LIÊN HỆ  — Dùng bởi BuildingFromPlan._buildStair(); trả về PartResult.
+ * LIÊN HỆ  — ⚠️ ORPHANED 2026-06-01: makeStair CHỈ BuildingFromPlan (đã retire) dùng → 0 caller.
+ *            Editor/headless dùng makePositionedStairs (parts/Structure) — builder khác. Chờ quyết xoá.
  *
  * Turtle convention (cùng quy ước engine):
  *   heading 0° = East (+X); 90° = North (-Z).
@@ -11,7 +12,7 @@
  *   Stringer: BoxGeometry(diagLen, 0.05, 0.06) xoay rotation.order='YZX'
  *             → Y aligns local+X với heading, Z tilts lên theo pitch angle.
  *
- * DISPOSE: geos + mats qua PartResult — BuildingFromPlan.dispose() quản lý.
+ * DISPOSE: geos + mats qua PartResult — caller quản lý (hiện không còn caller — orphaned).
  */
 
 import * as THREE from 'three'

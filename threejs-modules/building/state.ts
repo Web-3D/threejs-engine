@@ -2,7 +2,7 @@
  * VỊ TRÍ   — threejs-modules/building/state.ts  (building-kit)
  * VAI TRÒ  — NGUỒN SỰ THẬT cho "nhà là gì": BuildingState schema + types + factories +
  *            SHAPE_CONFIGS + AP4 JSON export + save/load migration. Dùng chung editor (archplan)
- *            lẫn headless (BuildingFromPlan/State). Pure data — KHÔNG DOM, không window.* (luật lõi).
+ *            lẫn headless (BuildingFromState/BuildingRenderer). Pure data — KHÔNG DOM, không window.* (luật lõi).
  * LIÊN HỆ  — archplan/state/state.ts là SHIM re-export file này (Phase 0 thin-out, 2026-06-01).
  *            GUI-only (TURN_OPTIONS/ROT_OPTIONS) giữ ở vỏ archplan, không vào đây.
  *
@@ -487,8 +487,9 @@ function structureToJSON(s: StructureState): object {
   }
 }
 
-// 1 segment → AP4 JSON (mét). Tách khỏi instanceToJSON để giữ Rule-50. Emit ĐỦ field material
-// (material/matScale/paintColor/mortar/relief/wood…) → BuildingFromPlan render fidelity như editor.
+// 1 segment → AP4 JSON (mét). Tách khỏi instanceToJSON để giữ Rule-50. Emit ĐỦ field material.
+// ⚠️ AP4 reader (BuildingFromPlan) đã RETIRE 2026-06-01 — export này giờ chỉ feed nút "📄 JSON"
+// (download ngoài), KHÔNG còn renderer trong repo đọc. Headless dùng BuildingState lossless trực tiếp.
 function segmentToJSON(seg: SegmentState, i: number, shapeKey: string | null): object {
   const mm = (v: number): number => v / 1000
   return {
@@ -560,7 +561,7 @@ export function buildingStateToJSON(state: BuildingState): object {
 }
 
 // ── Save / Load — snapshot ĐẦY ĐỦ BuildingState (round-trip lossless) ─────────────
-// KHÁC buildingStateToJSON (AP4 lossy, 1 chiều cho BuildingFromPlan render). Đây là bản
+// KHÁC buildingStateToJSON (AP4 lossy, reader đã retire — chỉ còn download). Đây là bản
 // để "bật lại editor y nguyên". Versioned: đổi schema → tăng DESIGN_SCHEMA_V, file/autosave
 // version cũ bị bỏ qua an toàn (parseDesign trả null → caller fallback về default).
 

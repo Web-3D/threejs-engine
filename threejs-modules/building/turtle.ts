@@ -2,7 +2,7 @@
  * VỊ TRÍ   — building-kit/turtle.ts
  * VAI TRÒ  — Pure plan geometry: turtle-walk + center-về-tâm-bbox + xoay/dời → vị trí world
  *            của TỪNG tường. NGUỒN SỰ THẬT DUY NHẤT cho cả editor (archplan build.ts) lẫn
- *            headless (BuildingFromPlan.ts).
+ *            headless (BuildingFromState.ts / BuildingRenderer).
  * LIÊN HỆ  — Không Three.js, không state-type. Unit-agnostic: caller truyền METERS + độ.
  *
  * WHY tách: trước đây editor + headless mỗi nơi chép 1 bản walkTurtle/applyTransform →

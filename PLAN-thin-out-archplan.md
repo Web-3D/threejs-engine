@@ -38,9 +38,18 @@ persistence.ts dùng `window.*` (localStorage/FS) → **giữ ở vỏ**, import
   - Gate máy: archplan tsc/eslint/build ✅, kit eslint ✅, Doraemon tsc ✅.
   - **⚠️ CHỜ gate người:** refresh `:3002` → walls/structure/roof/paint render đúng + pick/paint/move/focus/highlight còn chạy. Chưa visual-verify thì 1b CHƯA chốt.
 
-### ⏳ Phase 2 — Converge headless + đóng Gap 2
-- `BuildingFromPlan` → wrapper mỏng (AP4→BuildingState→BuildingFromState) HOẶC Doraemon dùng thẳng.
-- stairs/balconies/roof-rot/paint tự chảy → **Gap 2 đóng**. Thêm **parity test** (build-from-state vs AP4).
+### ✅ Phase 2 — Retire BuildingFromPlan + headless wrapper (XONG 2026-06-01)
+- **Phát hiện:** `BuildingFromPlan` (AP4 lossy) **dormant** — 0 caller; Doraemon dựng nhà bằng `Building`
+  preset procedural (đường riêng). Gap 2 latent → Phase 1 đã đóng phần lõi (1 renderer canonical).
+- Chọn **A**: retire BuildingFromPlan (xoá file) + `class BuildingRenderer` (wrapper headless own ctx +
+  dispose, gọi renderBuildingState) + `BuildingFromState.example.ts` (smoke compile-checked).
+- Gap 2 đóng bằng construction: chỉ còn 1 renderer (renderBuildingState) đọc BuildingState lossless →
+  stairs/balcony/roof-rot/paint full fidelity. KHÔNG còn renderer thứ 2 để drift.
+- Gate: kit tsc/eslint, archplan tsc/build, Doraemon tsc ✅. (Không test runner → smoke = example compile-checked + editor live.)
+- **⚠️ 2 orphan lộ ra do retire — CHỜ bác quyết (chưa tự xoá):**
+  - `parts/Stair.ts` (makeStair) — chỉ BuildingFromPlan dùng → 0 caller. Editor/headless dùng makePositionedStairs.
+  - AP4 export (`buildingStateToJSON`) — reader retire nhưng nút "📄 JSON" editor còn dùng (download ngoài).
+    Lựa chọn: giữ (external interchange) / đổi nút sang serializeDesign (lossless) / bỏ.
 
 ### ⏳ Phase 3 (sau, optional) — workspace package
 - alias `../` đã chạy cho cả 2 → ngoài đường tới hạn. Làm khi Babylon tới.
