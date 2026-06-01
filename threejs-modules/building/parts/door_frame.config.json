@@ -1,0 +1,11 @@
+{
+  "bodyW": 7.0,
+  "bodyH": 5.4,
+  "bodyD": 7.0,
+  "doorW": 1.0,
+  "doorH": 2.4,
+  "frameT": 0.08,
+  "frameDepth": 0.15,
+  "colorIndex": 0,
+  "panelIndex": 0
+}

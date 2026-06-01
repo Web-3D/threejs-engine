@@ -125,6 +125,24 @@
 
 ---
 
+## Building
+
+> Bộ sinh hình **nhà procedural** (Three-native, three-only). KHÔNG theo chuẩn 1-module-1-folder —
+> là **sub-library** nhiều file (`parts/` + `tokens` + assembler). Consumer import qua alias `building-kit`
+> (vd `building-kit/parts/WallSingle`, `building-kit/tokens`). Dùng bởi: **archplan editor** + **Doraemon
+> city runtime** + (tương lai) **"bảo bối" gameplay** (bỏ blueprint `BuildingState` → ra nhà).
+
+| Mục                  | Mô tả                                                              |
+| -------------------- | ------------------------------------------------------------------ |
+| `building/parts/*`   | Wall/Roof/Structure/Stair/Windows/Door… → `THREE.Mesh`/`Group`     |
+| `building/tokens`    | `WALL_COLORS`, `PartResult`, dimension tokens — hằng số chung      |
+| `building/Building*` | Assembler preset→Group + config types (city runtime)               |
+
+> Hướng tới: assembler **headless** `BuildingState → THREE.Group` (không GUI) làm engine dùng chung
+> cho editor lẫn gameplay. Tách dần từ `01-Doraemon` ArchPlanLab.
+
+---
+
 ## Thêm module mới
 
 Copy từ `_template/` trong category phù hợp.

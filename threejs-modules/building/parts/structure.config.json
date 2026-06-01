@@ -1,0 +1,15 @@
+{
+  "bodyW": 7.8,
+  "bodyH": 5,
+  "bodyD": 6.7,
+  "numFloors": 2,
+  "columnType": 1,
+  "columnRadius": 0.1,
+  "columnSide": 0.15,
+  "foundationH": 0.33,
+  "foundationOutset": 0.21,
+  "floorBandH": 0.07,
+  "floorBandOutset": 0.05,
+  "showBeams": true,
+  "beamRadius": 0.1
+}

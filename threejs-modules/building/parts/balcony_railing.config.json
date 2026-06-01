@@ -1,0 +1,14 @@
+{
+  "bodyW": 8.0,
+  "bodyH": 7.2,
+  "bodyD": 7.0,
+  "slabW": 6.0,
+  "slabD": 1.2,
+  "slabT": 0.15,
+  "slabY": 3.6,
+  "railingH": 1.1,
+  "postR": 0.03,
+  "postCount": 6,
+  "railT": 0.025,
+  "colorIndex": 0
+}

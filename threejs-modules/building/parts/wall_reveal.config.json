@@ -1,0 +1,11 @@
+{
+  "bodyW": 7.0,
+  "bodyH": 5.4,
+  "bodyD": 6.5,
+  "numFloors": 2,
+  "revealH": 0.05,
+  "colorIndex": 0,
+  "showParapet": false,
+  "parapetH": 0.55,
+  "parapetT": 0.15
+}

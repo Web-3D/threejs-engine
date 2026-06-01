@@ -1,0 +1,11 @@
+{
+  "bodyW": 9.0,
+  "bodyH": 7.2,
+  "bodyD": 8.0,
+  "roofT": 0.20,
+  "overhang": 0.15,
+  "showParapet": true,
+  "parapetH": 0.6,
+  "parapetT": 0.15,
+  "colorIndex": 2
+}

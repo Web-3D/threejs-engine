@@ -1,0 +1,14 @@
+{
+  "bodyW": 7.0,
+  "bodyH": 5.4,
+  "bodyD": 7.0,
+  "winW": 1.6,
+  "winH": 1.4,
+  "frameT": 0.07,
+  "frameDepth": 0.12,
+  "mullionT": 0.03,
+  "cols": 2,
+  "rows": 2,
+  "yPos": 2.0,
+  "colorIndex": 0
+}

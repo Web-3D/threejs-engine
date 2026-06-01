@@ -1,0 +1,53 @@
+{
+  "baseW": 7.0,
+  "baseD": 6.5,
+  "wallT": 0.25,
+  "foundationH": 0.30,
+  "floors": [
+    {
+      "floorH": 3.2,
+      "wallType": "panel",
+      "setback": 0.0,
+      "colorIndex": 0,
+      "revealH": 0.05,
+      "showParapet": false,
+      "parapetH": 0.40,
+      "parapetT": 0.15,
+      "panelW": 1.0,
+      "panelH": 2.8,
+      "grooveW": 0.05,
+      "frameIndex": 0,
+      "glassIndex": 0
+    },
+    {
+      "floorH": 2.7,
+      "wallType": "reveal",
+      "setback": 0.0,
+      "colorIndex": 1,
+      "revealH": 0.06,
+      "showParapet": false,
+      "parapetH": 0.40,
+      "parapetT": 0.15,
+      "panelW": 1.2,
+      "panelH": 0.9,
+      "grooveW": 0.04,
+      "frameIndex": 0,
+      "glassIndex": 0
+    },
+    {
+      "floorH": 2.7,
+      "wallType": "flat",
+      "setback": 0.5,
+      "colorIndex": 0,
+      "revealH": 0.05,
+      "showParapet": true,
+      "parapetH": 0.45,
+      "parapetT": 0.15,
+      "panelW": 1.2,
+      "panelH": 0.9,
+      "grooveW": 0.04,
+      "frameIndex": 0,
+      "glassIndex": 0
+    }
+  ]
+}
