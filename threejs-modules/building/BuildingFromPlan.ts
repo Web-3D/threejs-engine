@@ -30,6 +30,7 @@ import {
 } from './parts/Structure'
 import { makePositionedWall, type PositionedOpening } from './parts/WallSingle'
 import { type PartResult, WALL_COLORS } from './tokens'
+import { planBbox, planWalls, type SegPlan } from './turtle'
 
 // ── JSON types (AP4 — tất cả đơn vị: mét) ─────────────────────────────────────
 
@@ -44,6 +45,7 @@ interface OpeningJSON {
 
 interface SegmentJSON {
   length: number // mét
+  wallH?: number // mét — chiều cao tường segment này (AP4 xuất per-segment); thiếu (JSON cũ) = floorH
   turnBefore: number // degrees
   colorIndex: number
   style: 'flat' | 'reveal' | 'panel'
@@ -110,9 +112,9 @@ export interface FloorPlanJSON {
   stairs?: StairDef[]
 }
 
-// ── Turtle engine (free functions — không phụ thuộc class) ────────────────────
-// Replicate _computeWallConfigsForInstance + _applyTransform từ ArchPlanLab.
-// Tất cả kích thước ở đây là MÉT (JSON đã convert, không cần /1000).
+// ── Turtle engine ─────────────────────────────────────────────────────────────
+// Turtle-walk + transform = building-kit/turtle (CÙNG core editor archplan dùng → không drift,
+// chặn KI-001). Ở đây chỉ map InstanceJSON↔core + gắn h/depth/yBase/seg. Đơn vị: MÉT (JSON sẵn).
 
 interface WallTask {
   w: number
@@ -126,39 +128,7 @@ interface WallTask {
 }
 
 function computeBbox(segs: SegmentJSON[]): { w: number; d: number } {
-  let heading = 0
-  let curX = 0
-  let curZ = 0
-  const pts: [number, number][] = [[0, 0]]
-  for (const seg of segs) {
-    heading = (((heading + seg.turnBefore) % 360) + 360) % 360
-    const rad = (heading * Math.PI) / 180
-    curX += Math.cos(rad) * seg.length
-    curZ += -Math.sin(rad) * seg.length
-    pts.push([curX, curZ])
-  }
-  const xs = pts.map((p) => p[0])
-  const zs = pts.map((p) => p[1])
-  return { w: Math.max(...xs) - Math.min(...xs), d: Math.max(...zs) - Math.min(...zs) }
-}
-
-function applyTransform(tasks: WallTask[], pts: [number, number][], inst: InstanceJSON): void {
-  const xs = pts.map((p) => p[0])
-  const zs = pts.map((p) => p[1])
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
-  const cz = (Math.min(...zs) + Math.max(...zs)) / 2
-  const rotRad = (inst.rotY * Math.PI) / 180
-  const cosR = Math.cos(rotRad)
-  const sinR = Math.sin(rotRad)
-  for (const t of tasks) {
-    t.xOffset -= cx
-    t.zOffset -= cz
-    const rx = t.xOffset * cosR - t.zOffset * sinR
-    const rz = t.xOffset * sinR + t.zOffset * cosR
-    t.xOffset = rx + inst.posX
-    t.zOffset = rz + inst.posZ
-    t.rotationY = (t.rotationY + inst.rotY + 360) % 360
-  }
+  return planBbox(segs.map((s) => ({ length: s.length, turnBefore: s.turnBefore })))
 }
 
 function traceTurtle(
@@ -167,32 +137,21 @@ function traceTurtle(
   wallBase: number,
   floorH: number
 ): WallTask[] {
-  let heading = 0
-  let curX = 0
-  let curZ = 0
-  const pts: [number, number][] = [[0, 0]]
-  const tasks: WallTask[] = []
-  for (const seg of inst.segments) {
-    heading = (((heading + seg.turnBefore) % 360) + 360) % 360
-    const rad = (heading * Math.PI) / 180
-    const dx = Math.cos(rad)
-    const dz = -Math.sin(rad)
-    tasks.push({
-      w: seg.length,
-      h: floorH,
+  const segs: SegPlan[] = inst.segments.map((s) => ({ length: s.length, turnBefore: s.turnBefore }))
+  const xform = { posX: inst.posX, posZ: inst.posZ, rotY: inst.rotY }
+  return planWalls(segs, xform).map((p) => {
+    const seg = inst.segments[p.index]
+    return {
+      w: p.w,
+      h: seg.wallH ?? floorH, // honor wallH per-segment (AP4); floorH fallback cho JSON cũ
       depth,
-      rotationY: heading,
-      xOffset: curX + (dx * seg.length) / 2,
-      zOffset: curZ + (dz * seg.length) / 2,
+      rotationY: p.rotationY,
+      xOffset: p.xOffset,
+      zOffset: p.zOffset,
       yBase: wallBase,
       seg,
-    })
-    curX += dx * seg.length
-    curZ += dz * seg.length
-    pts.push([curX, curZ])
-  }
-  applyTransform(tasks, pts, inst)
-  return tasks
+    }
+  })
 }
 
 // Tính maxLift (foundH) cho ground floor — tách ra để _assemble < complexity 10

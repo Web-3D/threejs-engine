@@ -150,6 +150,9 @@ Mục tiêu: NPC tìm đường trong city — NavMesh bake + pathfinding.
 
 ## Changelog
 
+| 2026-06-01 | archplan rã monolith tiếp — `ArchPlanLab.ts` **1950→1529** (−421, −22%): tách `gui/devhud.ts` (DevHud), `interaction/highlight.ts` (HighlightOverlay, host-pattern), `state/persistence.ts` (DesignStore I/O) + `footprintXZ` về `build/build.ts`. README archplan ghi taxonomy + 2 pattern tách (host-interface / pure-service). Build pipeline ~650 dòng để tách riêng (unify với headless). tsc/eslint/vite build xanh |
+| 2026-06-01 | Catalog audit + sync README — thêm 6 module bị drift (BaseShaderMaterial, AsphaltGround, BaseGPUEffect, BeamEffect, BillboardSprite, ShockwaveRing) + cột **Status** (in-use/base/idle) theo grep consumer thật. Lõi proven = building-kit + BaseWorld + surface/wall archplan; phần lớn còn lại 🗄 idle (built-ahead) |
+| 2026-06-01 | building-kit hardening headless — `turtle.ts` core dùng chung (editor `build.ts` + headless `BuildingFromPlan` hết chép tay turtle-walk → chống drift KI-001); `BuildingFromPlan` đọc **wallH per-segment** (trước ép `floorH=max` san phẳng). Material-fidelity (toon→shader) defer |
 | 2026-05-30 | Category `ui/` mới (widget DOM thuần) — `Tabs` folder-style: tablist + ARIA + roving tabindex + keyboard, theme CSS vars; tách từ ArchPlanLab. validate.js whitelist thêm `ui` |
 | 2026-05-30 | Fix `WoodSidingStrip` + `InstancedBrickWall` solidTraps boundary `!b\|\|!t` (cùng bug copy-paste, propagate 7b171a6) — hết răng cưa mép lỗ cửa/sổ. Chi tiết: 01-Doraemon `known-issues/KI-001` |
 | 2026-05-30 | `components/` — wall geometry THẬT: `InstancedBrickWall` (gạch InstancedMesh + khoét lỗ), `WoodSidingWall` (clapboard), `WoodSidingStrip` (ribbon 1 khối mergeable + openings), `AsphaltGround` |
