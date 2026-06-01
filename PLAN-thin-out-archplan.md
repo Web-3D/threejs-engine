@@ -26,11 +26,17 @@ persistence.ts dùng `window.*` (localStorage/FS) → **giữ ở vỏ**, import
 - 9 importer **không đổi 1 dòng**. Gate: archplan tsc/eslint/build ✅, Doraemon tsc ✅, kit eslint ✅.
 - Còn: mắt `:3002` (di dời thuần, rủi ro ~0).
 
-### ⏳ Phase 1 — Extract RENDERER → `building-kit/BuildingFromState.ts`
-- Hàm headless `BuildingState(mm) → THREE.Group` (walls+structure+roof), KHÔNG pick-box/chrome.
-- **Khó:** tách pick-box (editor-only, trong `_buildFloor`) khỏi assemble → lõi trả `group + placement metadata`,
-  ArchPlanLab bọc ngoài thêm pick-box + chrome.
-- Mang `_segToSpec` (mm→m boundary) theo. Gate từng sub-step + verify pick/paint/move còn chạy.
+### Phase 1 — Extract RENDERER → `building-kit/BuildingFromState.ts`
+- **✅ 1a (commit 1735d69/52423cb):** `build/build.ts` → lõi + shim. Pure math, prerequisite renderer.
+- **🟡 1b (gate MÁY xanh, CHỜ visual):** `BuildingFromState.ts` = `renderBuildingState(state, ctx) → Placement[]`.
+  - Thiết kế: free-function + class transient `StateRenderer`, nhận `ctx` (group+arrays editor SỞ HỮU) →
+    build vào đó, trả `Placement[]` (toạ độ pick-box). KHÔNG chuyển ownership (giống `assembleWall`).
+  - Lift 1:1 từ ArchPlanLab: orchestration + buildFloor/structure/foundation/slab/balcony/stairs/columns/roof
+    + **paint override** (→ Gap2#4) + segToSpec (mm→m). Pick-box MATH → placements; pick-MESH giữ ở editor.
+  - `ArchPlanLab._renderScene` = `renderBuildingState(...)` + gắn `_addPick` từ placements + chrome (sun/heightGrid).
+    Xoá 18 method (~404 dòng) + 30 dòng import thừa. 1396 → ~950 dòng.
+  - Gate máy: archplan tsc/eslint/build ✅, kit eslint ✅, Doraemon tsc ✅.
+  - **⚠️ CHỜ gate người:** refresh `:3002` → walls/structure/roof/paint render đúng + pick/paint/move/focus/highlight còn chạy. Chưa visual-verify thì 1b CHƯA chốt.
 
 ### ⏳ Phase 2 — Converge headless + đóng Gap 2
 - `BuildingFromPlan` → wrapper mỏng (AP4→BuildingState→BuildingFromState) HOẶC Doraemon dùng thẳng.

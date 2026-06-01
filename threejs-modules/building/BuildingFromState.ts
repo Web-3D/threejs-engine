@@ -1,0 +1,503 @@
+/**
+ * VỊ TRÍ   — threejs-modules/building/BuildingFromState.ts  (building-kit)
+ * VAI TRÒ  — RENDERER canonical: BuildingState (mm) → dựng walls + structure + roof + stairs +
+ *            balcony + PAINT vào ctx (group + arrays caller sở hữu). Trả Placement[] (vị trí pick-box)
+ *            cho caller tự gắn lớp tương tác. Dùng chung editor (archplan) + headless (Phase 2).
+ * LIÊN HỆ  — Lift từ ArchPlanLab._renderScene (Phase 1b thin-out, 2026-06-01). KHÔNG sở hữu GPU
+ *            resource (ctx truyền vào → caller dispose, giống assembleWall). KHÔNG DOM, không pick-mesh
+ *            (chỉ trả toạ độ Placement) → lõi headless thuần.
+ *
+ * CÁCH DÙNG:
+ *   const placements = renderBuildingState(state, { wallCache, group, geos, mats, brick3d, wood, strip })
+ *   for (const p of placements) addPickBox(p)   // caller (editor) tự tạo pick mesh
+ * DISPOSE: ctx.* do caller dispose (geos/mats/components/wallCache). Renderer không giữ gì.
+ */
+
+import * as THREE from 'three'
+
+import type { InstancedBrickWall } from '../components/InstancedBrickWall'
+import type { WoodSidingStrip } from '../components/WoodSidingStrip'
+import type { WoodSidingWall } from '../components/WoodSidingWall'
+import {
+  computeLocalBbox,
+  computeWallConfigs,
+  footprintXZ,
+  type FootXZ,
+  stairFootprintWorld,
+  type WorldRect,
+  worldRectToSlabOpening,
+} from './build'
+import { makeRoof } from './parts/RoofShape'
+import {
+  makePositionedBalcony,
+  makePositionedColumn,
+  makePositionedFoundation,
+  makePositionedSlab,
+  makePositionedStairs,
+} from './parts/Structure'
+import type { BalconyState, BuildingState, SegmentState, ShapeInstance, WallConfig } from './state'
+import { type PartResult } from './tokens'
+import {
+  assembleWall,
+  mergeWalls,
+  type WallAsmCtx,
+  type WallPlace,
+  type WallSpec,
+} from './wallAssembly'
+import { type WallMaterialCache } from './wallMaterials'
+
+// Vị trí + kích thước 1 pick-box (caller tạo mesh vô hình từ đây). cx/cy/cz tâm, sx/sy/sz size, rotDeg
+// xoay quanh Y, ud = userData định danh element (instId + segIdx/opIdx/key).
+export interface Placement {
+  cx: number
+  cy: number
+  cz: number
+  sx: number
+  sy: number
+  sz: number
+  rotDeg: number
+  ud: Record<string, unknown>
+}
+
+// Resource caller sở hữu — renderer build vào đây, KHÔNG dispose (giống WallAsmCtx).
+export interface BuildRenderCtx {
+  wallCache: WallMaterialCache
+  group: THREE.Group
+  geos: THREE.BufferGeometry[]
+  mats: THREE.Material[]
+  brick3d: InstancedBrickWall[]
+  wood: WoodSidingWall[]
+  strip: WoodSidingStrip[]
+}
+
+// SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
+function segToSpec(seg: SegmentState): WallSpec {
+  return {
+    material: seg.material,
+    colorIndex: seg.colorIndex,
+    paintColor: seg.paintColor,
+    matScale: seg.matScale,
+    mortarColor: seg.mortarColor,
+    brickRelief: seg.brickRelief,
+    style: seg.style,
+    woodReveal: seg.woodReveal / 1000,
+    woodButt: seg.woodButt / 1000,
+    woodStepTilt: seg.woodStepTilt,
+    openings: seg.openings.map((op) => ({
+      kind: op.kind,
+      x: op.x / 1000,
+      w: op.w / 1000,
+      h: op.h / 1000,
+      yOffset: op.yOffset / 1000,
+      round: op.round,
+    })),
+    panels: seg.panels.map((p) => ({
+      x: p.x / 1000,
+      y: p.y / 1000,
+      w: p.w / 1000,
+      h: p.h / 1000,
+      depth: p.depth / 1000,
+      mode: p.mode,
+      material: p.material,
+      colorIndex: p.colorIndex,
+    })),
+  }
+}
+
+// Transient — giữ ctx + out + asm trong 1 lần build. KHÔNG sở hữu resource (ctx của caller).
+class StateRenderer {
+  private out: Placement[] = []
+  private asm!: WallAsmCtx
+
+  constructor(private readonly ctx: BuildRenderCtx) {}
+
+  run(state: BuildingState): Placement[] {
+    this.asm = {
+      cache: this.ctx.wallCache,
+      buckets: new Map(),
+      group: this.ctx.group,
+      geos: this.ctx.geos,
+      brick3d: this.ctx.brick3d,
+      wood: this.ctx.wood,
+      strip: this.ctx.strip,
+    }
+    const stairHoles = this.collectStairHoles(state)
+    let yAcc = 0
+    for (let fi = 0; fi < state.floors.length; fi++) {
+      yAcc += this.buildFloor(state, fi, yAcc, stairHoles.get(fi) ?? [])
+    }
+    mergeWalls(this.asm)
+    this.ctx.wallCache.sweep(new Set(this.asm.buckets.keys()))
+    return this.out
+  }
+
+  // Build 1 tầng → trả độ cao (lift + floorH) cộng dồn cho tầng kế.
+  private buildFloor(state: BuildingState, fi: number, yAcc: number, holes: WorldRect[]): number {
+    const floor = state.floors[fi]
+    const isGround = fi === 0
+    let maxLift = 0
+    let maxFloorH = 0
+    for (const inst of floor.instances) {
+      const yLift = isGround && inst.structure.showFoundation ? inst.structure.foundH / 1000 : 0
+      if (yLift > maxLift) maxLift = yLift
+      const wallBase = yAcc + yLift
+      const instHm =
+        inst.segments.length > 0 ? Math.max(...inst.segments.map((s) => s.wallH)) / 1000 : 3
+      if (instHm > maxFloorH) maxFloorH = instHm
+      computeWallConfigs(inst, wallBase).forEach((cfg, si) => {
+        this.assembleFromConfig(cfg)
+        this.pushWallPick(cfg, inst.id, si)
+        this.pushOpeningPicks(cfg, inst.id, si)
+      })
+      this.buildStructure(inst, wallBase, isGround, instHm, holes)
+    }
+    return maxLift + maxFloorH
+  }
+
+  // Footprint cầu thang mọi tầng → map[targetFloor] = lỗ cần khoét slab tầng trên.
+  private collectStairHoles(state: BuildingState): Map<number, WorldRect[]> {
+    const holes = new Map<number, WorldRect[]>()
+    for (let fi = 0; fi < state.floors.length; fi++) {
+      for (const inst of state.floors[fi].instances) {
+        const fp = stairFootprintWorld(inst)
+        if (!fp) continue
+        const target = fi + 1
+        let arr = holes.get(target)
+        if (!arr) {
+          arr = []
+          holes.set(target, arr)
+        }
+        arr.push(fp)
+      }
+    }
+    return holes
+  }
+
+  private assembleFromConfig(cfg: WallConfig): void {
+    const place: WallPlace = {
+      w: cfg.w,
+      h: cfg.h,
+      depth: cfg.depth,
+      rotationY: cfg.rotationY,
+      xOffset: cfg.xOffset,
+      zOffset: cfg.zOffset,
+      yBase: cfg.yBase,
+    }
+    assembleWall(place, segToSpec(cfg.seg), this.asm)
+  }
+
+  // Tường: box ôm đúng WallConfig.
+  private pushWallPick(cfg: WallConfig, instId: string, segIdx: number): void {
+    const { xOffset: x, zOffset: z, yBase: y, w, h, depth, rotationY } = cfg
+    this.push(x, y + h / 2, z, w, h, depth, rotationY, { instId, segIdx })
+  }
+
+  // Mỗi cửa/cửa sổ: box nhỏ trên mặt NGOÀI tường (+Z local), nhô 2cm để hit TRƯỚC box tường.
+  private pushOpeningPicks(cfg: WallConfig, instId: string, segIdx: number): void {
+    const { xOffset, zOffset, yBase, w, depth, rotationY, seg } = cfg
+    const th = (rotationY * Math.PI) / 180
+    seg.openings.forEach((op, opIdx) => {
+      const lx = (op.x + op.w / 2) / 1000 - w / 2
+      const lz = depth / 2 + 0.02
+      const wx = xOffset + lx * Math.cos(th) + lz * Math.sin(th)
+      const wz = zOffset - lx * Math.sin(th) + lz * Math.cos(th)
+      const wy = yBase + (op.yOffset + op.h / 2) / 1000
+      this.push(wx, wy, wz, op.w / 1000, op.h / 1000, 0.04, rotationY, { instId, segIdx, opIdx })
+    })
+  }
+
+  private buildStructure(
+    inst: ShapeInstance,
+    wallBase: number,
+    isGround: boolean,
+    instHm: number,
+    holes: WorldRect[]
+  ): void {
+    const { w, d } = computeLocalBbox(inst)
+    const wx = inst.posX / 1000
+    const wz = inst.posZ / 1000
+    const ry = inst.rotY
+    const fp = footprintXZ(computeWallConfigs(inst, wallBase))
+    this.buildBase(inst, wallBase, isGround, holes, fp)
+    this.buildColumns(inst, wallBase)
+    this.buildStairs(inst, wallBase, instHm)
+    this.buildBalconies(inst, wallBase)
+    this.buildRoof(inst, wx, wz, ry, w, d, wallBase, instHm)
+    if (inst.roof.show) {
+      this.push(fp.cx, wallBase + instHm + 0.75, fp.cz, fp.sx, 1.5, fp.sz, 0, {
+        instId: inst.id,
+        key: 'roof',
+      })
+    }
+  }
+
+  private buildBase(
+    inst: ShapeInstance,
+    wallBase: number,
+    isGround: boolean,
+    holes: WorldRect[],
+    fp: FootXZ
+  ): void {
+    if (isGround && inst.structure.showFoundation) this.buildFoundation(inst, wallBase, fp)
+    if (inst.structure.showSlab) this.buildSlab(inst, wallBase, holes, fp)
+  }
+
+  private buildFoundation(inst: ShapeInstance, wallBase: number, fp: FootXZ): void {
+    const { w, d } = computeLocalBbox(inst)
+    const fh = inst.structure.foundH / 1000
+    this.pushPainted(
+      makePositionedFoundation({
+        bboxW: w,
+        bboxD: d,
+        wallDepth: inst.wallDepth / 1000,
+        oh: inst.structure.foundOh,
+        h: fh,
+        worldX: inst.posX / 1000,
+        worldZ: inst.posZ / 1000,
+        rotY: inst.rotY,
+      }),
+      inst,
+      'found'
+    )
+    this.push(fp.cx, wallBase - fh / 2, fp.cz, fp.sx, fh, fp.sz, 0, {
+      instId: inst.id,
+      key: 'found',
+    })
+  }
+
+  private buildSlab(inst: ShapeInstance, wallBase: number, holes: WorldRect[], fp: FootXZ): void {
+    const { w, d } = computeLocalBbox(inst)
+    const wx = inst.posX / 1000
+    const wz = inst.posZ / 1000
+    const st = inst.structure.slabThick / 1000
+    this.pushPainted(
+      makePositionedSlab({
+        bboxW: w,
+        bboxD: d,
+        thick: st,
+        yBase: wallBase,
+        worldX: wx,
+        worldZ: wz,
+        rotY: inst.rotY,
+        openings: this.slabOpenings(holes, wx, wz, inst.rotY, w, d),
+      }),
+      inst,
+      'slab'
+    )
+    this.push(fp.cx, wallBase + st / 2, fp.cz, fp.sx, st, fp.sz, 0, {
+      instId: inst.id,
+      key: 'slab',
+    })
+  }
+
+  private buildBalconies(inst: ShapeInstance, wallBase: number): void {
+    const bals = inst.structure.balconies
+    if (!bals?.length) return
+    const configs = computeWallConfigs(inst, wallBase)
+    bals.forEach((b, i) => {
+      const cfg = configs[b.wallIdx]
+      if (!cfg) return
+      this.pushPainted(
+        makePositionedBalcony({
+          wallX: cfg.xOffset,
+          wallZ: cfg.zOffset,
+          wallRotDeg: cfg.rotationY,
+          wallDepth: cfg.depth,
+          alongOffset: (b.x + b.width / 2) / 1000 - cfg.w / 2,
+          width: b.width / 1000,
+          projection: b.depth / 1000,
+          y: wallBase + b.y / 1000,
+          slabT: b.slabT / 1000,
+          railH: b.railH / 1000,
+        }),
+        inst,
+        `bal:${i}`
+      )
+      this.pushBalconyPick(inst, cfg, b, wallBase, i)
+    })
+  }
+
+  private pushBalconyPick(
+    inst: ShapeInstance,
+    cfg: WallConfig,
+    b: BalconyState,
+    wallBase: number,
+    i: number
+  ): void {
+    const lx = (b.x + b.width / 2) / 1000 - cfg.w / 2
+    const lz = cfg.depth / 2 + b.depth / 2000
+    const th = (cfg.rotationY * Math.PI) / 180
+    const wx = cfg.xOffset + lx * Math.cos(th) + lz * Math.sin(th)
+    const wz = cfg.zOffset - lx * Math.sin(th) + lz * Math.cos(th)
+    const wy = wallBase + b.y / 1000 + (b.railH - b.slabT) / 2000
+    const sy = (b.railH + b.slabT) / 1000
+    this.push(wx, wy, wz, b.width / 1000, sy, b.depth / 1000, cfg.rotationY, {
+      instId: inst.id,
+      key: `bal:${i}`,
+    })
+  }
+
+  private slabOpenings(
+    holes: WorldRect[],
+    wx: number,
+    wz: number,
+    ry: number,
+    w: number,
+    d: number
+  ): { x: number; z: number; w: number; d: number; rot: number }[] {
+    if (holes.length === 0) return []
+    const swap = ry === 90 || ry === 270
+    const halfX = (swap ? d : w) / 2
+    const halfZ = (swap ? w : d) / 2
+    const out: { x: number; z: number; w: number; d: number; rot: number }[] = []
+    for (const h of holes) {
+      if (Math.abs(h.cx - wx) <= halfX && Math.abs(h.cz - wz) <= halfZ) {
+        out.push(worldRectToSlabOpening(h, wx, wz, ry))
+      }
+    }
+    return out
+  }
+
+  private buildStairs(inst: ShapeInstance, wallBase: number, instHm: number): void {
+    const s = inst.structure.stairs
+    if (!s.show) return
+    this.pushPainted(
+      makePositionedStairs({
+        localX: s.x / 1000,
+        localZ: s.z / 1000,
+        runL: s.runL / 1000,
+        width: s.width / 1000,
+        totalH: instHm,
+        steps: s.steps,
+        rotDeg: s.rotDeg,
+        worldX: inst.posX / 1000,
+        worldZ: inst.posZ / 1000,
+        rotY: inst.rotY,
+        yBase: wallBase,
+      }),
+      inst,
+      'stairs'
+    )
+    const th = (inst.rotY * Math.PI) / 180
+    const cx = (s.x / 1000) * Math.cos(th) - (s.z / 1000) * Math.sin(th) + inst.posX / 1000
+    const cz = (s.x / 1000) * Math.sin(th) + (s.z / 1000) * Math.cos(th) + inst.posZ / 1000
+    this.push(
+      cx,
+      wallBase + instHm / 2,
+      cz,
+      s.runL / 1000,
+      instHm,
+      s.width / 1000,
+      inst.rotY + s.rotDeg,
+      {
+        instId: inst.id,
+        key: 'stairs',
+      }
+    )
+  }
+
+  private buildColumns(inst: ShapeInstance, wallBase: number): void {
+    const wx = inst.posX / 1000
+    const wz = inst.posZ / 1000
+    const ry = inst.rotY
+    const cosR = Math.cos((ry * Math.PI) / 180)
+    const sinR = Math.sin((ry * Math.PI) / 180)
+    inst.structure.columns.forEach((col, i) => {
+      const cx = (col.x / 1000) * cosR - (col.z / 1000) * sinR + wx
+      const cz = (col.x / 1000) * sinR + (col.z / 1000) * cosR + wz
+      const ch = col.h / 1000
+      this.pushPainted(
+        makePositionedColumn({
+          type: col.type,
+          worldX: cx,
+          worldZ: cz,
+          h: ch,
+          r: col.r / 1000,
+          size: col.size / 1000,
+          yBase: wallBase,
+        }),
+        inst,
+        `col:${i}`
+      )
+      const sz = (col.type === 'round' ? col.r * 2 : col.size) / 1000
+      this.push(cx, wallBase + ch / 2, cz, sz, ch, sz, 0, { instId: inst.id, key: `col:${i}` })
+    })
+  }
+
+  private buildRoof(
+    inst: ShapeInstance,
+    wx: number,
+    wz: number,
+    ry: number,
+    w: number,
+    d: number,
+    wallBase: number,
+    instHm: number
+  ): void {
+    if (!inst.roof.show) return
+    this.pushPainted(
+      makeRoof(
+        {
+          type: inst.roof.type,
+          pitch: inst.roof.pitch,
+          overhang: inst.roof.overhang,
+          ridgeDir: inst.roof.rotDeg % 180 === 0 ? 'EW' : 'NS',
+          parapetH: inst.roof.parapetH,
+          worldX: wx,
+          worldZ: wz,
+          rotY: ry + (inst.roof.rotDeg >= 180 ? 180 : 0),
+        },
+        w,
+        d,
+        instHm + wallBase
+      ),
+      inst,
+      'roof'
+    )
+  }
+
+  // Element KHÔNG-tường: recolor MeshToon theo inst.paint[key] (override) rồi push vào ctx.
+  private pushPainted(r: PartResult, inst: ShapeInstance, key: string): void {
+    const c = inst.paint?.[key]
+    if (c !== undefined) {
+      for (const mat of r.mats) {
+        const m = mat as THREE.Material & { color?: THREE.Color }
+        if (m.color instanceof THREE.Color) m.color.setHex(c)
+      }
+    }
+    this.pushResult(r)
+  }
+
+  private pushResult(r: PartResult): void {
+    this.ctx.geos.push(...r.geos)
+    this.ctx.mats.push(...r.mats)
+    for (const m of r.meshes) {
+      m.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true
+          o.receiveShadow = true
+        }
+      })
+      this.ctx.group.add(m)
+    }
+  }
+
+  // Gom 1 Placement (toạ độ pick-box) — caller dựng mesh sau.
+  private push(
+    cx: number,
+    cy: number,
+    cz: number,
+    sx: number,
+    sy: number,
+    sz: number,
+    rotDeg: number,
+    ud: Record<string, unknown>
+  ): void {
+    this.out.push({ cx, cy, cz, sx, sy, sz, rotDeg, ud })
+  }
+}
+
+// Dựng BuildingState vào ctx (caller sở hữu resource) → trả Placement[] cho caller gắn pick-box.
+export function renderBuildingState(state: BuildingState, ctx: BuildRenderCtx): Placement[] {
+  return new StateRenderer(ctx).run(state)
+}
