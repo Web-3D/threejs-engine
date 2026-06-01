@@ -33,6 +33,7 @@ deferred/
 
 | File | Tính năng | Revisit khi |
 |---|---|---|
+| [material-roadmap.md](rendering/material-roadmap.md) | Phân tầng vật liệu kiến trúc theo kỹ thuật (A surface / B geometry / C kính / D ảo) + convention thư mục mở rộng | Thêm vật liệu mới (mái rơm, kính, ngói…) vào `WallMaterial` |
 | [future-shaders.md](rendering/future-shaders.md) | GlassShader · DissolveShader · OutlineShader | Có scene thực tế cần các effect này |
 | [future-effects.md](rendering/future-effects.md) | FireSystem · FluidSystem · TrailSystem | Scene cần particle effect (FluidSystem: cần WebGPU compute) |
 | [future-postprocessing.md](rendering/future-postprocessing.md) | SSAOPass · MotionBlurPass | Scene geometry phức tạp hoặc object di chuyển nhanh |
