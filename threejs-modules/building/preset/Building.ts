@@ -1,11 +1,11 @@
 /**
- * VỊ TRÍ   — building-kit/Building.ts
+ * VỊ TRÍ   — building-kit/preset/Building.ts
  * VAI TRÒ  — Assembler: đọc BuildingPreset → tạo THREE.Group chứa toàn bộ building parts
  * LIÊN HỆ  — BuildingConfig.ts (interfaces); parts/ (make* functions); data/buildings/*.json (presets)
  *
  * CÁCH DÙNG:
  *   import preset from '../../data/buildings/residential_01.json'
- *   import { Building } from 'building-kit/Building'
+ *   import { Building } from 'building-kit/preset/Building'
  *   const b = new Building(preset)
  *   scene.add(b.getGroup())
  *   // khi dispose scene:
@@ -18,9 +18,8 @@
 
 import * as THREE from 'three'
 
-import type { AttachmentEntry, BuildingDims, BuildingPreset, OpeningEntry } from './BuildingConfig'
-import defaultACUnitConfig from './parts/ac_unit.config.json'
-import defaultAntennaConfig from './parts/antenna.config.json'
+import defaultACUnitConfig from '../parts/ac_unit.config.json'
+import defaultAntennaConfig from '../parts/antenna.config.json'
 import {
   makeACUnit,
   makeAntenna,
@@ -29,39 +28,40 @@ import {
   makeBalconySlab,
   makeDrainPipe,
   makeMeterBox,
-} from './parts/AttachmentDetail'
-import defaultAwningConfig from './parts/awning.config.json'
-import defaultBalconyRailingConfig from './parts/balcony_railing.config.json'
-import defaultBalconySlabConfig from './parts/balcony_slab.config.json'
-import defaultDoorFrameConfig from './parts/door_frame.config.json'
-import defaultDrainPipeConfig from './parts/drain_pipe.config.json'
-import defaultEaveConfig from './parts/eave.config.json'
-import defaultFlatRoofConfig from './parts/flat_roof.config.json'
-import defaultHipConfig from './parts/hip.config.json'
-import defaultLoadingDoorConfig from './parts/loading_door.config.json'
-import defaultMeterBoxConfig from './parts/meter_box.config.json'
+} from '../parts/AttachmentDetail'
+import defaultAwningConfig from '../parts/awning.config.json'
+import defaultBalconyRailingConfig from '../parts/balcony_railing.config.json'
+import defaultBalconySlabConfig from '../parts/balcony_slab.config.json'
+import defaultDoorFrameConfig from '../parts/door_frame.config.json'
+import defaultDrainPipeConfig from '../parts/drain_pipe.config.json'
+import defaultEaveConfig from '../parts/eave.config.json'
+import defaultFlatRoofConfig from '../parts/flat_roof.config.json'
+import defaultHipConfig from '../parts/hip.config.json'
+import defaultLoadingDoorConfig from '../parts/loading_door.config.json'
+import defaultMeterBoxConfig from '../parts/meter_box.config.json'
 import {
   makeDoorFrame,
   makeLoadingDoor,
   makeWindowFrame,
   makeWindowGrid,
   makeWindowStrip,
-} from './parts/OpeningDetail'
-import { makeGabledRoof } from './parts/Roof'
-import { makeEave, makeFlatRoof, makeHipRoof, makeShedRoof } from './parts/RoofDetail'
-import defaultShedConfig from './parts/shed.config.json'
+} from '../parts/OpeningDetail'
+import { makeGabledRoof } from '../parts/Roof'
+import { makeEave, makeFlatRoof, makeHipRoof, makeShedRoof } from '../parts/RoofDetail'
+import defaultShedConfig from '../parts/shed.config.json'
 // ── Part imports ──────────────────────────────────────────────────────────────
-import { makeStructure } from './parts/Structure'
+import { makeStructure } from '../parts/Structure'
 // ── Default configs ───────────────────────────────────────────────────────────
-import defaultStructureConfig from './parts/structure.config.json'
-import { makeWall } from './parts/Wall'
-import defaultWallPanelConfig from './parts/wall_panel.config.json'
-import defaultWallRevealConfig from './parts/wall_reveal.config.json'
-import { makeWallPanel, makeWallReveal } from './parts/WallDetail'
-import defaultWindowFrameConfig from './parts/window_frame.config.json'
-import defaultWindowGridConfig from './parts/window_grid.config.json'
-import defaultWindowStripConfig from './parts/window_strip.config.json'
-import type { BuildingToken, PartResult } from './tokens'
+import defaultStructureConfig from '../parts/structure.config.json'
+import { makeWall } from '../parts/Wall'
+import defaultWallPanelConfig from '../parts/wall_panel.config.json'
+import defaultWallRevealConfig from '../parts/wall_reveal.config.json'
+import { makeWallPanel, makeWallReveal } from '../parts/WallDetail'
+import defaultWindowFrameConfig from '../parts/window_frame.config.json'
+import defaultWindowGridConfig from '../parts/window_grid.config.json'
+import defaultWindowStripConfig from '../parts/window_strip.config.json'
+import type { BuildingToken, PartResult } from '../tokens'
+import type { AttachmentEntry, BuildingDims, BuildingPreset, OpeningEntry } from './config'
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 

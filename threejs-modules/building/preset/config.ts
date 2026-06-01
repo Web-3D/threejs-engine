@@ -1,5 +1,5 @@
 /**
- * VỊ TRÍ   — building-kit/BuildingConfig.ts
+ * VỊ TRÍ   — building-kit/preset/config.ts
  * VAI TRÒ  — TypeScript interfaces cho preset JSON (delta-only format)
  * LIÊN HỆ  — Dùng bởi Building.ts; preset JSONs nằm tại data/buildings/*.json
  *

@@ -1,5 +1,5 @@
 /**
- * VỊ TRÍ   — threejs-modules/building/BuildingFromState.example.ts  (building-kit)
+ * VỊ TRÍ   — threejs-modules/building/render/fromState.example.ts  (building-kit)
  * VAI TRÒ  — Smoke/demo HEADLESS: dựng 1 BuildingState → THREE.Group KHÔNG cần editor/DOM/renderer.
  *            Verify API BuildingRenderer (own ctx + rebuild + dispose). Compile-checked qua tsc.
  * LIÊN HỆ  — Editor (archplan) chạy renderBuildingState LIVE mỗi build (integration test thật ở :3002);
@@ -11,8 +11,8 @@
  *   r.dispose()                              // khi gỡ
  */
 
-import { BuildingRenderer } from './BuildingFromState'
-import { defaultBuildingState } from './state'
+import { defaultBuildingState } from '../state'
+import { BuildingRenderer } from './fromState'
 
 // Dựng nhà mặc định headless (1 tầng rectangle, tường material 'none') — không DOM, không WebGPU renderer.
 const renderer = new BuildingRenderer(defaultBuildingState())

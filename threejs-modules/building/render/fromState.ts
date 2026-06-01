@@ -1,5 +1,5 @@
 /**
- * VỊ TRÍ   — threejs-modules/building/BuildingFromState.ts  (building-kit)
+ * VỊ TRÍ   — threejs-modules/building/render/fromState.ts  (building-kit)
  * VAI TRÒ  — RENDERER canonical: BuildingState (mm) → dựng walls + structure + roof + stairs +
  *            balcony + PAINT vào ctx (group + arrays caller sở hữu). Trả Placement[] (vị trí pick-box)
  *            cho caller tự gắn lớp tương tác. Dùng chung editor (archplan) + headless (Phase 2).
@@ -15,9 +15,9 @@
 
 import * as THREE from 'three'
 
-import type { InstancedBrickWall } from '../components/InstancedBrickWall'
-import type { WoodSidingStrip } from '../components/WoodSidingStrip'
-import type { WoodSidingWall } from '../components/WoodSidingWall'
+import type { InstancedBrickWall } from '../../components/InstancedBrickWall'
+import type { WoodSidingStrip } from '../../components/WoodSidingStrip'
+import type { WoodSidingWall } from '../../components/WoodSidingWall'
 import {
   computeLocalBbox,
   computeWallConfigs,
@@ -26,25 +26,25 @@ import {
   stairFootprintWorld,
   type WorldRect,
   worldRectToSlabOpening,
-} from './build'
-import { makeRoof } from './parts/RoofShape'
+} from '../build'
+import { makeRoof } from '../parts/RoofShape'
 import {
   makePositionedBalcony,
   makePositionedColumn,
   makePositionedFoundation,
   makePositionedSlab,
   makePositionedStairs,
-} from './parts/Structure'
-import type { BalconyState, BuildingState, SegmentState, ShapeInstance, WallConfig } from './state'
-import { type PartResult } from './tokens'
+} from '../parts/Structure'
+import type { BalconyState, BuildingState, SegmentState, ShapeInstance, WallConfig } from '../state'
+import { type PartResult } from '../tokens'
 import {
   assembleWall,
   mergeWalls,
   type WallAsmCtx,
   type WallPlace,
   type WallSpec,
-} from './wallAssembly'
-import { WallMaterialCache } from './wallMaterials'
+} from '../wallAssembly'
+import { WallMaterialCache } from '../wallMaterials'
 
 // Vị trí + kích thước 1 pick-box (caller tạo mesh vô hình từ đây). cx/cy/cz tâm, sx/sy/sz size, rotDeg
 // xoay quanh Y, ud = userData định danh element (instId + segIdx/opIdx/key).

@@ -54,18 +54,19 @@ persistence.ts dùng `window.*` (localStorage/FS) → **giữ ở vỏ**, import
 ### ⏳ Phase 3 (sau, optional) — workspace package
 - alias `../` đã chạy cho cả 2 → ngoài đường tới hạn. Làm khi Babylon tới.
 
-### ⏳ Phase 4 — Reorg `building/` (SAU Phase 2 — nucleus đã đông file)
-- `building/` giờ 11 .ts + 4 file lặp prefix "Building" (Building/BuildingConfig/BuildingFromPlan/BuildingFromState).
-- Target subfolder theo vai trò (hết lặp "building/Building…"):
-  ```
-  core/   turtle · build · state · tokens · rand
-  walls/  wallMaterials · wallAssembly
-  render/ fromPlan · fromState        (bỏ prefix Building)
-  preset/ Building→procedural · BuildingConfig→config
-  parts/  textures/
-  ```
-- **LÀM SAU Phase 2** (Phase 2 đổi/retire renderer → reorg trước = sửa import 2 lần). Dùng shim re-export
-  (Phase 0/1a) để mượt import path archplan + Doraemon, tránh KI-001. Thuần tổ chức, 0 đổi hành vi.
+### ✅ Phase 4 — Reorg `building/` (XONG 2026-06-01)
+- **THU HẸP vs plan ban đầu (đo churn rồi quyết):** chỉ subfolder các file "Building"; engine primitive
+  (turtle/build/state/tokens/rand/wallAssembly/wallMaterials) **GIỮ FLAT** — move chúng làm gãy 14 file
+  `parts/` (import `../tokens`) + landmine `new URL('./textures/…')` trong wallMaterials (tsc KHÔNG bắt →
+  vỡ brick-tex âm thầm), trong khi tên chúng KHÔNG lặp "Building" → lợi ích ~0, rủi ro cao. Bỏ core/walls.
+- Đã làm:
+  - `render/` ← `BuildingFromState.ts` → **`fromState.ts`** (+ `.example`)
+  - `preset/` ← `Building.ts` (giữ tên = class `Building`), `BuildingConfig.ts` → **`config.ts`**
+  - Bỏ prefix "Building" ở **FILE** (lib = building-kit → thừa); **GIỮ tên export/class** (`Building`/
+    `BuildingRenderer`/`renderBuildingState`/`BuildingPreset` — call-site project ngoài cần ngữ cảnh).
+- **Update-imports, KHÔNG shim** (shim để lại stub = không declutter): internal qua sed + external 3 dòng
+  (archplan ArchPlanLab `render/fromState`, Doraemon World `preset/Building`+`preset/config`).
+- Gate: kit tsc/eslint, archplan tsc/eslint/build, Doraemon tsc/eslint ✅. Doc-sync: README + ARCHPLAN.md.
 
 ## Rủi ro
 - Unit mm/m: lõi có schema mm + assembler m → `_segToSpec` đi cùng renderer, tài liệu hoá biên.

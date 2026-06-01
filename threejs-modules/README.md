@@ -161,18 +161,17 @@
 | `building/turtle`    | **Pure plan geometry** (turtle-walk + center/rotate → vị trí tường). Chung editor + headless. |
 | `building/wallAssembly` | **Shared wall assembler** — `assembleWall` dispatch 5 nhánh material + `mergeWalls`. Chung editor + headless. |
 | `building/wallMaterials` | **Wall material engine** — `WallMaterialCache` + surface shaders + brick-tex PBR (+`textures/bricks/`). |
-| `building/Building`  | Assembler preset → Group + config types (city runtime — Doraemon)  |
-| `building/BuildingFromPlan` | **Headless assembler** `FloorPlanJSON (AP4) → THREE.Group` (không GUI). Dùng `turtle`+`wallAssembly`. Đích cho "bảo bối". |
+| `building/preset/Building` | Assembler preset → Group + `preset/config` types (city runtime — Doraemon) |
+| `building/render/fromState` | **Renderer canonical** `BuildingState → THREE.Group` + `Placement[]` (pick). `renderBuildingState` (free fn — editor) + `class BuildingRenderer` (wrapper headless: own ctx + dispose). |
 
 ### Trạng thái headless (2026-06-01)
 
-- ✅ `turtle.ts` = single source — editor & headless hết chép tay turtle-walk (xoá drift KI-001).
-- ✅ `BuildingFromPlan` đọc **wallH per-segment** (trước ép `floorH=max` → san phẳng tường cao khác nhau).
-- ✅ **Material fidelity (Gap 1 ĐÓNG):** `wallAssembly.ts` + `wallMaterials.ts` chung → headless render
-  ĐÚNG shader-surface (brick/concrete/wood/metal/brick-tex) + brick-3d/wood-3d/wood-strip instanced,
-  hết toon phẳng. AP4 export chở đủ field material.
-- ⏳ **Gap 2 (còn):** AP4 vẫn rút gọn vài chỗ → 100% khớp editor = assembler nhận thẳng `BuildingState`.
-  → `01-Doraemon/deferred/features/building-gadget-gameplay.md`.
+- ✅ **1 renderer canonical** `render/fromState` (`renderBuildingState`) — editor + headless CHUNG, đọc
+  `BuildingState` lossless → walls/structure/roof/stairs/balcony/paint full fidelity. **Gap 2 đóng bằng construction.**
+- ✅ `turtle`/`wallAssembly`/`wallMaterials` = single source (Gap 1) — hết chép tay, hết drift KI-001.
+- ✅ **`BuildingFromPlan` (AP4 lossy) RETIRE** — dormant 0 caller; lớp AP4 export + `parts/Stair` orphan đã xoá.
+- 🗂 **Reorg folder (Phase 4):** file `Building*` → `render/` + `preset/` (bỏ prefix thừa); engine primitive
+  (`turtle`/`build`/`state`/`tokens`/`wallAssembly`/`wallMaterials`) giữ flat.
 
 ---
 
