@@ -27,7 +27,7 @@ memory `project-brick3d-accent-only` (budget luật tầng B).
 
 | Tầng | Nhận diện nằm ở | Nơi sống (folder thật) | Kỹ thuật | Cost | Có sẵn | Tương lai |
 |---|---|---|---|---|---|---|
-| **A — Bề mặt** | màu / normal / roughness | `shaders/fragment/` | TSL noise + `makeSurfaceMaterial` → merge vào bucket opaque | rẻ, merge thoải mái | BrickWall, ConcretePanel, MetalPanel, WoodPlank | trát, stucco, đá, sơn, bê tông trần, mái rơm-NHÌN-XA |
+| **A — Bề mặt** | màu / normal / roughness | `shaders/fragment/` + `shaders/ground/` (nền lô/đường) | TSL noise + `makeSurfaceMaterial` → merge vào bucket opaque | rẻ, merge thoải mái | BrickWall, ConcretePanel, MetalPanel, WoodPlank; **ground/: AsphaltGround, GrassGround** (site-kit nền cỏ) | trát, stucco, đá, sơn, bê tông trần, mái rơm-NHÌN-XA; đất/sỏi nền |
 | **B — Hình học** | silhouette ở mép | `components/` (Instanced…) | geometry thật (shell/fin/alpha-card/instanced) + shader A phủ lên | **đắt** — ăn triangle budget | InstancedBrickWall, WoodSidingWall, WoodSidingStrip | **mái tranh/rơm cận cảnh**, ngói, tôn sóng, ván lợp |
 | **C — Trong suốt** | ánh sáng xuyên qua | (chưa có — sẽ là nhánh assembler thứ 3) | `MeshPhysicalNodeMaterial` transmission/IOR/thickness | **đắt + đường render riêng** | — (chỉ có note) | kính trong, kính mờ (frosted=roughness), kính màu, polycarbonate, nước |
 | **D — Ảo / fantasy** | không có thật | `shaders/fragment/` | TSL thuần — emissive, scroll, fresnel, dissolve | rẻ | DissolveShader | hologram, lá chắn năng lượng, vật liệu phát sáng, hoạt hoạ |

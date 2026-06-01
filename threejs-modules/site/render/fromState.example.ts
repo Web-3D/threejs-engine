@@ -12,12 +12,14 @@ import { renderSiteState, type SiteRenderCtx } from './fromState'
 const group = new THREE.Group()
 const geos: THREE.BufferGeometry[] = []
 const mats: THREE.Material[] = []
-const ctx: SiteRenderCtx = { group, geos, mats }
+const shaders: { dispose(): void }[] = []
+const ctx: SiteRenderCtx = { group, geos, mats, shaders }
 
 renderSiteState(defaultSiteState(), ctx)
-console.log(`site: ${group.children.length} mesh, ${geos.length} geo, ${mats.length} mat`)
+console.log(`site: ${group.children.length} mesh, ${geos.length} geo, ${shaders.length} shader`)
 
 // Dispose (caller sở hữu resource — renderer không giữ gì).
 for (const g of geos) g.dispose()
 for (const m of mats) m.dispose()
+for (const s of shaders) s.dispose()
 group.clear()

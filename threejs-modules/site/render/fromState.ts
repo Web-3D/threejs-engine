@@ -13,13 +13,16 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
+import { GrassGround } from '../../shaders/ground/GrassGround'
 import { GROUND_PRESETS, type SiteState } from '../state'
 
 // Resource caller sở hữu — renderer build vào đây, KHÔNG dispose (giống building BuildRenderCtx).
+// shaders: vật liệu procedural (vd GrassGround) có dispose() riêng (ngoài mats phẳng).
 export interface SiteRenderCtx {
   group: THREE.Group
   geos: THREE.BufferGeometry[]
   mats: THREE.Material[]
+  shaders: { dispose(): void }[]
 }
 
 // Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0).
@@ -34,15 +37,26 @@ function buildGround(site: SiteState, ctx: SiteRenderCtx): void {
   const lw = site.lotWidth / 1000
   const ld = site.lotDepth / 1000
   const t = site.groundThick / 1000
-  const preset = GROUND_PRESETS[site.ground]
   const geo = new THREE.BoxGeometry(lw, t, ld)
-  const mat = new THREE.MeshStandardMaterial({ color: preset.color, roughness: preset.roughness })
-  const mesh = new THREE.Mesh(geo, mat)
+  const mesh = new THREE.Mesh(geo, groundMaterial(site, ctx))
   mesh.position.set(0, t / 2, 0)
   mesh.receiveShadow = true
   ctx.geos.push(geo)
-  ctx.mats.push(mat)
   ctx.group.add(mesh)
+}
+
+// grass = procedural shader (GrassGround, tier A — trông thật); soil/gravel = màu phẳng (nâng cấp sau).
+// Track đúng nơi: shader có dispose() riêng → ctx.shaders; material phẳng → ctx.mats.
+function groundMaterial(site: SiteState, ctx: SiteRenderCtx): THREE.Material {
+  if (site.ground === 'grass') {
+    const grass = new GrassGround({ scale: 1.0 })
+    ctx.shaders.push(grass)
+    return grass.getMaterial()
+  }
+  const preset = GROUND_PRESETS[site.ground]
+  const mat = new THREE.MeshStandardMaterial({ color: preset.color, roughness: preset.roughness })
+  ctx.mats.push(mat)
+  return mat
 }
 
 // Box dời sẵn về (x,y,z) — bake transform vào geometry để mergeGeometries gộp 1 mesh.

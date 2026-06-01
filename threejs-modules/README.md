@@ -51,6 +51,7 @@
 | `MetalPanel`         | Procedural corrugated metal — horizontal ridges + panel seam, galvanized variation | metal, corrugated, ridge, industrial, surface, triplanar | ✅ in-use |
 | `Weathering`         | Layered weathering overlay — moss, dirt streak, rust, rain stain (4 independent amounts) | weathering, moss, rust, dirt, aging, surface, triplanar | 🗄 idle |
 | `AsphaltGround`      | Procedural asphalt/tar road — world-space XZ, no UV, worn patches + aggregate + LOD | asphalt, tar, road, ground, world-space, no-uv | ✅ in-use |
+| `GrassGround`        | Procedural bãi cỏ/lawn — world-space XZ, no UV, patch tươi/khô + clump + blade speckle + LOD | grass, lawn, cỏ, ground, world-space, no-uv | ✅ in-use |
 
 ---
 

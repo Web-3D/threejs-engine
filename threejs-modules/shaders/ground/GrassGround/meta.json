@@ -1,0 +1,25 @@
+{
+  "name": "GrassGround",
+  "category": "shaders/ground",
+  "version": "1.0.0",
+  "description": "Procedural lawn/cỏ ground — world-space XZ, no UV. Lush↔dry patches (fbm) + clump shadows + blade speckle + screen-space normal with LOD. Matte roughness.",
+  "tags": ["grass", "lawn", "cỏ", "ground", "environment", "procedural", "world-space", "no-uv", "green"],
+  "complexity": "medium",
+  "performance-cost": "medium",
+  "performance": "1 fbm + 3 triNoise3D per fragment. Ground 1 mesh, receiveShadow. LOD-fade blade chống lấp lánh ở xa.",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "scale",      "type": "number",                    "default": "1.0",     "description": "World-space scale (lớn = feature nhỏ hơn)" },
+    { "name": "baseColor",  "type": "THREE.ColorRepresentation", "default": "0x4e7a32", "description": "Màu cỏ tươi nền" },
+    { "name": "dryColor",   "type": "THREE.ColorRepresentation", "default": "0x97a04e", "description": "Màu cỏ khô (mảng vàng)" },
+    { "name": "darkColor",  "type": "THREE.ColorRepresentation", "default": "0x2c4d22", "description": "Màu tối giữa bụi cỏ (chiều sâu)" },
+    { "name": "bladeScale", "type": "number",                    "default": "55",      "description": "Tần số lá cỏ (1/m)" },
+    { "name": "clumpScale", "type": "number",                    "default": "1.4",     "description": "Tần số bụi cỏ (1/m)" },
+    { "name": "patchScale", "type": "number",                    "default": "0.18",    "description": "Tần số mảng tươi/khô (1/m)" },
+    { "name": "dryness",    "type": "number",                    "default": "0.45",    "description": "Tỉ lệ cỏ khô [0-1]" },
+    { "name": "bumpScale",  "type": "number",                    "default": "0.5",     "description": "Cường độ normal (lá cỏ)" }
+  ],
+  "usage": "const g = new GrassGround({ scale: 1 }); mesh.material = g.getMaterial()"
+}
