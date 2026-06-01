@@ -20,6 +20,9 @@
 
 import * as THREE from 'three'
 
+import type { InstancedBrickWall } from '../components/InstancedBrickWall'
+import type { WoodSidingStrip } from '../components/WoodSidingStrip'
+import type { WoodSidingWall } from '../components/WoodSidingWall'
 import type { RidgeDir, RoofType } from './parts/RoofShape'
 import { makeRoof } from './parts/RoofShape'
 import { makeStair, type StairOpts } from './parts/Stair'
@@ -28,9 +31,16 @@ import {
   makePositionedFoundation,
   makePositionedSlab,
 } from './parts/Structure'
-import { makePositionedWall, type PositionedOpening } from './parts/WallSingle'
-import { type PartResult, WALL_COLORS } from './tokens'
+import { type PartResult } from './tokens'
 import { planBbox, planWalls, type SegPlan } from './turtle'
+import {
+  assembleWall,
+  mergeWalls,
+  type WallAsmCtx,
+  type WallPlace,
+  type WallSpec,
+} from './wallAssembly'
+import { DEFAULT_BRICK, type WallMaterial, WallMaterialCache } from './wallMaterials'
 
 // ── JSON types (AP4 — tất cả đơn vị: mét) ─────────────────────────────────────
 
@@ -43,13 +53,34 @@ interface OpeningJSON {
   yOffset: number | null
 }
 
+interface PanelJSON {
+  x: number // mét
+  y: number
+  w: number
+  h: number
+  depth: number
+  mode: 'recessed' | 'raised'
+  material: WallMaterial
+  colorIndex: number
+}
+
 interface SegmentJSON {
   length: number // mét
   wallH?: number // mét — chiều cao tường segment này (AP4 xuất per-segment); thiếu (JSON cũ) = floorH
   turnBefore: number // degrees
   colorIndex: number
   style: 'flat' | 'reveal' | 'panel'
+  // AP5 material — thiếu (AP4 cũ) → default ('none', matScale 1…) qua segToSpec
+  material?: WallMaterial
+  matScale?: number
+  paintColor?: number | null
+  mortarColor?: number
+  brickRelief?: number
+  woodReveal?: number // mét — wood-strip
+  woodButt?: number
+  woodStepTilt?: number // deg
   openings: OpeningJSON[]
+  panels?: PanelJSON[]
 }
 
 interface ColumnJSON {
@@ -162,12 +193,52 @@ function computeMaxLift(floor: FloorJSON): number {
   }, 0)
 }
 
+// SegmentJSON (AP4, mét) → WallSpec cho shared assembler. Default cho AP4 cũ thiếu field material.
+function segToSpec(seg: SegmentJSON): WallSpec {
+  return {
+    material: seg.material ?? 'none',
+    colorIndex: seg.colorIndex,
+    paintColor: seg.paintColor ?? null,
+    matScale: seg.matScale ?? 1,
+    mortarColor: seg.mortarColor ?? DEFAULT_BRICK.mortarColor,
+    brickRelief: seg.brickRelief ?? DEFAULT_BRICK.relief,
+    style: seg.style,
+    woodReveal: seg.woodReveal ?? 0.18,
+    woodButt: seg.woodButt ?? 0.012,
+    woodStepTilt: seg.woodStepTilt ?? 0,
+    openings: seg.openings.map((op) => ({
+      kind: op.type,
+      x: op.x,
+      w: op.w,
+      h: op.h,
+      yOffset: op.yOffset ?? 0, // AP4 null (cửa yOffset≤0) → 0 (chân sàn)
+      round: op.round,
+    })),
+    panels: (seg.panels ?? []).map((p) => ({
+      x: p.x,
+      y: p.y,
+      w: p.w,
+      h: p.h,
+      depth: p.depth,
+      mode: p.mode,
+      material: p.material,
+      colorIndex: p.colorIndex,
+    })),
+  }
+}
+
 // ── BuildingFromPlan ───────────────────────────────────────────────────────────
 
 export class BuildingFromPlan {
   private group: THREE.Group = new THREE.Group()
-  private parts: PartResult[] = []
+  private parts: PartResult[] = [] // structure (foundation/slab/cột/mái/cầu thang)
   private isDisposed = false
+  // Wall subsystem (shared assembler): material cache + merged geo + component instanced — dispose riêng.
+  private readonly wallCache = new WallMaterialCache()
+  private wallGeos: THREE.BufferGeometry[] = []
+  private brick3d: InstancedBrickWall[] = []
+  private wood: WoodSidingWall[] = []
+  private strip: WoodSidingStrip[] = []
 
   constructor(plan: FloorPlanJSON) {
     this._assemble(plan)
@@ -184,7 +255,16 @@ export class BuildingFromPlan {
       p.mats.forEach((m) => m.dispose())
       p.meshes.forEach((m) => m.parent?.remove(m))
     }
+    for (const g of this.wallGeos) g.dispose() // merged surface-wall geo
+    for (const w of this.brick3d) w.dispose()
+    for (const w of this.wood) w.dispose()
+    for (const w of this.strip) w.dispose()
+    this.wallCache.dispose() // material cache + brick textures
     this.parts = []
+    this.wallGeos = []
+    this.brick3d = []
+    this.wood = []
+    this.strip = []
     this.isDisposed = true
   }
 
@@ -196,6 +276,15 @@ export class BuildingFromPlan {
   private _assemble(plan: FloorPlanJSON): void {
     let yAcc = 0
     const wallBases: number[] = []
+    const ctx: WallAsmCtx = {
+      cache: this.wallCache,
+      buckets: new Map(),
+      group: this.group,
+      geos: this.wallGeos,
+      brick3d: this.brick3d,
+      wood: this.wood,
+      strip: this.strip,
+    }
     for (let fi = 0; fi < plan.floors.length; fi++) {
       const floor = plan.floors[fi]
       const isGround = fi === 0
@@ -203,44 +292,28 @@ export class BuildingFromPlan {
       wallBases.push(yAcc + maxLift)
       for (const inst of floor.instances) {
         const yLift = isGround && inst.structure.showFoundation ? inst.structure.foundH : 0
-        this._buildWalls(inst, yAcc + yLift, floor.floorH)
+        this._buildWalls(inst, yAcc + yLift, floor.floorH, ctx)
         this._buildStructure(inst, yAcc + yLift, isGround, floor.floorH)
       }
       yAcc += maxLift + floor.floorH
     }
+    mergeWalls(ctx) // gộp surface-wall cùng key sau khi gom hết tầng
     for (const stair of plan.stairs ?? []) this._buildStair(stair, plan.floors, wallBases)
   }
 
-  private _buildWalls(inst: InstanceJSON, wallBase: number, floorH: number): void {
+  // Tường: shared assembleWall (đúng material như editor — brick/wood/metal/concrete/brick-3d/…).
+  private _buildWalls(inst: InstanceJSON, wallBase: number, floorH: number, ctx: WallAsmCtx): void {
     for (const t of traceTurtle(inst, inst.wallDepth, wallBase, floorH)) {
-      const openings: PositionedOpening[] = t.seg.openings.map((op) => ({
-        type: op.type,
-        x: op.x,
-        w: op.w,
-        h: op.h,
-        ...(op.round && { round: op.round }),
-        ...(op.yOffset != null && { yOffset: op.yOffset }),
-      }))
-      const wallMat = new THREE.MeshToonMaterial({
-        color: WALL_COLORS[t.seg.colorIndex % WALL_COLORS.length],
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1,
-      })
-      const res = makePositionedWall({
+      const place: WallPlace = {
         w: t.w,
         h: t.h,
         depth: t.depth,
-        style: t.seg.style,
-        openings,
-        wallMaterial: wallMat,
+        rotationY: t.rotationY,
         xOffset: t.xOffset,
         zOffset: t.zOffset,
         yBase: t.yBase,
-        rotationY: t.rotationY,
-      })
-      res.mats.push(wallMat) // take ownership — wallMaterial không nằm trong res.mats mặc định
-      this._push(res)
+      }
+      assembleWall(place, segToSpec(t.seg), ctx)
     }
   }
 
