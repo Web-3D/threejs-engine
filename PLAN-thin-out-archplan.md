@@ -46,10 +46,10 @@ persistence.ts dùng `window.*` (localStorage/FS) → **giữ ở vỏ**, import
 - Gap 2 đóng bằng construction: chỉ còn 1 renderer (renderBuildingState) đọc BuildingState lossless →
   stairs/balcony/roof-rot/paint full fidelity. KHÔNG còn renderer thứ 2 để drift.
 - Gate: kit tsc/eslint, archplan tsc/build, Doraemon tsc ✅. (Không test runner → smoke = example compile-checked + editor live.)
-- **⚠️ 2 orphan lộ ra do retire — CHỜ bác quyết (chưa tự xoá):**
-  - `parts/Stair.ts` (makeStair) — chỉ BuildingFromPlan dùng → 0 caller. Editor/headless dùng makePositionedStairs.
-  - AP4 export (`buildingStateToJSON`) — reader retire nhưng nút "📄 JSON" editor còn dùng (download ngoài).
-    Lựa chọn: giữ (external interchange) / đổi nút sang serializeDesign (lossless) / bỏ.
+- **✅ 2 orphan do retire — đã giải quyết:**
+  - `parts/Stair.ts` (makeStair) — **XOÁ** (d989417). Editor/headless dùng makePositionedStairs (builder khác, proven).
+  - AP4 export — nút "📄 JSON" **đổi sang `serializeDesign`** (lossless, Load lại được) + **xoá 4 hàm AP4**
+    (buildingStateToJSON/instanceToJSON/segmentToJSON/structureToJSON). Lớp serialization lossy retire TRỌN.
 
 ### ⏳ Phase 3 (sau, optional) — workspace package
 - alias `../` đã chạy cho cả 2 → ngoài đường tới hạn. Làm khi Babylon tới.
