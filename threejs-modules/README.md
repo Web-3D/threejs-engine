@@ -175,6 +175,22 @@
 
 ---
 
+## Site (sân vườn / lô)
+
+> 🌱 **G0 in-use** — Bộ sinh **site** quanh nhà (nền + hàng rào) → **lô = building + site**, đơn vị thả vào
+> quy hoạch khu phố. Anh em `building/`, **ĐỘC LẬP** nó (footprint truyền vào dạng m²). Import qua alias
+> `threejs-modules/site/*`. Dùng bởi: **archplan editor** (panel 🌳 Sân vườn). Plan: [`../PLAN-lot-site-garden.md`](../PLAN-lot-site-garden.md).
+
+| Mục | Mô tả |
+| --- | ----- |
+| `site/state` | `SiteState` (nền + rào) + factory + `GROUND_PRESETS` + `coverageStats` (建ぺい率 đối chiếu nhà/lô) + `parseSite` |
+| `site/render/fromState` | `renderSiteState(site, ctx)` headless — nền slab (dày 1–10cm) + hàng rào (gỗ/tường, merged 1 mesh) |
+
+- **Phases:** G0 nền+rào ✅ · G1 thực vật (instanced+LOD) ⏳ · G2 đá triplanar ⏳ · G3 hồ cá (tier C) ⏳.
+- **Coupling:** caller bật `site.show` → đôn building lên `groundThick` (foundation nằm trên mặt nền).
+
+---
+
 ## Thêm module mới
 
 Copy từ `_template/` trong category phù hợp.
