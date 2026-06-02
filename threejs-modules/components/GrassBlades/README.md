@@ -39,6 +39,12 @@ grass.dispose() // geometry + NodeMaterial + gỡ mesh
 | `baseColor` / `tipColor` | Color | 0x39611f / 0x9bbb55 | Gốc tối → ngọn sáng |
 | `wind` | number | 0.5 | Cường độ gió [0–1] |
 | `windSpeed` | number | 1.6 | Tốc độ đong đưa |
+| `curve` | number | 0.3 | Độ cong tĩnh — ngả ngọn cả khi lặng gió [0–1.5] |
+| `twist` | number | 0.6 | Độ xoắn ribbon ngọn (rad) [0–1.5] |
+| `taper` | number | 0.88 | Độ nhọn ngọn: 1=nhọn, 0=đầu bằng [0–1] |
+
+> **Hình dáng (curve/twist/taper) áp ở vertex shader bằng uniform** → `setCurve/setTwist/setTaper` chỉnh
+> LIVE, không dựng lại material. Geometry chỉ là strip thẳng (rebuild khi đổi `bladeWidth/segments`).
 
 ## Budget (luật tier-B — bắt buộc)
 

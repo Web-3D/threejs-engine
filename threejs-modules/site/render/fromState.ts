@@ -50,6 +50,9 @@ function buildVegetation(site: SiteState, ctx: SiteRenderCtx): void {
     windSpeed: g.windSpeed,
     baseColor: g.baseColor,
     tipColor: g.tipColor,
+    curve: g.curve,
+    twist: g.twist,
+    taper: g.taper,
   })
   ctx.group.add(blades.getMesh())
   ctx.shaders.push(blades)

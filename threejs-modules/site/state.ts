@@ -32,6 +32,9 @@ export interface Grass3DConfig {
   windSpeed: number // tốc độ đong đưa
   baseColor: number // màu gốc (tối)
   tipColor: number // màu ngọn (sáng)
+  curve: number // [0–1.5] độ cong tĩnh (ngả ngọn khi lặng gió)
+  twist: number // [0–1.5] độ xoắn ribbon ngọn (rad)
+  taper: number // [0–1] độ nhọn ngọn (1=nhọn, 0=đầu bằng)
 }
 
 export interface SiteState {
@@ -74,6 +77,9 @@ export function defaultSiteState(): SiteState {
       windSpeed: 1.6,
       baseColor: 0x39611f,
       tipColor: 0x9bbb55,
+      curve: 0.3,
+      twist: 0.6,
+      taper: 0.88,
     },
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
   }
@@ -134,6 +140,9 @@ function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig)
     windSpeed: clamp(num(r.windSpeed, d.windSpeed), 0, 6),
     baseColor: parseColor(r.baseColor, d.baseColor),
     tipColor: parseColor(r.tipColor, d.tipColor),
+    curve: clamp(num(r.curve, d.curve), 0, 1.5),
+    twist: clamp(num(r.twist, d.twist), 0, 1.5),
+    taper: clamp(num(r.taper, d.taper), 0, 1),
   }
 }
 
