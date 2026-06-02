@@ -77,7 +77,7 @@ export function defaultSiteState(): SiteState {
       enabled: true,
       density: 100,
       height: 0.28,
-      bladeWidth: 0.024,
+      bladeWidth: 0.004, // 4mm — cỏ thuôn dài, KHÔNG bè (24mm cũ = lá chuối)
       wind: 0.5,
       windSpeed: 1.6,
       baseColor: 0x39611f,
@@ -85,7 +85,7 @@ export function defaultSiteState(): SiteState {
       edgeColor: 0x2c4a1a,
       curve: 0.3,
       twist: 0.6,
-      taper: 1.0,
+      taper: 1.3, // >1 = nhọn thuôn 2 đầu (ellipse mảnh)
       heightVar: 0.35,
       leanAmt: 0,
       leanAngle: 0,
@@ -145,7 +145,7 @@ function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig)
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     density: clamp(num(r.density, d.density), 10, 400),
     height: clamp(num(r.height, d.height), 0.1, 0.6),
-    bladeWidth: clamp(num(r.bladeWidth, d.bladeWidth), 0.001, 0.01),
+    bladeWidth: clamp(num(r.bladeWidth, d.bladeWidth), 0.001, 0.012),
     wind: clamp(num(r.wind, d.wind), 0, 1),
     windSpeed: clamp(num(r.windSpeed, d.windSpeed), 0, 6),
     baseColor: parseColor(r.baseColor, d.baseColor),

@@ -26,18 +26,25 @@ export interface SiteRenderCtx {
   shaders: { dispose(): void }[]
 }
 
-// Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0).
-export function renderSiteState(site: SiteState, ctx: SiteRenderCtx): void {
-  if (!site.show) return
+// Handle trả về caller: ref tới cỏ 3D đang sống → tinh chỉnh uniform live (KHÔNG instanceof = né lỗi
+// alias/relative khác class identity → live no-op).
+export interface SiteHandle {
+  grass: GrassBlades | null
+}
+
+// Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0). Trả handle (grass) cho live-tune.
+export function renderSiteState(site: SiteState, ctx: SiteRenderCtx): SiteHandle {
+  if (!site.show) return { grass: null }
   buildGround(site, ctx)
-  buildVegetation(site, ctx)
+  const grass = buildVegetation(site, ctx)
   if (site.fence.enabled) buildFence(site, ctx)
+  return { grass }
 }
 
 // Cỏ 3D nhú lên (tier B — GrassBlades) phủ lên nền cỏ. Chỉ khi ground='grass' & bật. Gốc ở mặt trên nền.
 // dispose qua ctx.shaders (GrassBlades.dispose gỡ mesh + geo + mat). Gió chạy bằng built-in time.
-function buildVegetation(site: SiteState, ctx: SiteRenderCtx): void {
-  if (site.ground !== 'grass' || !site.grass3d.enabled) return
+function buildVegetation(site: SiteState, ctx: SiteRenderCtx): GrassBlades | null {
+  if (site.ground !== 'grass' || !site.grass3d.enabled) return null
   const g = site.grass3d
   const blades = new GrassBlades({
     width: site.lotWidth / 1000,
@@ -61,6 +68,7 @@ function buildVegetation(site: SiteState, ctx: SiteRenderCtx): void {
   })
   ctx.group.add(blades.getMesh())
   ctx.shaders.push(blades)
+  return blades
 }
 
 // Nền = slab dày: đáy y=0, top y=t. PBR nhận IBL + đổ bóng. Lô tâm world (0,0).

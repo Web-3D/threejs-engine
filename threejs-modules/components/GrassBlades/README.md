@@ -38,8 +38,8 @@ grass.dispose() // geometry + NodeMaterial + gỡ mesh
 | `baseY` | number | 0.01 | Cao độ gốc lá (m) = mặt trên nền |
 | `density` | number | 100 | Lá/m² |
 | `maxBlades` | number | 24000 | Trần count (budget, accent-only) |
-| `bladeHeight` / `bladeWidth` | number | 0.28 / 0.024 | Kích thước lá (m) |
-| `segments` | number | 4 | Segment dọc (cong mượt) |
+| `bladeHeight` / `bladeWidth` | number | 0.28 / 0.004 | Kích thước lá (m) — 4mm = thuôn dài |
+| `segments` | number | 6 | Segment dọc (cong mượt, ellipse mịn) |
 | `baseColor`/`tipColor`/`edgeColor` | Color | 0x39611f/0x9bbb55/0x2c4a1a | Dọc gốc→ngọn + ngang mép |
 | `wind` | number | 0.5 | Cường độ gió [0–1] |
 | `windSpeed` | number | 1.6 | Tốc độ đong đưa |

@@ -47,8 +47,8 @@ const DEFAULTS = {
   density: 100, // lá/m²
   maxBlades: 24000, // trần count (budget) — accent-only
   bladeHeight: 0.28, // m
-  bladeWidth: 0.024, // m (đáy)
-  segments: 4, // số segment dọc (cong mượt)
+  bladeWidth: 0.004, // m (4mm — thuôn dài, không bè)
+  segments: 6, // số segment dọc (cong mượt, ellipse mịn)
   baseColor: 0x39611f as THREE.ColorRepresentation, // gốc tối (gradient dọc, đáy)
   tipColor: 0x9bbb55 as THREE.ColorRepresentation, // ngọn sáng (gradient dọc, đỉnh)
   edgeColor: 0x2c4a1a as THREE.ColorRepresentation, // mép tối (gradient ngang, ngoài rìa lá)
