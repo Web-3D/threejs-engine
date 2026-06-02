@@ -49,7 +49,8 @@ là domain building thuần → KHÔNG cho nó biết `SiteState` (tránh buildi
 ### ✅ G0 — Lô nền (XONG 2026-06-02) — nền + rào + đặt nhà + readout
 - **Đã ship:** lõi `site/state` + `site/render/fromState` (nền slab dày 1–10cm đáy y=0; rào gỗ cọc+thanh /
   tường liền, merged 1 mesh); **nền cỏ = `GrassGround` procedural TSL shader** (tier A, `shaders/ground/`,
-  patch tươi/khô + clump + blade speckle + LOD); đất/sỏi màu phẳng;
+  patch 3-tông sage/tươi/khô + clump AO + macro nắng-bóng + **gió lùa** `setTime` + blade streak có hướng + LOD);
+  đất/sỏi màu phẳng;
   vỏ panel 🌳 Sân vườn (`gui/site.ts`) + bảng số liệu live (lô/nhà/phủ%/sân,
   cảnh báo >60%); `_renderSite` đôn building+pick lên `groundThick` khi `show`; DesignStore compose `site`
   (building v10 bất biến). Gate: kit+archplan tsc/eslint/build + Doraemon tsc ✅. **Mắt :3002 — chờ NgQuan.**
