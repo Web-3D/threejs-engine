@@ -75,6 +75,9 @@ là domain building thuần → KHÔNG cho nó biết `SiteState` (tránh buildi
   structural (mật độ/cao/rộng lá → dựng lại khi BUÔNG) vs uniform (gió/tốc độ/màu gốc-ngọn → LIVE qua
   `ctx.tuneGrass` trên instance đang sống, né recompile NodeMaterial). State `grass3d` mở rộng (persist-safe).
   Panel Tinh chỉnh = nơi gắn decor/effect sau (đá/…) — thêm section, KHÔNG xây framework. Cặp tier-A = `GrassGround`.
+  Hình dáng nâng cấp (2026-06-02): lá **ellipse thon 2 đầu** (`pow(sin(hf·π), taper)`), **màu 2 trục** (dọc gốc→ngọn +
+  ngang giữa→mép), **cao-thấp ngẫu nhiên** + **ngả 1 chiều** (un-rotate world→local theo rotY per-lá), **đổ bóng**
+  (receiveShadow luôn bật + castShadow toggle). Tất cả uniform → LIVE; data2 vec2 (heightSeed, rotY) per-lá.
 - **Gate:** kit tsc/eslint/validate + archplan tsc/eslint/build ✅. **Mắt :3002 — chờ NgQuan** (runtime WebGPU:
   instancedBufferAttribute + positionNode chỉ xác nhận được bằng mắt).
 - **Còn (deferred):** LOD-theo-camera (BẮT BUỘC trước khi bật nhiều lô/city — cap chỉ an toàn 1 lô);

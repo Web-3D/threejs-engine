@@ -6,12 +6,15 @@ Rút gọn kỹ thuật Ghost of Tsushima cho web/WebGPU. Cặp với [`GrassGro
 
 ## Kỹ thuật
 
-1. **1 lá** = strip vài segment (dựng theo mét), thon dần về ngọn — vài triangle/lá.
-2. **InstancedMesh** rải N lá (jitter-grid trong rectangle); mỗi lá scale đều + xoay Y + tint random.
-3. **Vertex-wind (TSL)**: gốc đứng yên, ngọn cong — `bend ∝ (y/H)²`; `sin(time)` + flutter; biên độ theo `wind`.
-4. **Phase per-lá từ world-XZ** (gust trôi trong không gian) — bake qua `instancedBufferAttribute(vec4)`.
+1. **1 lá** = strip thẳng (dựng theo mét); **silhouette ellipse thon 2 đầu** áp ở vertex shader `pow(sin(hf·π), taper)`.
+2. **InstancedMesh** rải N lá (jitter-grid); mỗi lá xoay Y + tint random; **cao-thấp ngẫu nhiên** (`heightVar`).
+3. **Vertex (TSL)**: ellipse → twist (ribbon quanh Y) → lean = cong tĩnh + gió (`bend ∝ (y/H)²`) + **ngả 1 chiều** (world).
+4. **Phase per-lá từ world-XZ** (gust trôi) — bake `instancedBufferAttribute(vec4)` + vec2 (heightSeed, rotY).
+5. **Màu 2 trục**: DỌC gốc→ngọn (`baseColor`→`tipColor`) + NGANG giữa→mép (`edgeColor`) + AO gốc + tint.
+6. **Đổ bóng**: `receiveShadow` luôn bật (nhận bóng nhà); `castShadow` tùy chọn (nặng, lá mảnh răng cưa).
 
 > Gió chạy bằng built-in `time` node (tự tăng) — **không cần** gọi update mỗi frame.
+> Hình dáng/màu/gió/ngả/đổ-bóng đều **uniform → setter LIVE** (không dựng lại material).
 
 ## Usage
 
@@ -20,8 +23,9 @@ import { GrassBlades } from 'threejs-modules/components/GrassBlades'
 
 const grass = new GrassBlades({ width: 12, depth: 9.6, baseY: 0.01, density: 100 })
 scene.add(grass.getMesh())
-// Live (uniform — KHÔNG dựng lại material): gió/màu tinh chỉnh tức thì
-// grass.setWind(0.7); grass.setWindSpeed(2.0); grass.setColors(0x39611f, 0x9bbb55)
+// Live (uniform — KHÔNG dựng lại): gió/màu/hình dáng tinh chỉnh tức thì
+// grass.setWind(0.7); grass.setColors(0x39611f, 0x9bbb55, 0x2c4a1a)
+// grass.setTaper(1.4); grass.setHeightVar(0.5); grass.setLean(0.6, Math.PI/2); grass.setCastShadow(true)
 // Structural (density/bladeHeight/bladeWidth/segments) → tạo instance MỚI (recompile) — đừng gọi mỗi frame
 grass.dispose() // geometry + NodeMaterial + gỡ mesh
 ```
@@ -36,15 +40,18 @@ grass.dispose() // geometry + NodeMaterial + gỡ mesh
 | `maxBlades` | number | 24000 | Trần count (budget, accent-only) |
 | `bladeHeight` / `bladeWidth` | number | 0.28 / 0.024 | Kích thước lá (m) |
 | `segments` | number | 4 | Segment dọc (cong mượt) |
-| `baseColor` / `tipColor` | Color | 0x39611f / 0x9bbb55 | Gốc tối → ngọn sáng |
+| `baseColor`/`tipColor`/`edgeColor` | Color | 0x39611f/0x9bbb55/0x2c4a1a | Dọc gốc→ngọn + ngang mép |
 | `wind` | number | 0.5 | Cường độ gió [0–1] |
 | `windSpeed` | number | 1.6 | Tốc độ đong đưa |
 | `curve` | number | 0.3 | Độ cong tĩnh — ngả ngọn cả khi lặng gió [0–1.5] |
 | `twist` | number | 0.6 | Độ xoắn ribbon ngọn (rad) [0–1.5] |
-| `taper` | number | 0.88 | Độ nhọn ngọn: 1=nhọn, 0=đầu bằng [0–1] |
+| `taper` | number | 1.0 | Độ thon ellipse 2 đầu (mũ pow(sin)): 1=ellipse, >1=nhọn, <1=bầu [0.3–2.5] |
+| `heightVar` | number | 0.35 | Độ random cao-thấp lá [0–1] |
+| `leanAmt`/`leanAngle` | number | 0 / 0 | Ngả 1 chiều (cả bãi) + hướng (rad) |
+| `castShadow` | boolean | false | Đổ bóng (nặng + lá mảnh răng cưa) |
 
-> **Hình dáng (curve/twist/taper) áp ở vertex shader bằng uniform** → `setCurve/setTwist/setTaper` chỉnh
-> LIVE, không dựng lại material. Geometry chỉ là strip thẳng (rebuild khi đổi `bladeWidth/segments`).
+> **Hình dáng/màu/gió/ngả/đổ-bóng đều uniform** → `setTaper/setCurve/setTwist/setHeightVar/setLean/setColors/setCastShadow`
+> chỉnh **LIVE**, không dựng lại material. Geometry chỉ strip thẳng (rebuild khi đổi `bladeWidth/segments`).
 
 ## Budget (luật tier-B — bắt buộc)
 

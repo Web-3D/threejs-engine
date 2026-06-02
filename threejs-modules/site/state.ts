@@ -30,11 +30,16 @@ export interface Grass3DConfig {
   bladeWidth: number // m — rộng lá đáy
   wind: number // [0–1] cường độ gió
   windSpeed: number // tốc độ đong đưa
-  baseColor: number // màu gốc (tối)
-  tipColor: number // màu ngọn (sáng)
+  baseColor: number // màu gốc (gradient dọc, đáy)
+  tipColor: number // màu ngọn (gradient dọc, đỉnh)
+  edgeColor: number // màu mép (gradient ngang, rìa lá)
   curve: number // [0–1.5] độ cong tĩnh (ngả ngọn khi lặng gió)
   twist: number // [0–1.5] độ xoắn ribbon ngọn (rad)
-  taper: number // [0–1] độ nhọn ngọn (1=nhọn, 0=đầu bằng)
+  taper: number // [0.3–2.5] độ thon ellipse 2 đầu (mũ pow(sin): 1=ellipse, >1=nhọn)
+  heightVar: number // [0–1] độ random cao-thấp lá
+  leanAmt: number // [0–1.5] ngả theo 1 chiều (cả bãi cùng hướng)
+  leanAngle: number // hướng ngả (rad)
+  shadow: boolean // đổ bóng (cast) — nặng + lá mảnh răng cưa
 }
 
 export interface SiteState {
@@ -77,9 +82,14 @@ export function defaultSiteState(): SiteState {
       windSpeed: 1.6,
       baseColor: 0x39611f,
       tipColor: 0x9bbb55,
+      edgeColor: 0x2c4a1a,
       curve: 0.3,
       twist: 0.6,
-      taper: 0.88,
+      taper: 1.0,
+      heightVar: 0.35,
+      leanAmt: 0,
+      leanAngle: 0,
+      shadow: false,
     },
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
   }
@@ -140,9 +150,14 @@ function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig)
     windSpeed: clamp(num(r.windSpeed, d.windSpeed), 0, 6),
     baseColor: parseColor(r.baseColor, d.baseColor),
     tipColor: parseColor(r.tipColor, d.tipColor),
+    edgeColor: parseColor(r.edgeColor, d.edgeColor),
     curve: clamp(num(r.curve, d.curve), 0, 1.5),
     twist: clamp(num(r.twist, d.twist), 0, 1.5),
-    taper: clamp(num(r.taper, d.taper), 0, 1),
+    taper: clamp(num(r.taper, d.taper), 0.3, 2.5),
+    heightVar: clamp(num(r.heightVar, d.heightVar), 0, 1),
+    leanAmt: clamp(num(r.leanAmt, d.leanAmt), 0, 1.5),
+    leanAngle: num(r.leanAngle, d.leanAngle),
+    shadow: typeof r.shadow === 'boolean' ? r.shadow : d.shadow,
   }
 }
 

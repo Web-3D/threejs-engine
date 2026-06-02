@@ -29,9 +29,11 @@ import {
   instancedBufferAttribute,
   mix,
   positionLocal,
+  pow,
   sin,
   time,
   uniform,
+  vec2,
   vec3,
 } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
@@ -47,13 +49,18 @@ const DEFAULTS = {
   bladeHeight: 0.28, // m
   bladeWidth: 0.024, // m (đáy)
   segments: 4, // số segment dọc (cong mượt)
-  baseColor: 0x39611f as THREE.ColorRepresentation, // gốc tối
-  tipColor: 0x9bbb55 as THREE.ColorRepresentation, // ngọn sáng
+  baseColor: 0x39611f as THREE.ColorRepresentation, // gốc tối (gradient dọc, đáy)
+  tipColor: 0x9bbb55 as THREE.ColorRepresentation, // ngọn sáng (gradient dọc, đỉnh)
+  edgeColor: 0x2c4a1a as THREE.ColorRepresentation, // mép tối (gradient ngang, ngoài rìa lá)
   wind: 0.5, // [0–1]
   windSpeed: 1.6, // tốc độ đong đưa
   curve: 0.3, // độ cong tĩnh (ngả ngọn cả khi lặng gió) [0–1.5]
   twist: 0.6, // độ xoắn ribbon ở ngọn (rad) [0–1.5]
-  taper: 0.88, // độ nhọn: 1=nhọn hẳn, 0=đầu bằng (như lá) [0–1]
+  taper: 1.0, // độ thon ellipse 2 đầu = mũ pow(sin): 1=ellipse, >1=nhọn 2 đầu, <1=bầu [0.3–2.5]
+  heightVar: 0.35, // độ random cao-thấp [0–1] (0=đều, 0.5=cao 0.5–1.0×)
+  leanAmt: 0, // ngả theo 1 chiều (cả bãi cùng hướng) [0–1.5]
+  leanAngle: 0, // hướng ngả (rad, quanh trục Y world)
+  castShadow: false, // đổ bóng (nặng + lá mảnh dễ răng cưa) — default tắt
 }
 
 export interface GrassBladesOptions {
@@ -73,10 +80,12 @@ export interface GrassBladesOptions {
   bladeWidth?: number
   /** Segment dọc lá. Default 4 */
   segments?: number
-  /** Màu gốc (tối). Default 0x39611f */
+  /** Màu gốc (gradient dọc, đáy). Default 0x39611f */
   baseColor?: THREE.ColorRepresentation
-  /** Màu ngọn (sáng). Default 0x9bbb55 */
+  /** Màu ngọn (gradient dọc, đỉnh). Default 0x9bbb55 */
   tipColor?: THREE.ColorRepresentation
+  /** Màu mép (gradient ngang, rìa lá). Default 0x2c4a1a */
+  edgeColor?: THREE.ColorRepresentation
   /** Cường độ gió [0–1]. Default 0.5 */
   wind?: number
   /** Tốc độ gió. Default 1.6 */
@@ -85,8 +94,16 @@ export interface GrassBladesOptions {
   curve?: number
   /** Độ xoắn ribbon ở ngọn (rad) [0–1.5]. Default 0.6 */
   twist?: number
-  /** Độ nhọn ngọn: 1=nhọn, 0=đầu bằng [0–1]. Default 0.88 */
+  /** Độ thon ellipse 2 đầu (mũ pow(sin)): 1=ellipse, >1=nhọn, <1=bầu [0.3–2.5]. Default 1.0 */
   taper?: number
+  /** Độ random cao-thấp lá [0–1]. Default 0.35 */
+  heightVar?: number
+  /** Ngả theo 1 chiều (cả bãi cùng hướng) [0–1.5]. Default 0 */
+  leanAmt?: number
+  /** Hướng ngả (rad). Default 0 */
+  leanAngle?: number
+  /** Đổ bóng (cast). Default false (nặng + lá mảnh răng cưa). */
+  castShadow?: boolean
 }
 
 export class GrassBlades {
@@ -96,31 +113,43 @@ export class GrassBlades {
   private isDisposed = false
 
   private readonly bladeHeight: number
+  private readonly bladeWidth: number
   private readonly count: number
   private readonly uWind: ReturnType<typeof uniform>
   private readonly uWindSpeed: ReturnType<typeof uniform>
   private readonly uBase: ReturnType<typeof uniform>
   private readonly uTip: ReturnType<typeof uniform>
+  private readonly uEdge: ReturnType<typeof uniform>
   private readonly uCurve: ReturnType<typeof uniform>
   private readonly uTwist: ReturnType<typeof uniform>
   private readonly uTaper: ReturnType<typeof uniform>
+  private readonly uHeightVar: ReturnType<typeof uniform>
+  private readonly uLeanAmt: ReturnType<typeof uniform>
+  private readonly uLeanAngle: ReturnType<typeof uniform>
   private dataNode: TSLNode | null = null
+  private data2Node: TSLNode | null = null // vec2 per-lá: (heightSeed, rotY) — height-var + ngả-1-chiều
 
   constructor(opts: GrassBladesOptions = {}) {
     const o = { ...DEFAULTS, ...opts }
     this.bladeHeight = o.bladeHeight
+    this.bladeWidth = o.bladeWidth
     this.count = Math.max(1, Math.min(o.maxBlades, Math.round(o.density * o.width * o.depth)))
     this.uWind = uniform(o.wind)
     this.uWindSpeed = uniform(o.windSpeed)
     this.uBase = uniform(new THREE.Color(o.baseColor))
     this.uTip = uniform(new THREE.Color(o.tipColor))
+    this.uEdge = uniform(new THREE.Color(o.edgeColor))
     this.uCurve = uniform(o.curve)
     this.uTwist = uniform(o.twist)
     this.uTaper = uniform(o.taper)
+    this.uHeightVar = uniform(o.heightVar)
+    this.uLeanAmt = uniform(o.leanAmt)
+    this.uLeanAngle = uniform(o.leanAngle)
 
     this.geo = this._buildBladeGeo(o)
-    const data = this._scatter(o)
+    const { data, data2 } = this._scatter(o)
     this.dataNode = instancedBufferAttribute(data, 'vec4') as TSLNode
+    this.data2Node = instancedBufferAttribute(data2, 'vec2') as TSLNode
 
     this.material = new MeshStandardNodeMaterial()
     this.material.positionNode = this._windNode()
@@ -130,10 +159,10 @@ export class GrassBlades {
     this.material.side = THREE.DoubleSide
 
     this.mesh = new THREE.InstancedMesh(this.geo, this.material, this.count)
-    this.mesh.castShadow = false
-    this.mesh.receiveShadow = false
+    this.mesh.castShadow = o.castShadow
+    this.mesh.receiveShadow = true // nhận bóng nhà đổ xuống (rẻ) — gốc cỏ tối khi trong bóng
     this.mesh.frustumCulled = false // 1 draw, vertex-wind làm bound lệch → tắt cho an toàn
-    this._applyMatrices(this.mesh, o, data)
+    this._applyMatrices(this.mesh, o, data, data2)
   }
 
   /** Cường độ gió [0–1]. */
@@ -148,11 +177,16 @@ export class GrassBlades {
     this.uWindSpeed.value = Math.max(0, v)
   }
 
-  /** Màu gốc + ngọn (live, không dựng lại material). */
-  setColors(base: THREE.ColorRepresentation, tip: THREE.ColorRepresentation): void {
+  /** Màu gốc/ngọn (gradient dọc) + mép (gradient ngang) — live, không dựng lại material. */
+  setColors(
+    base: THREE.ColorRepresentation,
+    tip: THREE.ColorRepresentation,
+    edge: THREE.ColorRepresentation
+  ): void {
     if (this.isDisposed) return
     ;(this.uBase.value as THREE.Color).set(base)
     ;(this.uTip.value as THREE.Color).set(tip)
+    ;(this.uEdge.value as THREE.Color).set(edge)
   }
 
   /** Độ cong tĩnh (ngả ngọn) [0–1.5]. Live. */
@@ -171,6 +205,25 @@ export class GrassBlades {
   setTaper(v: number): void {
     if (this.isDisposed) return
     this.uTaper.value = Math.max(0, Math.min(1, v))
+  }
+
+  /** Độ random cao-thấp [0–1]. Live. */
+  setHeightVar(v: number): void {
+    if (this.isDisposed) return
+    this.uHeightVar.value = Math.max(0, Math.min(1, v))
+  }
+
+  /** Ngả 1 chiều: biên độ [0–1.5] + hướng (rad). Live. */
+  setLean(amount: number, angleRad: number): void {
+    if (this.isDisposed) return
+    this.uLeanAmt.value = Math.max(0, Math.min(1.5, amount))
+    this.uLeanAngle.value = angleRad
+  }
+
+  /** Bật/tắt đổ bóng (cast). Live — nặng + lá mảnh răng cưa. */
+  setCastShadow(on: boolean): void {
+    if (this.isDisposed || !this.mesh) return
+    this.mesh.castShadow = on
   }
 
   getMesh(): THREE.InstancedMesh {
@@ -192,12 +245,13 @@ export class GrassBlades {
     this.geo = null
     this.material = null
     this.dataNode = null
+    this.data2Node = null
     this.isDisposed = true
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
 
-  // 1 lá = strip thẳng theo MÉT (y: 0→H, x: ±W/2 hằng). Taper/nhọn áp ở vertex shader (uTaper, live). Normal +Z.
+  // 1 lá = strip thẳng theo MÉT (y: 0→H, x: ±W/2 hằng). Ellipse thon-2-đầu áp ở vertex shader (uTaper, live). Normal +Z.
   private _buildBladeGeo(o: typeof DEFAULTS): THREE.BufferGeometry {
     const { segments: S, bladeHeight: H, bladeWidth: W } = o
     const pos: number[] = []
@@ -220,9 +274,11 @@ export class GrassBlades {
     return g
   }
 
-  // Bake per-lá: vec4 (worldX, worldZ, phaseJitter, tint) cho shader đọc qua instancedBufferAttribute.
-  private _scatter(o: typeof DEFAULTS): Float32Array {
+  // Bake per-lá: data vec4 (worldX, worldZ, phaseJitter, tint) + data2 vec2 (heightSeed, rotY).
+  // rotY lưu lại (không random ở _applyMatrices) → shader đọc để un-rotate ngả-1-chiều về local.
+  private _scatter(o: typeof DEFAULTS): { data: Float32Array; data2: Float32Array } {
     const data = new Float32Array(this.count * 4)
+    const data2 = new Float32Array(this.count * 2)
     const cols = Math.max(1, Math.ceil(Math.sqrt(this.count * (o.width / o.depth))))
     const rows = Math.ceil(this.count / cols)
     const cw = o.width / cols
@@ -230,47 +286,43 @@ export class GrassBlades {
     for (let n = 0; n < this.count; n++) {
       const c = n % cols
       const r = Math.floor(n / cols)
-      const x = -o.width / 2 + (c + Math.random()) * cw
-      const z = -o.depth / 2 + (r + Math.random()) * cd
-      data[n * 4] = x
-      data[n * 4 + 1] = z
+      data[n * 4] = -o.width / 2 + (c + Math.random()) * cw
+      data[n * 4 + 1] = -o.depth / 2 + (r + Math.random()) * cd
       data[n * 4 + 2] = Math.random() * 6.283
       data[n * 4 + 3] = Math.random()
+      data2[n * 2] = Math.random() // heightSeed [0,1]
+      data2[n * 2 + 1] = Math.random() * 6.283 // rotY
     }
-    return data
+    return { data, data2 }
   }
 
-  // Đặt transform per-lá: dời (x,baseY,z), xoay Y random (đầy đặn mọi hướng), scale đều random.
-  // data = mảng đã bake ở _scatter (worldX, worldZ tại n*4, n*4+1) → khớp phase/tint trong shader.
-  private _applyMatrices(mesh: THREE.InstancedMesh, o: typeof DEFAULTS, data: Float32Array): void {
+  // Đặt transform per-lá: dời (worldX,baseY,worldZ) + xoay Y = rotY đã bake (scale 1 — cao-thấp ở shader).
+  private _applyMatrices(
+    mesh: THREE.InstancedMesh,
+    o: typeof DEFAULTS,
+    data: Float32Array,
+    data2: Float32Array
+  ): void {
     const m = new THREE.Matrix4()
     const q = new THREE.Quaternion()
     const up = new THREE.Vector3(0, 1, 0)
     const p = new THREE.Vector3()
-    const s = new THREE.Vector3()
+    const s = new THREE.Vector3(1, 1, 1)
     for (let n = 0; n < this.count; n++) {
       p.set(data[n * 4], o.baseY, data[n * 4 + 1])
-      q.setFromAxisAngle(up, Math.random() * 6.283)
-      const sc = 0.7 + Math.random() * 0.5 // scale đều 0.7–1.2
-      s.set(sc, sc, sc)
+      q.setFromAxisAngle(up, data2[n * 2 + 1])
       mesh.setMatrixAt(n, m.compose(p, q, s))
     }
     mesh.instanceMatrix.needsUpdate = true
   }
 
-  // Vertex shape+wind: taper (nhọn) → twist (xoắn ribbon quanh Y) → lean = cong tĩnh + gió (weight bend).
-  // bend ∝ (y/H)² (gốc cứng, ngọn mềm). Phase từ world-XZ → gust trôi không gian. twistRand per-lá từ d.z.
-  private _windNode(): TSLNode {
-    const d = this.dataNode as TSLNode
-    const hf = clamp(positionLocal.y.div(float(this.bladeHeight)), float(0), float(1))
-    const bend = hf.mul(hf)
-    // 1. Taper: thu hẹp bề ngang về ngọn (uTaper=1 → nhọn hẳn)
-    const xw = positionLocal.x.mul(float(1).sub(hf.mul(this.uTaper)))
-    // 2. Twist: xoay ribbon quanh trục Y, góc ∝ hf, hướng/độ random per-lá (d.z → [-1,1])
-    const ang = this.uTwist.mul(hf).mul(d.z.mul(float(0.318)).sub(float(1)))
-    const tx = xw.mul(cos(ang))
-    const tz = xw.mul(sin(ang))
-    // 3. Lean = cong tĩnh + gió (gust+flutter), đều nhân bend → gốc đứng yên
+  // Bề ngang ellipse thon 2 đầu: pow(sin(hf·π), uTaper). hf 0&1→0 (đáy/ngọn nhọn), 0.5→max (bụng).
+  private _widthProfile(hf: TSLNode): TSLNode {
+    return pow(sin(hf.mul(float(Math.PI))), this.uTaper) as TSLNode
+  }
+
+  // Lean cong-tĩnh + gió (local X, weight bend → gốc đứng yên). Phase per-lá từ world-XZ → gust trôi.
+  private _windLean(d: TSLNode, bend: TSLNode, amp: TSLNode): TSLNode {
     const phase = d.x
       .mul(float(0.6))
       .add(d.y.mul(float(0.45)))
@@ -279,17 +331,46 @@ export class GrassBlades {
     const osc = sin(t.add(phase)).add(
       sin(t.mul(float(2.4)).add(phase.mul(float(3)))).mul(float(0.35))
     )
-    const amp = float(this.bladeHeight * 0.5)
-    const lean = this.uCurve.add(osc.mul(this.uWind)).mul(bend).mul(amp)
-    const drop = lean.abs().mul(hf).mul(float(0.18)) // ngọn chùng xuống theo cung
-    return vec3(tx.add(lean), positionLocal.y.sub(drop), tz) as TSLNode
+    return this.uCurve.add(osc.mul(this.uWind)).mul(bend).mul(amp) as TSLNode
   }
 
-  // Màu: gradient gốc(tối)→ngọn(sáng) + AO gốc + tint per-lá.
+  // Ngả 1 chiều (cả bãi cùng hướng world): un-rotate vector world theo rotY per-lá (d2.y) → local XZ.
+  private _dirLeanXZ(d2: TSLNode, bend: TSLNode, amp: TSLNode): TSLNode {
+    const cR = cos(d2.y)
+    const sR = sin(d2.y)
+    const wx = cos(this.uLeanAngle).mul(this.uLeanAmt)
+    const wz = sin(this.uLeanAngle).mul(this.uLeanAmt)
+    const k = bend.mul(amp)
+    const lx = wx.mul(cR).sub(wz.mul(sR)).mul(k)
+    const lz = wx.mul(sR).add(wz.mul(cR)).mul(k)
+    return vec2(lx, lz) as TSLNode
+  }
+
+  // Vertex: ellipse-thon → twist (ribbon quanh Y) → cao-thấp (hScale) → lean (cong+gió local + ngả-1-chiều world).
+  private _windNode(): TSLNode {
+    const d = this.dataNode as TSLNode
+    const d2 = this.data2Node as TSLNode
+    const hf = clamp(positionLocal.y.div(float(this.bladeHeight)), float(0), float(1))
+    const bend = hf.mul(hf)
+    const amp = float(this.bladeHeight * 0.5)
+    const hScale = float(1).sub(this.uHeightVar).add(d2.x.mul(this.uHeightVar)) // random cao-thấp
+    const xw = positionLocal.x.mul(this._widthProfile(hf)) // ellipse thon 2 đầu
+    const ang = this.uTwist.mul(hf).mul(d.z.mul(float(0.318)).sub(float(1))) // xoắn
+    const lean = this._windLean(d, bend, amp)
+    const dl = this._dirLeanXZ(d2, bend, amp)
+    const drop = lean.abs().mul(hf).mul(float(0.18)) // ngọn chùng xuống theo cung
+    const px = xw.mul(cos(ang)).add(lean).add(dl.x)
+    const pz = xw.mul(sin(ang)).add(dl.y)
+    return vec3(px, positionLocal.y.mul(hScale).sub(drop), pz) as TSLNode
+  }
+
+  // Màu 2 trục: DỌC gốc→ngọn (uBase→uTip) + NGANG giữa→mép (→uEdge) + AO gốc + tint per-lá.
   private _colorNode(): TSLNode {
     const d = this.dataNode as TSLNode
     const hf = clamp(positionLocal.y.div(float(this.bladeHeight)), float(0), float(1))
-    let col = mix(this.uBase, this.uTip, hf) as TSLNode
+    const ex = clamp(positionLocal.x.abs().div(float(this.bladeWidth * 0.5)), float(0), float(1))
+    let col = mix(this.uBase, this.uTip, hf) as TSLNode // dọc
+    col = mix(col, this.uEdge, ex.mul(float(0.9))) as TSLNode // ngang (giữa→mép)
     col = col.mul(float(0.65).add(hf.mul(float(0.35)))) as TSLNode // AO: gốc tối hơn
     const tint = float(0.82).add(d.w.mul(float(0.36))) // biến thiên sáng per-lá
     return col.mul(tint) as TSLNode
