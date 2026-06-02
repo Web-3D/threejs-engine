@@ -22,10 +22,16 @@ export interface FenceConfig {
 }
 
 // Cỏ 3D thật (tier B — GrassBlades instanced+vertex-wind). Chỉ render khi ground==='grass'.
+// Structural (density/height/bladeWidth) → dựng lại; uniform (wind/windSpeed/màu) → live setter.
 export interface Grass3DConfig {
   enabled: boolean
   density: number // lá/m² (cap trong GrassBlades — accent-only)
   height: number // m — cao lá
+  bladeWidth: number // m — rộng lá đáy
+  wind: number // [0–1] cường độ gió
+  windSpeed: number // tốc độ đong đưa
+  baseColor: number // màu gốc (tối)
+  tipColor: number // màu ngọn (sáng)
 }
 
 export interface SiteState {
@@ -59,7 +65,16 @@ export function defaultSiteState(): SiteState {
     lotDepth: 9600,
     groundThick: GROUND_THICK_MIN,
     ground: 'grass',
-    grass3d: { enabled: true, density: 100, height: 0.28 },
+    grass3d: {
+      enabled: true,
+      density: 100,
+      height: 0.28,
+      bladeWidth: 0.024,
+      wind: 0.5,
+      windSpeed: 1.6,
+      baseColor: 0x39611f,
+      tipColor: 0x9bbb55,
+    },
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
   }
 }
@@ -104,12 +119,21 @@ function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): Fenc
   }
 }
 
+function parseColor(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) & 0xffffff : fallback
+}
+
 function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig): Grass3DConfig {
   const r = raw ?? {}
   return {
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     density: clamp(num(r.density, d.density), 10, 400),
     height: clamp(num(r.height, d.height), 0.1, 0.6),
+    bladeWidth: clamp(num(r.bladeWidth, d.bladeWidth), 0.001, 0.01),
+    wind: clamp(num(r.wind, d.wind), 0, 1),
+    windSpeed: clamp(num(r.windSpeed, d.windSpeed), 0, 6),
+    baseColor: parseColor(r.baseColor, d.baseColor),
+    tipColor: parseColor(r.tipColor, d.tipColor),
   }
 }
 

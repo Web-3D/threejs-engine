@@ -20,7 +20,9 @@ import { GrassBlades } from 'threejs-modules/components/GrassBlades'
 
 const grass = new GrassBlades({ width: 12, depth: 9.6, baseY: 0.01, density: 100 })
 scene.add(grass.getMesh())
-// grass.setWind(0.7); grass.setWindSpeed(2.0)
+// Live (uniform — KHÔNG dựng lại material): gió/màu tinh chỉnh tức thì
+// grass.setWind(0.7); grass.setWindSpeed(2.0); grass.setColors(0x39611f, 0x9bbb55)
+// Structural (density/bladeHeight/bladeWidth/segments) → tạo instance MỚI (recompile) — đừng gọi mỗi frame
 grass.dispose() // geometry + NodeMaterial + gỡ mesh
 ```
 

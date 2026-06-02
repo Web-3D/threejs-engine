@@ -71,7 +71,10 @@ là domain building thuần → KHÔNG cho nó biết `SiteState` (tránh buildi
 - **Đã ship:** `components/GrassBlades` (tier B) — InstancedMesh lá strip (geometry mét, thon ngọn) + **TSL vertex-wind**
   (gốc cứng/ngọn cong `bend ∝ (y/H)²`, `sin(time)` + flutter, phase per-lá từ world-XZ qua `instancedBufferAttribute`);
   scale/xoay/tint random; count **cap** (accent-only). Rải bởi `site/render` lên nền khi `ground='grass' & grass3d.enabled`.
-  Vỏ: panel 🌿 Cỏ 3D (toggle + mật độ + cao lá). State `grass3d` optional+default (persist-safe). Cặp tier-A = `GrassGround`.
+  Vỏ: toggle 🌿 Cỏ 3D ở panel 🌳 Sân vườn + **panel riêng 🎛️ Tinh chỉnh** (`gui/tweak.ts`) chỉnh chi tiết:
+  structural (mật độ/cao/rộng lá → dựng lại khi BUÔNG) vs uniform (gió/tốc độ/màu gốc-ngọn → LIVE qua
+  `ctx.tuneGrass` trên instance đang sống, né recompile NodeMaterial). State `grass3d` mở rộng (persist-safe).
+  Panel Tinh chỉnh = nơi gắn decor/effect sau (đá/…) — thêm section, KHÔNG xây framework. Cặp tier-A = `GrassGround`.
 - **Gate:** kit tsc/eslint/validate + archplan tsc/eslint/build ✅. **Mắt :3002 — chờ NgQuan** (runtime WebGPU:
   instancedBufferAttribute + positionNode chỉ xác nhận được bằng mắt).
 - **Còn (deferred):** LOD-theo-camera (BẮT BUỘC trước khi bật nhiều lô/city — cap chỉ an toàn 1 lô);

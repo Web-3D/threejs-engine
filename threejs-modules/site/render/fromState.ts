@@ -38,12 +38,18 @@ export function renderSiteState(site: SiteState, ctx: SiteRenderCtx): void {
 // dispose qua ctx.shaders (GrassBlades.dispose gỡ mesh + geo + mat). Gió chạy bằng built-in time.
 function buildVegetation(site: SiteState, ctx: SiteRenderCtx): void {
   if (site.ground !== 'grass' || !site.grass3d.enabled) return
+  const g = site.grass3d
   const blades = new GrassBlades({
     width: site.lotWidth / 1000,
     depth: site.lotDepth / 1000,
     baseY: site.groundThick / 1000,
-    density: site.grass3d.density,
-    bladeHeight: site.grass3d.height,
+    density: g.density,
+    bladeHeight: g.height,
+    bladeWidth: g.bladeWidth,
+    wind: g.wind,
+    windSpeed: g.windSpeed,
+    baseColor: g.baseColor,
+    tipColor: g.tipColor,
   })
   ctx.group.add(blades.getMesh())
   ctx.shaders.push(blades)

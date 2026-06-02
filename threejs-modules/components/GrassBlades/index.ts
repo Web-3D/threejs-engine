@@ -131,6 +131,13 @@ export class GrassBlades {
     this.uWindSpeed.value = Math.max(0, v)
   }
 
+  /** Màu gốc + ngọn (live, không dựng lại material). */
+  setColors(base: THREE.ColorRepresentation, tip: THREE.ColorRepresentation): void {
+    if (this.isDisposed) return
+    ;(this.uBase.value as THREE.Color).set(base)
+    ;(this.uTip.value as THREE.Color).set(tip)
+  }
+
   getMesh(): THREE.InstancedMesh {
     if (!this.mesh) throw new Error('GrassBlades: already disposed')
     return this.mesh
