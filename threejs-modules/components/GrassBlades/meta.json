@@ -1,0 +1,28 @@
+{
+  "name": "GrassBlades",
+  "category": "components",
+  "version": "1.0.0",
+  "description": "Cỏ 3D instanced (lá geometry nhú lên) + TSL vertex-wind — tier B, cặp với GrassGround tier A",
+  "tags": ["vegetation", "instanced", "grass", "cỏ", "wind", "tsl", "tier-b", "site-kit"],
+  "complexity": "medium",
+  "performance-cost": "medium",
+  "performance": "InstancedMesh 1 draw; count cap (accent-only). ~density·area lá × segments·2 tri. Vertex-wind built-in time. ⚠️ LOD-theo-camera = bước sau khi bật nhiều lô.",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "width",       "type": "number",                    "default": "12",       "description": "Bề ngang vùng rải (m, X)" },
+    { "name": "depth",       "type": "number",                    "default": "9.6",      "description": "Chiều sâu vùng rải (m, Z)" },
+    { "name": "baseY",       "type": "number",                    "default": "0.01",     "description": "Cao độ gốc lá (m) = mặt trên nền" },
+    { "name": "density",     "type": "number",                    "default": "100",      "description": "Mật độ lá/m²" },
+    { "name": "maxBlades",   "type": "number",                    "default": "24000",    "description": "Trần số lá (budget, accent-only)" },
+    { "name": "bladeHeight", "type": "number",                    "default": "0.28",     "description": "Cao lá (m)" },
+    { "name": "bladeWidth",  "type": "number",                    "default": "0.024",    "description": "Rộng lá đáy (m)" },
+    { "name": "segments",    "type": "number",                    "default": "4",        "description": "Segment dọc lá (cong mượt)" },
+    { "name": "baseColor",   "type": "THREE.ColorRepresentation", "default": "0x39611f", "description": "Màu gốc (tối)" },
+    { "name": "tipColor",    "type": "THREE.ColorRepresentation", "default": "0x9bbb55", "description": "Màu ngọn (sáng)" },
+    { "name": "wind",        "type": "number",                    "default": "0.5",      "description": "Cường độ gió [0-1]" },
+    { "name": "windSpeed",   "type": "number",                    "default": "1.6",      "description": "Tốc độ đong đưa" }
+  ],
+  "usage": "const g = new GrassBlades({ width, depth, baseY }); scene.add(g.getMesh())"
+}

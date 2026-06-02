@@ -67,7 +67,17 @@ là domain building thuần → KHÔNG cho nó biết `SiteState` (tránh buildi
   nền hiện đúng cỡ + đổi loại đất + rào quanh + nhà nằm trên + readout khớp + Save→F5 giữ (additive schema).
 - Doc-sync: README site/ + ARCHPLAN.md + ROADMAP.
 
-### ⏳ G1 — Thực vật (deferred) — scatter cây/bụi/cỏ
+### 🌿 G1a — Cỏ 3D `GrassBlades` (XONG v1 2026-06-02) — lá nhú lên + gió
+- **Đã ship:** `components/GrassBlades` (tier B) — InstancedMesh lá strip (geometry mét, thon ngọn) + **TSL vertex-wind**
+  (gốc cứng/ngọn cong `bend ∝ (y/H)²`, `sin(time)` + flutter, phase per-lá từ world-XZ qua `instancedBufferAttribute`);
+  scale/xoay/tint random; count **cap** (accent-only). Rải bởi `site/render` lên nền khi `ground='grass' & grass3d.enabled`.
+  Vỏ: panel 🌿 Cỏ 3D (toggle + mật độ + cao lá). State `grass3d` optional+default (persist-safe). Cặp tier-A = `GrassGround`.
+- **Gate:** kit tsc/eslint/validate + archplan tsc/eslint/build ✅. **Mắt :3002 — chờ NgQuan** (runtime WebGPU:
+  instancedBufferAttribute + positionNode chỉ xác nhận được bằng mắt).
+- **Còn (deferred):** LOD-theo-camera (BẮT BUỘC trước khi bật nhiều lô/city — cap chỉ an toàn 1 lô);
+  footprint-exclusion (không rải dưới nhà); gió coherent-hướng (v1 semi-coherent); normal theo bend.
+
+### ⏳ G1b — Cây / bụi (deferred) — scatter cây/bụi
 **InstancedMesh + LOD + billboard-ở-xa NGAY** (budget: RuntimeGuard <100 draws, <500k tris; memory brick3d-accent-only).
 
 ### ⏳ G2 — Đá tảng (deferred) — rocks nhỏ→lớn, triplanar (skill `triplanar-mapping`).

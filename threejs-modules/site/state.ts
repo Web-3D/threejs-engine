@@ -21,12 +21,20 @@ export interface FenceConfig {
   inset: number // mm — lùi vào từ mép lô (setback)
 }
 
+// Cỏ 3D thật (tier B — GrassBlades instanced+vertex-wind). Chỉ render khi ground==='grass'.
+export interface Grass3DConfig {
+  enabled: boolean
+  density: number // lá/m² (cap trong GrassBlades — accent-only)
+  height: number // m — cao lá
+}
+
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
   lotWidth: number // mm — bề ngang lô (trục X)
   lotDepth: number // mm — chiều sâu lô (trục Z)
   groundThick: number // mm — dày slab nền 10..100 (1..10cm); ≥10 để mặt trên cao hơn grid → hết z-fight
   ground: GroundMaterialKey
+  grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   fence: FenceConfig
 }
 
@@ -51,6 +59,7 @@ export function defaultSiteState(): SiteState {
     lotDepth: 9600,
     groundThick: GROUND_THICK_MIN,
     ground: 'grass',
+    grass3d: { enabled: true, density: 100, height: 0.28 },
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
   }
 }
@@ -95,16 +104,29 @@ function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): Fenc
   }
 }
 
+function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig): Grass3DConfig {
+  const r = raw ?? {}
+  return {
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    density: clamp(num(r.density, d.density), 10, 400),
+    height: clamp(num(r.height, d.height), 0.1, 0.6),
+  }
+}
+
 export function parseSite(raw: unknown): SiteState {
   const d = defaultSiteState()
   if (!raw || typeof raw !== 'object') return d
-  const o = raw as Partial<SiteState> & { fence?: Partial<FenceConfig> }
+  const o = raw as Partial<SiteState> & {
+    fence?: Partial<FenceConfig>
+    grass3d?: Partial<Grass3DConfig>
+  }
   return {
     show: typeof o.show === 'boolean' ? o.show : d.show,
     lotWidth: num(o.lotWidth, d.lotWidth),
     lotDepth: num(o.lotDepth, d.lotDepth),
     groundThick: clamp(num(o.groundThick, d.groundThick), GROUND_THICK_MIN, GROUND_THICK_MAX),
     ground: parseGround(o.ground, d.ground),
+    grass3d: parseGrass3d(o.grass3d, d.grass3d),
     fence: parseFence(o.fence, d.fence),
   }
 }

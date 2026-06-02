@@ -13,6 +13,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
+import { GrassBlades } from '../../components/GrassBlades'
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { GROUND_PRESETS, type SiteState } from '../state'
 
@@ -29,7 +30,23 @@ export interface SiteRenderCtx {
 export function renderSiteState(site: SiteState, ctx: SiteRenderCtx): void {
   if (!site.show) return
   buildGround(site, ctx)
+  buildVegetation(site, ctx)
   if (site.fence.enabled) buildFence(site, ctx)
+}
+
+// Cỏ 3D nhú lên (tier B — GrassBlades) phủ lên nền cỏ. Chỉ khi ground='grass' & bật. Gốc ở mặt trên nền.
+// dispose qua ctx.shaders (GrassBlades.dispose gỡ mesh + geo + mat). Gió chạy bằng built-in time.
+function buildVegetation(site: SiteState, ctx: SiteRenderCtx): void {
+  if (site.ground !== 'grass' || !site.grass3d.enabled) return
+  const blades = new GrassBlades({
+    width: site.lotWidth / 1000,
+    depth: site.lotDepth / 1000,
+    baseY: site.groundThick / 1000,
+    density: site.grass3d.density,
+    bladeHeight: site.grass3d.height,
+  })
+  ctx.group.add(blades.getMesh())
+  ctx.shaders.push(blades)
 }
 
 // Nền = slab dày: đáy y=0, top y=t. PBR nhận IBL + đổ bóng. Lô tâm world (0,0).
