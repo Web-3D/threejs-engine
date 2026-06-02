@@ -13,7 +13,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
-import { GrassBlades } from '../../components/GrassBlades'
+import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { GROUND_PRESETS, type SiteState } from '../state'
 
@@ -32,18 +32,34 @@ export interface SiteHandle {
   grass: GrassBlades | null
 }
 
+// Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
+export interface SiteRenderOpts {
+  // Footprint foundation (m, world XZ) — cỏ KHÔNG mọc trong các rect này ("nơi có foundation thì
+  // không đặt nền cỏ"). Plain numbers → site-kit độc lập building-kit.
+  exclude?: GrassExcludeRect[]
+}
+
 // Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0). Trả handle (grass) cho live-tune.
-export function renderSiteState(site: SiteState, ctx: SiteRenderCtx): SiteHandle {
+export function renderSiteState(
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts = {}
+): SiteHandle {
   if (!site.show) return { grass: null }
   buildGround(site, ctx)
-  const grass = buildVegetation(site, ctx)
+  const grass = buildVegetation(site, ctx, opts.exclude ?? [])
   if (site.fence.enabled) buildFence(site, ctx)
   return { grass }
 }
 
 // Cỏ 3D nhú lên (tier B — GrassBlades) phủ lên nền cỏ. Chỉ khi ground='grass' & bật. Gốc ở mặt trên nền.
 // dispose qua ctx.shaders (GrassBlades.dispose gỡ mesh + geo + mat). B0: hình dáng trần + 1 màu.
-function buildVegetation(site: SiteState, ctx: SiteRenderCtx): GrassBlades | null {
+// exclude = footprint foundation → cỏ né (lá rơi trong rect bị bỏ).
+function buildVegetation(
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  exclude: GrassExcludeRect[]
+): GrassBlades | null {
   if (site.ground !== 'grass' || !site.grass3d.enabled) return null
   const g = site.grass3d
   const blades = new GrassBlades({
@@ -55,6 +71,7 @@ function buildVegetation(site: SiteState, ctx: SiteRenderCtx): GrassBlades | nul
     bladeWidth: g.bladeWidth,
     segments: g.segments,
     color: g.color,
+    exclude,
   })
   ctx.group.add(blades.getMesh())
   ctx.shaders.push(blades)

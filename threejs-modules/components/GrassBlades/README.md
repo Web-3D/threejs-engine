@@ -36,6 +36,9 @@ grass.dispose() // geometry + NodeMaterial + gỡ mesh
 | `bladeHeight` / `bladeWidth` | number | 0.28 / 0.006 | Kích thước lá (m) |
 | `segments` | number | 5 | Số đốt dọc (độ mịn) |
 | `color` | Color | 0x4f7a33 | Màu lá (1 màu — B0) |
+| `exclude` | `GrassExcludeRect[]` | `[]` | Rect (m, world XZ) cỏ **né** — lá rơi trong rect bị bỏ. Vd footprint foundation ("nơi có nhà thì không mọc cỏ"). `{cx,cz,halfW,halfD,rot}` |
+
+> **`exclude`** dùng buffer cấp theo `planned` rồi đặt `mesh.count` = số lá thực còn lại (≤ planned) — 1 draw, không tốn slot. `getCount()` trả số thực. Test rect đối xứng nên dấu xoay không ảnh hưởng với `rot ∈ {0,90,180,270}`.
 
 ## Budget (luật tier-B — bắt buộc)
 

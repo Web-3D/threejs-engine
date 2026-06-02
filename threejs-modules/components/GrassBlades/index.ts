@@ -29,6 +29,17 @@ const DEFAULTS = {
   color: 0x4f7a33 as THREE.ColorRepresentation, // 1 màu lá (B0); gradient = bước sau
 }
 
+// Rect loại trừ (m, world XZ = hệ grass-local vì siteGroup ở gốc): cỏ KHÔNG mọc bên trong.
+// Dùng cho footprint foundation ("nơi có foundation thì không đặt nền cỏ"). halfW/halfD theo trục
+// LOCAL của rect (trước xoay); rot = góc xoay quanh Y (rad). Plain numbers → site-kit không phụ thuộc building-kit.
+export interface GrassExcludeRect {
+  cx: number
+  cz: number
+  halfW: number
+  halfD: number
+  rot: number
+}
+
 export interface GrassBladesOptions {
   /** Bề ngang vùng rải (m, trục X). Default 12 */
   width?: number
@@ -48,6 +59,8 @@ export interface GrassBladesOptions {
   segments?: number
   /** Màu lá (B0: 1 màu phẳng). Default 0x4f7a33 */
   color?: THREE.ColorRepresentation
+  /** Rect loại trừ (m, world XZ) — cỏ né các vùng này (vd footprint foundation). Default [] */
+  exclude?: GrassExcludeRect[]
 }
 
 export class GrassBlades {
@@ -61,7 +74,7 @@ export class GrassBlades {
 
   constructor(opts: GrassBladesOptions = {}) {
     const o = { ...DEFAULTS, ...opts }
-    this.count = Math.max(1, Math.min(o.maxBlades, Math.round(o.density * o.width * o.depth)))
+    const planned = Math.max(1, Math.min(o.maxBlades, Math.round(o.density * o.width * o.depth)))
     this.uColor = uniform(new THREE.Color(o.color))
 
     this.geo = this._buildBladeGeo(o.segments, o.bladeHeight, o.bladeWidth)
@@ -72,11 +85,13 @@ export class GrassBlades {
     this.material.metalness = 0
     this.material.side = THREE.DoubleSide
 
-    this.mesh = new THREE.InstancedMesh(this.geo, this.material, this.count)
+    // Cấp buffer theo planned; rải né footprint → trả số lá THỰC, gán mesh.count (≤ planned).
+    this.mesh = new THREE.InstancedMesh(this.geo, this.material, planned)
     this.mesh.castShadow = false
     this.mesh.receiveShadow = true // nhận bóng nhà đổ xuống (rẻ)
     this.mesh.frustumCulled = false // 1 draw — tắt cho an toàn
-    this._scatter(o)
+    this.count = this._scatter(o, planned, opts.exclude ?? [])
+    this.mesh.count = this.count
   }
 
   /** Màu lá — live (uniform, không dựng lại material). */
@@ -130,26 +145,47 @@ export class GrassBlades {
     return g
   }
 
-  // Rải N lá (jitter-grid trong rectangle) + xoay Y ngẫu nhiên. B0: scale 1 (cao-thấp = bước sau).
-  private _scatter(o: typeof DEFAULTS): void {
+  // Rải tối đa `planned` lá (jitter-grid) + xoay Y ngẫu nhiên; BỎ lá rơi vào rect loại trừ
+  // (footprint foundation). Trả số lá thực ghi (w). B0: scale 1 (cao-thấp = bước sau).
+  private _scatter(o: typeof DEFAULTS, planned: number, exclude: GrassExcludeRect[]): number {
     const mesh = this.mesh
-    if (!mesh) return
+    if (!mesh) return 0
     const m = new THREE.Matrix4()
     const q = new THREE.Quaternion()
     const up = new THREE.Vector3(0, 1, 0)
     const p = new THREE.Vector3()
     const s = new THREE.Vector3(1, 1, 1)
-    const cols = Math.max(1, Math.ceil(Math.sqrt(this.count * (o.width / o.depth))))
-    const rows = Math.ceil(this.count / cols)
+    const cols = Math.max(1, Math.ceil(Math.sqrt(planned * (o.width / o.depth))))
+    const rows = Math.ceil(planned / cols)
     const cw = o.width / cols
     const cd = o.depth / rows
-    for (let n = 0; n < this.count; n++) {
+    let w = 0
+    for (let n = 0; n < planned; n++) {
       const c = n % cols
       const r = Math.floor(n / cols)
-      p.set(-o.width / 2 + (c + Math.random()) * cw, o.baseY, -o.depth / 2 + (r + Math.random()) * cd)
+      const px = -o.width / 2 + (c + Math.random()) * cw
+      const pz = -o.depth / 2 + (r + Math.random()) * cd
+      if (inExcluded(px, pz, exclude)) continue // dưới foundation → không mọc cỏ
+      p.set(px, o.baseY, pz)
       q.setFromAxisAngle(up, Math.random() * 6.283)
-      mesh.setMatrixAt(n, m.compose(p, q, s))
+      mesh.setMatrixAt(w++, m.compose(p, q, s))
     }
     mesh.instanceMatrix.needsUpdate = true
+    return w
   }
+}
+
+// Điểm (px,pz) (m, world XZ) có nằm trong rect loại trừ nào không (đã xoay rotY). Rect đối xứng nên
+// dấu xoay không ảnh hưởng với rotY ∈ {0,90,180,270} (case duy nhất hiện có).
+function inExcluded(px: number, pz: number, rects: GrassExcludeRect[]): boolean {
+  for (const r of rects) {
+    const dx = px - r.cx
+    const dz = pz - r.cz
+    const cos = Math.cos(r.rot)
+    const sin = Math.sin(r.rot)
+    const lx = cos * dx + sin * dz // world → local rect (xoay -rot)
+    const lz = -sin * dx + cos * dz
+    if (Math.abs(lx) <= r.halfW && Math.abs(lz) <= r.halfD) return true
+  }
+  return false
 }
