@@ -23,7 +23,7 @@ site/
 |---|---|
 | Nền slab dày 1–10cm (đáy y=0 → hết z-fight grid) | LOD-theo-camera cho cỏ 3D (bật nhiều lô/city) |
 | Nền: **cỏ = procedural shader** (`GrassGround` tier A) + đất/sỏi màu phẳng | Cây / bụi scatter (G1b — instanced+LOD) |
-| **Cỏ 3D nhú lên** (`GrassBlades` tier B — instanced+vertex-wind, khi nền=Cỏ) | Đá tảng triplanar (G2) |
+| **Cỏ 3D nhú lên** (`GrassBlades` tier B — instanced, khi nền=Cỏ; rebuild B0 lá phẳng+1 màu) | Đá tảng triplanar (G2) |
 | Hàng rào: gỗ (cọc+thanh) / tường xây (merged) | Hồ cá / nước (G3 — tier C transmission, fake-water) |
 | `coverageStats` đối chiếu nhà/lô (%) | Footprint-exclusion (không rải cỏ dưới nhà) |
 

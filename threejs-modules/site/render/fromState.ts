@@ -42,7 +42,7 @@ export function renderSiteState(site: SiteState, ctx: SiteRenderCtx): SiteHandle
 }
 
 // Cỏ 3D nhú lên (tier B — GrassBlades) phủ lên nền cỏ. Chỉ khi ground='grass' & bật. Gốc ở mặt trên nền.
-// dispose qua ctx.shaders (GrassBlades.dispose gỡ mesh + geo + mat). Gió chạy bằng built-in time.
+// dispose qua ctx.shaders (GrassBlades.dispose gỡ mesh + geo + mat). B0: hình dáng trần + 1 màu.
 function buildVegetation(site: SiteState, ctx: SiteRenderCtx): GrassBlades | null {
   if (site.ground !== 'grass' || !site.grass3d.enabled) return null
   const g = site.grass3d
@@ -53,18 +53,8 @@ function buildVegetation(site: SiteState, ctx: SiteRenderCtx): GrassBlades | nul
     density: g.density,
     bladeHeight: g.height,
     bladeWidth: g.bladeWidth,
-    wind: g.wind,
-    windSpeed: g.windSpeed,
-    baseColor: g.baseColor,
-    tipColor: g.tipColor,
-    edgeColor: g.edgeColor,
-    curve: g.curve,
-    twist: g.twist,
-    taper: g.taper,
-    heightVar: g.heightVar,
-    leanAmt: g.leanAmt,
-    leanAngle: g.leanAngle,
-    castShadow: g.shadow,
+    segments: g.segments,
+    color: g.color,
   })
   ctx.group.add(blades.getMesh())
   ctx.shaders.push(blades)

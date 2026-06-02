@@ -126,7 +126,7 @@
 | `InstancedBrickWall` | Tường gạch geometry THẬT — nền vữa + InstancedMesh vạn viên running-bond, khe = vữa lõm | brick, wall, instanced, running-bond, architecture | ✅ in-use |
 | `WoodSidingWall` | Tường ván gỗ ngang (clapboard) instanced — ~13 tấm nghiêng chồng mép, 2 mặt/tấm (4 tris), cực rẻ (~64 tris) | wood, siding, clapboard, plank, instanced | ✅ in-use |
 | `WoodSidingStrip` | Tường ván gỗ 1 KHỐI răng cưa, HỘP KÍN 6 MẶT + khoét cửa/sổ (jamb reveal) — plain mesh MERGE được xuyên nhà | wood, siding, clapboard, strip, mergeable, openings | ✅ in-use |
-| `GrassBlades` | Cỏ 3D nhú lên (tier B) — InstancedMesh lá geometry + TSL vertex-wind (gốc cứng/ngọn mượt), accent-only+cap; cặp `GrassGround` tier A | vegetation, instanced, grass, cỏ, wind, tsl, tier-b, site-kit | ✅ in-use |
+| `GrassBlades` | Cỏ 3D nhú lên (tier B) — InstancedMesh lá geometry, accent-only+cap; cặp `GrassGround` tier A. **Rebuild tăng dần (preview-first)** — B0: lá phẳng + 1 màu | vegetation, instanced, grass, cỏ, tier-b, site-kit | ✅ in-use |
 
 ---
 
@@ -188,7 +188,7 @@
 | `site/state` | `SiteState` (nền + cỏ-3D + rào) + factory + `GROUND_PRESETS` + `coverageStats` (建ぺい率 đối chiếu nhà/lô) + `parseSite` |
 | `site/render/fromState` | `renderSiteState(site, ctx)` headless — nền slab (1–10cm) + **cỏ 3D** (`GrassBlades`, khi nền=Cỏ) + hàng rào (gỗ/tường, merged) |
 
-- **Phases:** G0 nền+rào ✅ · **G1a cỏ 3D `GrassBlades` ✅** (instanced+wind, cap; LOD-camera ⏳) · G1b cây/bụi ⏳ · G2 đá triplanar ⏳ · G3 hồ cá (tier C) ⏳.
+- **Phases:** G0 nền+rào ✅ · **G1a cỏ 3D `GrassBlades` — rebuild tăng dần (B0 lá phẳng+1 màu ✅; B1 thon → B9 đổ-bóng ⏳)** · G1b cây/bụi ⏳ · G2 đá triplanar ⏳ · G3 hồ cá (tier C) ⏳.
 - **Coupling:** caller bật `site.show` → đôn building lên `groundThick` (foundation nằm trên mặt nền).
 
 ---

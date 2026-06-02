@@ -1,5 +1,5 @@
 // threejs-modules/components/GrassBlades/example.ts
-// Standalone smoke — cỏ 3D instanced + vertex-wind. Chạy độc lập, không import project.
+// Standalone smoke — cỏ 3D instanced (B0: lá phẳng + 1 màu). Chạy độc lập, không import project.
 
 import * as THREE from 'three'
 import { WebGPURenderer } from 'three/webgpu'
@@ -25,6 +25,6 @@ const grass = new GrassBlades({ width: 12, depth: 9.6, baseY: 0.0, density: 120 
 scene.add(grass.getMesh())
 console.log('GrassBlades count:', grass.getCount())
 
-renderer.setAnimationLoop(() => renderer.render(scene, camera)) // wind chạy theo built-in time
+renderer.setAnimationLoop(() => renderer.render(scene, camera))
 
 // Cleanup demo: grass.dispose()

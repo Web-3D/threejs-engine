@@ -67,7 +67,21 @@ là domain building thuần → KHÔNG cho nó biết `SiteState` (tránh buildi
   nền hiện đúng cỡ + đổi loại đất + rào quanh + nhà nằm trên + readout khớp + Save→F5 giữ (additive schema).
 - Doc-sync: README site/ + ARCHPLAN.md + ROADMAP.
 
-### 🌿 G1a — Cỏ 3D `GrassBlades` (XONG v1 2026-06-02) — lá nhú lên + gió
+### 🌿 G1a — Cỏ 3D `GrassBlades` — REBUILD TĂNG DẦN (preview-first, 2026-06-02)
+- **Lý do rebuild:** v1 (bên dưới) gộp quá nhiều tính năng → khó tinh chỉnh + preview/bãi từng lệch nhau khó debug.
+  NgQuan chốt **đập lại RIÊNG model lá** (giữ khung: preview panel + tweak panel + state + wiring), dựng từ
+  preview (1 lá) làm chuẩn, **thêm từng thông số một** → mỗi cái verify ở preview rồi mới đẩy ra bãi.
+- **Insight chốt:** "to bè thô ráp" = lá là **dải PHẲNG** → đứng thấy cạnh (mảnh), ngả thấy mặt bản (bè) + phối
+  cảnh lá tiền cảnh. KHÔNG phải bug scale (geometry = đúng `bladeWidth`, mesh/group scale = 1). Trị ở **B4** (tiết diện cong).
+- **Lộ trình:** **B0 lá phẳng + 1 màu ✅** · B1 thon ellipse · B2 màu gradient (dọc+ngang) · B3 cong tĩnh ·
+  B4 tiết diện cong (trị "bè khi ngả") · B5 xoắn · B6 gió · B7 cao-thấp NN · B8 ngả 1 chiều · B9 đổ bóng.
+  Mỗi bước = +1 field `grass3d` (parse default-fill, persist-safe) + 1 row panel + 1 uniform/structural.
+- **B0 (✅ 2026-06-02):** `GrassBlades` rút về strip phẳng (Cao + Rộng + Số đốt) + `colorNode = uColor` (1 màu, live).
+  `grass3d` thu về `{enabled, density, height, bladeWidth, segments, color}`. Panel = 4 slider structural + 1 màu.
+  Preview & bãi **dùng chung model** → y hệt. Gate: validate + archplan tsc/eslint/build ✅.
+
+<details><summary>📦 v1 (2026-06-02, superseded bởi rebuild) — lá nhú lên + gió</summary>
+
 - **Đã ship:** `components/GrassBlades` (tier B) — InstancedMesh lá strip (geometry mét, thon ngọn) + **TSL vertex-wind**
   (gốc cứng/ngọn cong `bend ∝ (y/H)²`, `sin(time)` + flutter, phase per-lá từ world-XZ qua `instancedBufferAttribute`);
   scale/xoay/tint random; count **cap** (accent-only). Rải bởi `site/render` lên nền khi `ground='grass' & grass3d.enabled`.
@@ -82,6 +96,8 @@ là domain building thuần → KHÔNG cho nó biết `SiteState` (tránh buildi
   instancedBufferAttribute + positionNode chỉ xác nhận được bằng mắt).
 - **Còn (deferred):** LOD-theo-camera (BẮT BUỘC trước khi bật nhiều lô/city — cap chỉ an toàn 1 lô);
   footprint-exclusion (không rải dưới nhà); gió coherent-hướng (v1 semi-coherent); normal theo bend.
+
+</details>
 
 ### ⏳ G1b — Cây / bụi (deferred) — scatter cây/bụi
 **InstancedMesh + LOD + billboard-ở-xa NGAY** (budget: RuntimeGuard <100 draws, <500k tris; memory brick3d-accent-only).

@@ -21,25 +21,17 @@ export interface FenceConfig {
   inset: number // mm — lùi vào từ mép lô (setback)
 }
 
-// Cỏ 3D thật (tier B — GrassBlades instanced+vertex-wind). Chỉ render khi ground==='grass'.
-// Structural (density/height/bladeWidth) → dựng lại; uniform (wind/windSpeed/màu) → live setter.
+// Cỏ 3D thật (tier B — GrassBlades instanced). Chỉ render khi ground==='grass'.
+// REBUILD TĂNG DẦN (preview-first): B0 = hình dáng trần. Thêm dần shape/màu-gradient/cong/xoắn/
+// gió/cao-thấp/ngả/đổ-bóng ở các bước sau (mỗi bước thêm 1 field ở đây + 1 row panel + 1 uniform).
+// Structural (density/height/bladeWidth/segments) → dựng lại; uniform (color) → live setter.
 export interface Grass3DConfig {
   enabled: boolean
   density: number // lá/m² (cap trong GrassBlades — accent-only)
   height: number // m — cao lá
-  bladeWidth: number // m — rộng lá đáy
-  wind: number // [0–1] cường độ gió
-  windSpeed: number // tốc độ đong đưa
-  baseColor: number // màu gốc (gradient dọc, đáy)
-  tipColor: number // màu ngọn (gradient dọc, đỉnh)
-  edgeColor: number // màu mép (gradient ngang, rìa lá)
-  curve: number // [0–1.5] độ cong tĩnh (ngả ngọn khi lặng gió)
-  twist: number // [0–1.5] độ xoắn ribbon ngọn (rad)
-  taper: number // [0.3–2.5] độ thon ellipse 2 đầu (mũ pow(sin): 1=ellipse, >1=nhọn)
-  heightVar: number // [0–1] độ random cao-thấp lá
-  leanAmt: number // [0–1.5] ngả theo 1 chiều (cả bãi cùng hướng)
-  leanAngle: number // hướng ngả (rad)
-  shadow: boolean // đổ bóng (cast) — nặng + lá mảnh răng cưa
+  bladeWidth: number // m — rộng lá
+  segments: number // số đốt dọc (độ mịn strip)
+  color: number // màu lá (B0: 1 màu phẳng; gradient = bước sau)
 }
 
 export interface SiteState {
@@ -77,19 +69,9 @@ export function defaultSiteState(): SiteState {
       enabled: true,
       density: 100,
       height: 0.28,
-      bladeWidth: 0.004, // 4mm — cỏ thuôn dài, KHÔNG bè (24mm cũ = lá chuối)
-      wind: 0.5,
-      windSpeed: 1.6,
-      baseColor: 0x39611f,
-      tipColor: 0x9bbb55,
-      edgeColor: 0x2c4a1a,
-      curve: 0.3,
-      twist: 0.6,
-      taper: 1.3, // >1 = nhọn thuôn 2 đầu (ellipse mảnh)
-      heightVar: 0.35,
-      leanAmt: 0,
-      leanAngle: 0,
-      shadow: false,
+      bladeWidth: 0.006, // 6mm — thấy rõ ở preview, vẫn mảnh
+      segments: 5,
+      color: 0x4f7a33, // 1 màu lá xanh vừa
     },
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
   }
@@ -144,20 +126,10 @@ function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig)
   return {
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     density: clamp(num(r.density, d.density), 10, 400),
-    height: clamp(num(r.height, d.height), 0.1, 0.6),
-    bladeWidth: clamp(num(r.bladeWidth, d.bladeWidth), 0.001, 0.012),
-    wind: clamp(num(r.wind, d.wind), 0, 1),
-    windSpeed: clamp(num(r.windSpeed, d.windSpeed), 0, 6),
-    baseColor: parseColor(r.baseColor, d.baseColor),
-    tipColor: parseColor(r.tipColor, d.tipColor),
-    edgeColor: parseColor(r.edgeColor, d.edgeColor),
-    curve: clamp(num(r.curve, d.curve), 0, 1.5),
-    twist: clamp(num(r.twist, d.twist), 0, 1.5),
-    taper: clamp(num(r.taper, d.taper), 0.3, 2.5),
-    heightVar: clamp(num(r.heightVar, d.heightVar), 0, 1),
-    leanAmt: clamp(num(r.leanAmt, d.leanAmt), 0, 1.5),
-    leanAngle: num(r.leanAngle, d.leanAngle),
-    shadow: typeof r.shadow === 'boolean' ? r.shadow : d.shadow,
+    height: clamp(num(r.height, d.height), 0.05, 0.6),
+    bladeWidth: clamp(num(r.bladeWidth, d.bladeWidth), 0.001, 0.03),
+    segments: clamp(Math.round(num(r.segments, d.segments)), 1, 12),
+    color: parseColor(r.color, d.color),
   }
 }
 
