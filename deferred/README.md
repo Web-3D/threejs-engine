@@ -26,6 +26,7 @@ deferred/
 | [building-iq-techniques.md](geometry/building-iq-techniques.md) | IQ math tricks cho building: palette, periodic windows, fBm height | Building system cần visual phong phú hơn |
 | [building-sdf-phases.md](geometry/building-sdf-phases.md) | SDF ray march per component → bake pipeline | Bắt đầu Phase 1 SDF (column/beam) — xem `01-Doraemon/deferred/geometry/` |
 | [archplan-coord-true-slice.md](geometry/archplan-coord-true-slice.md) | Coordinate scanner cắt geometry/segment thật thay bbox → tọa độ tường đúng từng tầng | Cần đọc tọa độ tường trong / footprint per-floor, hoặc làm build editor |
+| [voronoi-applications.md](geometry/voronoi-applications.md) | Voronoi cho hạng mục RỜI RẠC: chia lô đất · facade screen · đá lát TSL · fracture (KHÔNG dùng cho nhà vuông góc) | Làm city/neighborhood (chia lô), hoặc cần điểm nhấn mặt dựng/nền hữu cơ |
 
 ---
 
@@ -51,6 +52,8 @@ deferred/
 | [threejs-modules-workspace-package.md](systems/threejs-modules-workspace-package.md) | Nâng cấp threejs-modules thành pnpm workspace package | ~15+ modules hoặc có project thứ 2 dùng chung |
 | [neighborhood-block-assembly-lod.md](systems/neighborhood-block-assembly-lod.md) | Quy hoạch khu phố N nhà: bake (Triangle+Shimmer) + instance/merge + LOD (Draw call) | Dựng khu phố thật trong World sau khi chốt vài kiểu nhà |
 | [building-warehouse-pipeline.md](systems/building-warehouse-pipeline.md) | Xương sống: lõi share (THREEJS root) → vỏ editor per-project → kho thành phẩm baked (Engine root) → project pick-by-tag. Luật tier hero-procedural vs mass-baked | Chốt ≥3 kiểu nhà + dựng khu phố thật, hoặc kích hoạt workspace package |
+| [procedural-generation-techniques.md](systems/procedural-generation-techniques.md) | Bản đồ "họ" sinh hình thủ tục: phân hoạch (Voronoi/BSP/Poisson) · noise tế bào · **shape grammar/CGA · L-system · WFC** — cái nào hợp nhà vuông | Làm build-editor, city/neighborhood, hoặc bố trí phòng (chọn đúng công cụ thay vì mặc định Voronoi) |
+| [garden-ground-patches.md](systems/garden-ground-patches.md) | Mảng nền sân (bê tông/cát/sỏi/**nước**) tự exclude cỏ — cắt ~1000 tris/m² cỏ + bố cục sân thật; nước = shader (reflection = pass riêng, không vào budget tri) | Soạn sân vườn trong ArchPlanLab, hoặc cần cắt budget cỏ cho city/nhiều lô |
 
 ---
 

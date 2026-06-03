@@ -24,13 +24,22 @@ export interface FenceConfig {
 // Cỏ 3D thật (tier B — GrassBlades instanced). Chỉ render khi ground==='grass'.
 // REBUILD TĂNG DẦN (preview-first): B0 = hình dáng trần. Thêm dần shape/màu-gradient/cong/xoắn/
 // gió/cao-thấp/ngả/đổ-bóng ở các bước sau (mỗi bước thêm 1 field ở đây + 1 row panel + 1 uniform).
-// Structural (density/height/bladeWidth/segments) → dựng lại; uniform (color) → live setter.
+// Structural (density/height/width/segments/taper/curveLR/bend/cup/cupGeo/bladesPerClump/clumpRadius) → dựng lại; uniform (color) → live.
 export interface Grass3DConfig {
   enabled: boolean
   density: number // lá/m² (cap trong GrassBlades — accent-only)
   height: number // m — cao lá
-  bladeWidth: number // m — rộng lá
+  bladeWidth: number // m — rộng GỐC lá (t=0)
+  midWidth: number // m — rộng THÂN lá (t=0.5) — độc lập với gốc
   segments: number // số đốt dọc (độ mịn strip)
+  taper: number // B1 — thon ngọn 0..1 (0 = chữ nhật, 1 = nhọn đỉnh, mép cong ellipse)
+  curveLR: number // độ cong trái→phải -1..1 (0 = thẳng; dời tâm theo X = curveLR·H·t²)
+  bend: number // cong DỌC 0..1 (1 chiều; 0 = đứng): mặt NGOÀI +Z lồi ra (Z = bend·H·t²)
+  cup: number // cụp 0..1 (1 chiều, cường độ; 0 = phẳng): mặt TRONG -Z lõm vào. Shader normal / geometry nếu cupGeo
+  cupGeo: boolean // BẬT geometry fold thật (trục giữa, ×3 tris, cận cảnh) thay vì shader normal. Mặc định false (ẩn/tắt)
+  bladesPerClump: number // số lá/cụm (bụi). 1 = lá đơn; >1 = gộp K lá vào 1 instance (budget-neutral, rải cụm)
+  clumpRadius: number // m — bán kính xòe bụi
+  clumpSplay: number // rad — nghiêng ngọn ra ngoài tâm (mặt trong vào tâm + xòe, bớt đâm xuyên)
   color: number // màu lá (B0: 1 màu phẳng; gradient = bước sau)
 }
 
@@ -69,8 +78,17 @@ export function defaultSiteState(): SiteState {
       enabled: true,
       density: 100,
       height: 0.28,
-      bladeWidth: 0.006, // 6mm — thấy rõ ở preview, vẫn mảnh
+      bladeWidth: 0.006, // 6mm gốc — thấy rõ ở preview, vẫn mảnh
+      midWidth: 0.006, // 6mm thân — mặc định = gốc (lá đều rồi thon ngọn)
       segments: 5,
+      taper: 0.7, // B1 — thon ngọn rõ, dáng cỏ thật (0 = chữ nhật B0)
+      curveLR: 0, // thẳng mặc định
+      bend: 0, // đứng thẳng mặc định (ngả dọc = bước chỉnh thêm)
+      cup: 0, // phẳng mặc định
+      cupGeo: false, // mặc định shader normal (rẻ); bật geometry fold thủ công khi cần cận cảnh
+      bladesPerClump: 1, // mặc định lá đơn; tăng để thành bụi cỏ chân thật hơn
+      clumpRadius: 0.04, // 4cm xòe bụi
+      clumpSplay: 0.45, // ~26° nghiêng ngọn ra ngoài (mặt trong vào tâm)
       color: 0x4f7a33, // 1 màu lá xanh vừa
     },
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
@@ -128,7 +146,16 @@ function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig)
     density: clamp(num(r.density, d.density), 10, 400),
     height: clamp(num(r.height, d.height), 0.05, 0.6),
     bladeWidth: clamp(num(r.bladeWidth, d.bladeWidth), 0.001, 0.03),
+    midWidth: clamp(num(r.midWidth, d.midWidth), 0.001, 0.03),
     segments: clamp(Math.round(num(r.segments, d.segments)), 1, 12),
+    taper: clamp(num(r.taper, d.taper), 0, 1),
+    curveLR: clamp(num(r.curveLR, d.curveLR), -1, 1),
+    bend: clamp(num(r.bend, d.bend), 0, 1),
+    cup: clamp(num(r.cup, d.cup), 0, 1),
+    cupGeo: typeof r.cupGeo === 'boolean' ? r.cupGeo : d.cupGeo,
+    bladesPerClump: clamp(Math.round(num(r.bladesPerClump, d.bladesPerClump)), 1, 12),
+    clumpRadius: clamp(num(r.clumpRadius, d.clumpRadius), 0.005, 0.2),
+    clumpSplay: clamp(num(r.clumpSplay, d.clumpSplay), 0, 1.2),
     color: parseColor(r.color, d.color),
   }
 }
