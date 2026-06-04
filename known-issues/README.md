@@ -53,3 +53,5 @@ Copy `_TEMPLATE.md` → đổi tên `KI-NNN-<slug>.md` → điền → thêm 1 d
 | 004 | Đáy hồ không hiện — basin merge null (trộn index) + nền backdrop đặc che basin dưới y=0 | pond | geometry | high | fixed | 2026-06-04 |
 | 005 | Sửa/kéo 1 thứ → rebuild thứ không-đổi (cỏ re-scatter, hồ tái-RTT, **gạch-3D dựng lại 60×/s**) → tụt fps + leak | grass, pond, wall | perf | high | fixed | 2026-06-04 |
 | 006 | `reflector()` RTT không tự dispose (three giữ WeakMap, material.dispose ko đụng) → leak GPU; fix qua chuỗi viewCam→virtualCameras→renderTargets→RT.dispose + setCamera | pond | gpu-dispose | medium | fixed | 2026-06-04 |
+| 007 | MSAA (`antialias:true`) làm vỡ reflector RTT → GPU từ chối command → **nước MẤT phản chiếu** + flood WebGPU validation. Mitigate: `antialias:false` (✓ khôi phục) + FXAA post pending | pond | shader | high | mitigated | 2026-06-04 |
+| 008 | Bỏ `reflector.forceUpdate` → `_inReflector` kẹt true (bug three: nhánh facing-away thoát sớm bỏ reset) → gương **chết vĩnh viễn** sau khi camera 1 lần chui dưới mặt nước. Fix: giữ forceUpdate + shader tắt gương khi `dot(eye,n)<0` | pond | api-version | high | fixed | 2026-06-04 |

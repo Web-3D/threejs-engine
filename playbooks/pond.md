@@ -10,6 +10,8 @@ issues:
   - KI-004
   - KI-005
   - KI-006
+  - KI-007
+  - KI-008
 updated: 2026-06-04
 ---
 
@@ -78,6 +80,8 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 | Sọc lưới ngang/dọc đè lòng hồ | GridHelper ở y=0 (trên mặt nước), không hole được | `KI-004` (occluder thứ 3) |
 | Gương "đứng hình" khi orbit thấp/ngang | reflector bỏ render RTT khi camera ở mặt sau (isFacingAway) | WaterSurface README §Performance — fix `forceUpdate` mỗi frame + `frustumCulled=false` |
 | Đáy mờ tịt không thấy | `tint` (Đục%) cao + bottomColor tối | kéo "Đục %" xuống; chỉnh bottomColor |
+| Console ngập WebGPU validation (depth MSAA / copy out-of-bounds); nước MẤT phản chiếu | MSAA (`antialias:true`) ✗ reflector RTT → GPU từ chối pass | `known-issues/KI-007` — renderer `antialias:false` + FXAA post |
+| Gương đứng hình VĨNH VIỄN sau khi camera chui dưới mặt nước 1 lần | bỏ `forceUpdate` → `_inReflector` kẹt true (bug three) | `known-issues/KI-008` — giữ forceUpdate + shader tắt gương khi dưới nước |
 
 ## 5. Lịch sử nâng cấp
 
@@ -91,6 +95,7 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 - `2026-06-04` — **PUDDLE render** (vũng nước): `renderPuddles` + `buildPuddle` = mặt nước **PHẲNG trên nền** (`baseY=rim+5mm`, KHÔNG basin/coping/khoét-lỗ — khúc xạ xuyên thấy cỏ; vẫn phản chiếu). GUI Pe = **Shape|Surface** (bỏ Bottom/Edge). Cỏ né cả puddle (`siteGrassExclude` gồm renderWaters+renderPuddles). Click thường mặt nước → trỏ GUI tab hồ (`_pickWaterEntry`/`_maybeClickFocus`, cả pool/pond/puddle).
 - `2026-06-04` — **kéo hồ KHÔNG rebuild (né leak reflector)** + **mảng định-vị**: 3D-drag thân/đỉnh chỉ dời `mesh.position`/`setShape` (reflector con theo, KHÔNG tái-tạo); slider commit-khi-buông. Vì mặt nước chìm dưới rim → lúc kéo chui dưới đất (lỗ-nền chưa theo) → **`_showWaterOutline`** = ShapeGeometry FILL cyan mờ ở mặt nền, vẽ-trên-cùng (`depthTest/Write=false`, renderOrder cao), bám theo cả **3D-drag** lẫn **slider** (`ctx.previewWater`) cho **pool/pond/puddle**; commit (`_applySite` persist) ẩn. (Live-bằng-rebuild = tái-tạo reflector/frame = leak+lag — xem `KI-005`; pool `WaterSurface` chưa pool-hoá.)
 - `2026-06-04` — **perf+dispose:** kéo NHÀ không rebuild nước (dirty-check `_siteSig`, `KI-005`); reflector RTT giờ **dispose đúng** (`setCamera`+chuỗi WeakMap, `KI-006`) → hết leak GPU.
+- `2026-06-04` — **phản chiếu sống lại + đúng góc:** renderer `antialias:false` (MSAA ✗ reflector RTT — `KI-007`, gốc mất gương + flood WebGPU) bù bằng **FXAA post** (BaseWorld `renderFrame` hook). Gương đứng-hình-vĩnh-viễn sau khi camera chui dưới nước = **bug three `_inReflector`** (`KI-008`): giữ `forceUpdate` né bug + shader `fres·smoothstep(dot(eye,n))` tắt gương "từ dưới lên" SAI. Phải vá flood `TSL.NormalNode` (contactQuad cỏ) TRƯỚC mới lộ các lỗi GPU này.
 
 ## 6. Liên hệ
 

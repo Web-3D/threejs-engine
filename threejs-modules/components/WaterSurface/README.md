@@ -67,7 +67,8 @@ w.setShape(newPoints)
 - **Reflector pass:** mỗi frame render lại scene qua virtual-camera → ~+1 render pass, draw calls vùng đó nhân đôi. Đây là cái giá của "gương thật".
 - **Cần gạt:** hạ `resolution` (0.5 → 0.25 nếu cần) và `bounces:false` (đã mặc định). Tránh đặt hồ ở nơi nhìn thấy nhiều mesh nặng (cả đống đó bị render thêm lần nữa).
 - **Fragment:** 2 `triNoise3D` (sóng) + fresnel + specular — nhẹ so với reflector pass.
-- **Chống "đứng gương":** `setTime` bật `reflector.forceUpdate` mỗi frame + `mesh.frustumCulled = false`. Lý do: `ReflectorNode.updateBefore` có guard `isFacingAway` → BỎ render RTT khi camera ở **mặt sau** mặt phẳng nước (mặt nước sát đất → orbit thấp/ngang là camera tụt xuống dưới → gương đứng hình). Trade-off: vẫn tốn pass cả khi facing-away (1 hồ → không đáng kể).
+- **`forceUpdate=true` mỗi frame (BẮT BUỘC — né bug three) + shader tắt gương khi facing-away:** `ReflectorNode.updateBefore` set `_inReflector=true` (dòng 374) rồi reset SAU render (484); nhưng nhánh facing-away `if(isFacingAway && !forceUpdate) return` (401) thoát SỚM **bỏ qua reset** → `_inReflector` kẹt true → guard `if(bounces===false && _inReflector) return` (372) làm gương **chết VĨNH VIỄN** sau lần đầu camera chui dưới mặt nước. `forceUpdate=true` né nhánh 401 → luôn reset → không kẹt. Cái giá: khi camera DƯỚI mặt nước reflector render gương "từ dưới lên" SAI → **`_buildColor` tắt mượt** bằng `fres·smoothstep(0,0.04, dot(eye,n))` (ndv<0 = dưới nước → fade về khúc xạ). Kết quả: mọi góc TRÊN nước gương đúng+live; chui xuống dưới hiện khúc xạ (không ảnh sai, không đứng hình). `mesh.frustumCulled=false` chống freeze-do-cull khi pan.
+- **⚠ MSAA:** renderer phải `antialias:false` — MSAA phần cứng làm GPU TỪ CHỐI reflector RTT pass (mất phản chiếu + flood WebGPU validation). Khử răng cưa bằng FXAA post thay MSAA. Chi tiết: `known-issues/KI-007`.
 
 ## Dispose
 

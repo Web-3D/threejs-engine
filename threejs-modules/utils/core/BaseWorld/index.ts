@@ -41,10 +41,16 @@ export abstract class BaseWorld {
   private lastTime = 0
   private isDisposed = false
 
-  constructor(protected readonly canvas: HTMLCanvasElement) {
+  // opts.antialias: MSAA phần cứng. Default true (giữ nguyên mọi consumer cũ). Đặt FALSE khi cảnh có
+  // reflector()/RTT — MSAA framebuffer xung khắc reflector RTT depth (GPU từ chối pass = mất gương, KI-007);
+  // bù khử răng cưa bằng FXAA post (PostProcessingManager) thay vì MSAA.
+  constructor(
+    protected readonly canvas: HTMLCanvasElement,
+    opts: { antialias?: boolean } = {}
+  ) {
     const w = canvas.clientWidth || 300
     const h = canvas.clientHeight || 200
-    this.renderer = new WebGPURenderer({ canvas, antialias: true })
+    this.renderer = new WebGPURenderer({ canvas, antialias: opts.antialias ?? true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.setSize(w, h)
     this.scene = new THREE.Scene()
@@ -69,8 +75,16 @@ export abstract class BaseWorld {
       const deltaTime = time - this.lastTime
       this.lastTime = time
       this.onUpdate(time, deltaTime)
-      this.renderer.render(this.scene, this.camera)
+      this.renderFrame()
     })
+  }
+
+  /**
+   * Vẽ 1 frame. Default: renderer.render thẳng. Subclass override để chèn post-process (vd FXAA qua
+   * PostProcessing.render() — thay renderer.render). Tách khỏi loop để không phải override cả init().
+   */
+  protected renderFrame(): void {
+    this.renderer.render(this.scene, this.camera)
   }
 
   /**

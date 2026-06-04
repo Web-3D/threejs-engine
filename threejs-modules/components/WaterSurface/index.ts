@@ -34,6 +34,7 @@ import {
   reflect,
   reflector,
   screenUV,
+  smoothstep,
   triNoise3D,
   uniform,
   vec3,
@@ -165,7 +166,12 @@ export class WaterSurface {
   setTime(seconds: number): void {
     if (this.isDisposed) return
     this.uTime.value = seconds
-    // ép reflector render RTT kể cả khi camera "facing away" (orbit thấp/ngang) → hết đứng gương.
+    // PHẢI ép forceUpdate mỗi frame — KHÔNG vì "chống đứng gương" mà vì BUG three: ReflectorNode.updateBefore
+    // set `_inReflector=true` (dòng 374) rồi reset `=false` (484) SAU render; nhưng nhánh facing-away
+    // `if (isFacingAway && !forceUpdate) return` (401) thoát SỚM, BỎ qua reset → `_inReflector` kẹt true →
+    // guard `if (bounces===false && _inReflector) return` (372) khiến MỌI frame sau chết → gương đứng VĨNH VIỄN
+    // sau lần đầu camera chui dưới nước. forceUpdate=true né nhánh 401 → luôn reset → không kẹt. Ảnh "từ dưới
+    // lên" SAI lúc facing-away được TẮT ở shader (_buildColor: fres·smoothstep(dot(eye,n))) nên không lộ.
     if (this._reflector) this._reflector.forceUpdate = true
   }
 
@@ -275,13 +281,18 @@ export class WaterSurface {
     // viewportSafeUV chặn lấy mẫu ngoài màn hình ở mép.
     const refraction = viewportSharedTexture(viewportSafeUV(screenUV.add(offset))).rgb
     const refr = mix(refraction, this.uWaterColor, this.uTint) // ám màu nước (giả absorption/độ sâu)
-    // Fresnel Schlick: grazing → gương, nhìn thẳng → xuyên thấy đáy
-    const theta = max(dot(eye, n), float(0))
-    const fres = this.uRf0.add(
-      float(1)
-        .sub(this.uRf0)
-        .mul(pow(float(1).sub(theta), float(5)))
-    )
+    // Fresnel Schlick: grazing → gương, nhìn thẳng → xuyên thấy đáy.
+    const ndv = dot(eye, n) // eye·normal: >0 camera TRÊN mặt nước; <0 = DƯỚI (reflector render ảnh SAI)
+    const theta = max(ndv, float(0))
+    const fres = this.uRf0
+      .add(
+        float(1)
+          .sub(this.uRf0)
+          .mul(pow(float(1).sub(theta), float(5)))
+      )
+      // TẮT phản chiếu mượt khi camera tụt dưới mặt nước (ndv<0): lúc đó reflector (bị ép forceUpdate để
+      // né bug _inReflector) render gương "từ dưới lên" SAI → fade về 0 cho hiện khúc xạ thay vì ảnh sai.
+      .mul(smoothstep(float(0), float(0.04), ndv))
     // Đốm nắng theo mặt trời
     const refl = reflect(this.uSunDir.negate(), n)
     const spec = pow(max(dot(eye, refl), float(0)), this.uShininess).mul(this.uSunColor)
