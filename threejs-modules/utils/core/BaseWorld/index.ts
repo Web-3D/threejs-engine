@@ -75,16 +75,8 @@ export abstract class BaseWorld {
       const deltaTime = time - this.lastTime
       this.lastTime = time
       this.onUpdate(time, deltaTime)
-      this.renderFrame()
+      this.renderer.render(this.scene, this.camera)
     })
-  }
-
-  /**
-   * Vẽ 1 frame. Default: renderer.render thẳng. Subclass override để chèn post-process (vd FXAA qua
-   * PostProcessing.render() — thay renderer.render). Tách khỏi loop để không phải override cả init().
-   */
-  protected renderFrame(): void {
-    this.renderer.render(this.scene, this.camera)
   }
 
   /**

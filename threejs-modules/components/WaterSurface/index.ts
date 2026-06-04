@@ -5,7 +5,7 @@
  *
  * Thuật toán (mặt nước ngang trong XZ):
  *   1. reflector() → render scene qua virtual-camera vào RTT (resolution<1 để rẻ, bounces=false né đệ quy)
- *   2. Gợn sóng: 2 lớp triNoise3D cuộn theo uTime*uFlow → surfaceNormal lắc quanh trục Y (KHÔNG cần texture)
+ *   2. Gợn sóng: FBM 2 octave (4 lớp triNoise3D) cuộn theo uTime*uFlow → surfaceNormal lắc quanh trục Y (KHÔNG cần texture)
  *   3. Distortion: surfaceNormal.xz dời uv của reflector → mặt gương "rung"
  *   4. Khúc xạ (B): viewportSharedTexture(screenUV+lệch sóng) → cái-sau-nước (đáy/nền) gợn theo sóng
  *   5. Fresnel (Schlick): nhìn xiên (grazing) → gương; nhìn thẳng xuống → XUYÊN thấy đáy (ám màu nước = absorption giả)
@@ -55,6 +55,8 @@ const DEFAULTS = {
   rippleScale: 4,
   flow: 0.4,
   distortion: 0.4,
+  detail: 0.4, // biên độ octave-2 FBM (độ nhiễu/turbulence chi tiết)
+  refract: 1, // hệ số méo ảnh khúc-xạ (×distortion); 1 = như reflection, cao = đáy gợn mạnh hơn
   shininess: 100,
   alpha: 1,
   resolution: 0.5,
@@ -80,6 +82,10 @@ export interface WaterSurfaceOptions {
   flow?: number
   /** Cường độ rung mặt gương + độ nghiêng normal. Default: 0.4 */
   distortion?: number
+  /** Biên độ octave-2 FBM (độ nhiễu/turbulence chi tiết của sóng) [0–~1.5]. Default: 0.4 */
+  detail?: number
+  /** Hệ số méo ảnh KHÚC XẠ (×distortion). 1 = như reflection; cao = ảnh đáy gợn mạnh hơn. Default: 1 */
+  refract?: number
   /** Độ gắt đốm nắng (số mũ specular). Cao = chấm sáng nhỏ. Default: 100 */
   shininess?: number
   /** Độ mờ mặt nước [0–1]. <1 = trong suốt. Default: 1 */
@@ -117,6 +123,8 @@ export class WaterSurface {
   private readonly uFlow: ReturnType<typeof uniform>
   private readonly uTime: ReturnType<typeof uniform>
   private readonly uDistortion: ReturnType<typeof uniform>
+  private readonly uDetail: ReturnType<typeof uniform> // biên độ octave-2 FBM (turbulence)
+  private readonly uRefract: ReturnType<typeof uniform> // hệ số méo khúc-xạ (×distortion)
   private readonly uRf0: ReturnType<typeof uniform>
   private readonly uShininess: ReturnType<typeof uniform>
   private readonly uAlpha: ReturnType<typeof uniform>
@@ -124,6 +132,11 @@ export class WaterSurface {
   private readonly uSunColor: ReturnType<typeof uniform>
   private readonly uSunDir: ReturnType<typeof uniform>
   private readonly uTint: ReturnType<typeof uniform>
+  // |uViewDirY| → 1 khi CAMERA nhìn gần thẳng đứng (top-down): virtualCamera reflector suy biến → ảnh ĐƠ.
+  // Fade gương theo HƯỚNG-NHÌN-CAMERA (uniform, mọi fragment chung) — KHÔNG theo eye-tới-fragment (pool lệch
+  // tâm → eye.y không đạt ngưỡng → fade trượt). Cập nhật mỗi frame trong setTime từ _camera.
+  private readonly uViewDirY = uniform(0)
+  private readonly _tmpDir = new THREE.Vector3()
 
   constructor(opts: WaterSurfaceOptions = {}) {
     const o = { ...DEFAULTS, ...opts }
@@ -131,6 +144,8 @@ export class WaterSurface {
     this.uFlow = uniform(o.flow)
     this.uTime = uniform(0)
     this.uDistortion = uniform(o.distortion)
+    this.uDetail = uniform(o.detail)
+    this.uRefract = uniform(o.refract)
     this.uRf0 = uniform(o.reflectivity)
     this.uShininess = uniform(o.shininess)
     this.uAlpha = uniform(o.alpha)
@@ -166,6 +181,8 @@ export class WaterSurface {
   setTime(seconds: number): void {
     if (this.isDisposed) return
     this.uTime.value = seconds
+    // Hướng-nhìn camera (Y): cập nhật mỗi frame → shader fade gương khi camera nhìn gần thẳng đứng (top-down).
+    if (this._camera) this.uViewDirY.value = this._camera.getWorldDirection(this._tmpDir).y
     // PHẢI ép forceUpdate mỗi frame — KHÔNG vì "chống đứng gương" mà vì BUG three: ReflectorNode.updateBefore
     // set `_inReflector=true` (dòng 374) rồi reset `=false` (484) SAU render; nhưng nhánh facing-away
     // `if (isFacingAway && !forceUpdate) return` (401) thoát SỚM, BỎ qua reset → `_inReflector` kẹt true →
@@ -191,6 +208,24 @@ export class WaterSurface {
   setDistortion(v: number): void {
     if (this.isDisposed) return
     this.uDistortion.value = Math.max(0, Math.min(2, v))
+  }
+
+  /** Biên độ octave-2 FBM (độ nhiễu/turbulence chi tiết) [0–1.5]. */
+  setDetail(v: number): void {
+    if (this.isDisposed) return
+    this.uDetail.value = Math.max(0, Math.min(1.5, v))
+  }
+
+  /** Hệ số méo ảnh khúc-xạ (×distortion) [0–2]. */
+  setRefract(v: number): void {
+    if (this.isDisposed) return
+    this.uRefract.value = Math.max(0, Math.min(2, v))
+  }
+
+  /** Tần số gợn sóng (1/m) [0.5–20]. Thấp = sóng TO/thưa; cao = nhỏ/dày. */
+  setRippleScale(v: number): void {
+    if (this.isDisposed) return
+    this.uSize.value = Math.max(0.5, Math.min(20, v))
   }
 
   /** Phản chiếu gốc rf0 [0–1]. */
@@ -259,40 +294,59 @@ export class WaterSurface {
 
   // ── Private ────────────────────────────────────────────────────────────────
 
-  // Normal mặt nước: 2 lớp noise cuộn ngược → lắc quanh trục Y (không cần texture).
+  // Normal mặt nước: FBM 2 octave (4 lớp triNoise3D) → lắc quanh trục Y (không cần texture).
+  // Octave LỚN (tần 0.6× → features TO, biên độ chính) + octave NHỎ (tần 2.2× = KHÔNG bội-số-nguyên +
+  // cuộn NGƯỢC nhanh hơn, biên độ 0.4 → phá tính "đều/lặp" của 1 lớp). Bớt nhuyễn + xáo trộn tự nhiên hơn.
   private _surfaceNormal(): TSLNode {
     const t = this.uTime.mul(this.uFlow)
-    const px = positionWorld.x.mul(this.uSize)
-    const pz = positionWorld.z.mul(this.uSize)
-    const nx = triNoise3D(vec3(px.add(t), pz, float(0)), float(0), float(0)).sub(float(0.5))
-    const nz = triNoise3D(vec3(px, pz.add(t), float(5)), float(0), float(0)).sub(float(0.5))
+    // Octave 1 — sóng lớn (low freq)
+    const ax = positionWorld.x.mul(this.uSize.mul(float(0.6)))
+    const az = positionWorld.z.mul(this.uSize.mul(float(0.6)))
+    const nx1 = triNoise3D(vec3(ax.add(t), az, float(0)), float(0), float(0)).sub(float(0.5))
+    const nz1 = triNoise3D(vec3(ax, az.add(t), float(5)), float(0), float(0)).sub(float(0.5))
+    // Octave 2 — gợn chi tiết (high freq, cuộn ngược, tỉ lệ lệch 2.2× để không trùng pha → hết đều)
+    const bx = positionWorld.x.mul(this.uSize.mul(float(2.2)))
+    const bz = positionWorld.z.mul(this.uSize.mul(float(2.2)))
+    const td = t.mul(float(1.4))
+    const nx2 = triNoise3D(vec3(bx.sub(td), bz, float(2)), float(0), float(0)).sub(float(0.5))
+    const nz2 = triNoise3D(vec3(bx, bz.sub(td), float(7)), float(0), float(0)).sub(float(0.5))
     const amp = this.uDistortion.mul(float(2))
+    const nx = nx1.add(nx2.mul(this.uDetail))
+    const nz = nz1.add(nz2.mul(this.uDetail))
     return normalize(vec3(nx.mul(amp), float(1), nz.mul(amp))) as TSLNode
   }
 
   private _buildColor(sm: ReturnType<typeof reflector>): TSLNode {
     const n = this._surfaceNormal()
     const eye = normalize(cameraPosition.sub(positionWorld))
-    const offset = n.xz.mul(this.uDistortion) // lệch chung cho gương + khúc xạ theo sóng
+    const offset = n.xz.mul(this.uDistortion) // lệch GƯƠNG theo sóng
     // Phản chiếu (gương phẳng): dời uv reflector theo sóng
     const baseUv = sm.uvNode as TSLNode // reflector luôn set default screenUV → non-null
     sm.uvNode = baseUv.add(offset)
-    // Khúc xạ (screen-space): cái-SAU-nước trong framebuffer, lệch theo sóng → thấy đáy gợn.
-    // viewportSafeUV chặn lấy mẫu ngoài màn hình ở mép.
-    const refraction = viewportSharedTexture(viewportSafeUV(screenUV.add(offset))).rgb
+    // Khúc xạ (screen-space): cái-SAU-nước trong framebuffer, lệch theo sóng → thấy đáy gợn. Offset RIÊNG
+    // ×uRefract → chỉnh ĐỘ MÉO ảnh đáy độc lập với gương (rõ nhất khi đáy có hoa văn caro). viewportSafeUV
+    // chặn lấy mẫu ngoài màn hình ở mép.
+    const refrOffset = offset.mul(this.uRefract)
+    const refraction = viewportSharedTexture(viewportSafeUV(screenUV.add(refrOffset))).rgb
     const refr = mix(refraction, this.uWaterColor, this.uTint) // ám màu nước (giả absorption/độ sâu)
-    // Fresnel Schlick: grazing → gương, nhìn thẳng → xuyên thấy đáy.
-    const ndv = dot(eye, n) // eye·normal: >0 camera TRÊN mặt nước; <0 = DƯỚI (reflector render ảnh SAI)
-    const theta = max(ndv, float(0))
+    // Fresnel Schlick (dùng normal SÓNG → lấp lánh): grazing → gương, nhìn thẳng → xuyên thấy đáy.
+    const theta = max(dot(eye, n), float(0))
     const fres = this.uRf0
       .add(
         float(1)
           .sub(this.uRf0)
           .mul(pow(float(1).sub(theta), float(5)))
       )
-      // TẮT phản chiếu mượt khi camera tụt dưới mặt nước (ndv<0): lúc đó reflector (bị ép forceUpdate để
-      // né bug _inReflector) render gương "từ dưới lên" SAI → fade về 0 cho hiện khúc xạ thay vì ảnh sai.
-      .mul(smoothstep(float(0), float(0.04), ndv))
+      // TẮT phản chiếu khi camera DƯỚI mặt nước (reflector ép forceUpdate render gương "từ dưới lên" SAI —
+      // né bug _inReflector). Phép thử dùng `eye.y` = dot(eye, +Y) — normal PHẲNG của mặt phẳng nước, KHÔNG
+      // dùng normal SÓNG (nghiêng ±21° theo XZ → `dot(eye,n_sóng)` phụ-thuộc-azimuth → mất gương ở vài góc
+      // quay ngang dù camera vẫn trên nước). eye.y>0 = trên nước; <0 = dưới. Azimuth-independent.
+      .mul(smoothstep(float(0), float(0.04), eye.y))
+      // TẮT phản chiếu khi CAMERA nhìn gần thẳng đứng (top-down): virtualCamera reflector suy biến (lookAt ∥ up)
+      // → ảnh gương ĐƠ khi xoay. Fade theo |uViewDirY| (hướng-nhìn-camera, mọi fragment chung) — KHÔNG theo
+      // eye.y per-fragment (pool lệch tâm → eye.y tới pool < ngưỡng → fade trượt, gương vẫn đơ). |dir.y|→1 =
+      // camera đứng; fade 0.92→0.99 (pitch ~67°→82°) → hiện khúc xạ (đáy) thay ảnh đơ. Giữ gương góc xiên thường.
+      .mul(float(1).sub(smoothstep(float(0.985), float(0.9995), this.uViewDirY.abs())))
     // Đốm nắng theo mặt trời
     const refl = reflect(this.uSunDir.negate(), n)
     const spec = pow(max(dot(eye, refl), float(0)), this.uShininess).mul(this.uSunColor)

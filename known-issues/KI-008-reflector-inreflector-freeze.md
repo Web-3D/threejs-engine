@@ -42,7 +42,9 @@ Bug trong `ReflectorNode.updateBefore` (three 0.174):
 
 ## 4. Sửa như thế nào (đã áp)
 
-GIỮ `forceUpdate=true` mỗi frame trong `setTime` (né bug `_inReflector`). Cái giá: lúc facing-away reflector render gương "từ dưới lên" SAI → **tắt ở shader**: `_buildColor` nhân `fres` với `smoothstep(0, 0.04, dot(eye,normal))` → `ndv<0` (camera dưới nước) fade gương về 0 → hiện khúc xạ thay ảnh sai. Kết quả: mọi góc TRÊN nước gương đúng+live; chui xuống hiện khúc xạ (không sai, không đứng hình).
+GIỮ `forceUpdate=true` mỗi frame trong `setTime` (né bug `_inReflector`). Cái giá: lúc facing-away reflector render gương "từ dưới lên" SAI → **tắt ở shader**: `_buildColor` nhân `fres` với `smoothstep(0, 0.04, eye.y)` (camera dưới nước → fade gương về 0 → hiện khúc xạ thay ảnh sai). Kết quả: mọi góc TRÊN nước gương đúng+live; chui xuống hiện khúc xạ (không sai, không đứng hình).
+
+⚠ **Phải dùng `eye.y` (normal PHẲNG +Y), KHÔNG `dot(eye, n_sóng)`** — `_surfaceNormal` nghiêng ±21° theo XZ → `dot(eye, n_sóng)` phụ-thuộc-azimuth → tụt dưới 0.04 ở vài góc QUAY NGANG dù camera vẫn trên nước → mất gương "sau khi vượt 1 góc azimuth". (Đã vấp 2026-06-04: dùng normal sóng → user báo "xoay ngang vượt góc là mất ảnh".) Mặt phẳng nước là phẳng → phép thử trên/dưới phải theo +Y.
 
 ## 5. Phòng tái phạm
 

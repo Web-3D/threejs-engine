@@ -4,7 +4,7 @@ title: WaterSurface reflect+refract bắn WebGPU validation errors (depth MSAA m
 category: shader
 domain: pond
 severity: high
-status: mitigated   # antialias:false (archplan) CONFIRMED khôi phục phản chiếu + hết WebGPU error (2026-06-04). FXAA post pending cho cạnh. Gốc three reflector✗MSAA vẫn còn.
+status: mitigated   # antialias:false (archplan) CONFIRMED khôi phục phản chiếu + hết WebGPU error (2026-06-04). FXAA post ĐÃ THỬ & BỎ (reflector✗PostProcessing-pass cũng xung khắc — three chưa vá). Hiện CHẤP NHẬN răng cưa (no post-AA). Gốc three reflector✗MSAA vẫn còn.
 when: Scene có WaterSurface đang render (reflect `reflector()` + refract `viewportSharedTexture`). Lỗi bắn MỖI frame nước hiện — nhưng BỊ CHE tới khi console hết flood khác (sau vá KI-006 + contactQuad-normal) mới lộ. WebGPU cắt log ở "too many warnings".
 where:
   - threejs-modules/components/WaterSurface/index.ts:145   # reflector({ resolution:0.5, bounces:false }) → RTT + depth
@@ -52,13 +52,14 @@ Hai validation fail RIÊNG, cùng gốc "RTT/viewport của nước không khớ
 
 ## 4. Sửa như thế nào (status: open — hướng dự kiến + rủi ro)
 
-Theo thứ tự ít-rủi-ro → nhiều:
-1. **TEST gốc: `antialias:false`** — `BaseWorld:47` đang `antialias:true`. Đặt false (hoặc thêm option để ArchPlanLab opt-out, GIỮ default lõi) → reload → kỳ vọng: hết WebGPU error + **phản chiếu hiện lại**. Nếu đúng = chốt MSAA. Rủi ro: cạnh răng cưa (bù bằng FXAA/TAA post sau).
-2. Nếu tắt MSAA khôi phục được mà muốn GIỮ AA: thêm **post-process AA** (FXAA/TAA) thay MSAA hardware → reflector hết xung khắc mà cảnh vẫn mượt cạnh.
-3. Nếu là `viewportSharedTexture` (copy 2-layer): thử **bỏ khúc xạ tạm** (chỉ reflect) → hết copy-error → thủ phạm refraction copy; lấy nền-sau-nước cách khác (clamp copy theo size thật).
-4. Kiểm tra **three 0.174** issues: `reflector` + MSAA đã biết lỗi chưa (`node_modules/three/src/nodes/…ReflectorNode.js`). Có thể là giới hạn version → nâng three / workaround.
+**ĐÃ ÁP (2026-06-04/05):** `antialias:false` (BaseWorld nhận option, archplan opt-out — `main.ts`, default lõi giữ true) → **CONFIRMED**: phản chiếu hiện lại + hết WebGPU error.
 
-⚠ Đừng "sửa mò" bằng đổi `resolution`/`bounces` — không phải gốc MSAA/copy.
+**FXAA post — ĐÃ THỬ & BỎ:** định bù răng cưa bằng FXAA (`PostProcessing` pass→fxaa). NHƯNG **reflector ✗ PostProcessing-pass cũng xung khắc trong WebGPU** → mất phản chiếu ở nhiều góc camera (azimuth + góc cao). Cộng đồng xác nhận chưa có fix three:
+- Reflector + pass node bỏ qua stencil buffer (forum + GH #31757).
+- WebGPU tính camera frustum sai (GH #24382, NDC z [0,1] vs WebGL [-1,1]) → vật phản-chiếu bị cull nhầm theo góc.
+→ Đã GỠ FXAA, **chấp nhận răng cưa** (pixelRatio 2x đỡ phần nào). Phương án mịn-cạnh KHÔNG-pass sau này: **supersample** (render scale cao) thay post-AA.
+
+**Lưu ý khác:** đừng "sửa mò" bằng đổi `resolution`/`bounces` — không phải gốc. `viewportSharedTexture` copy 2-layer là biểu hiện phụ cùng gốc MSAA. Camera near-vertical (top-down) pool ra tối = ĐÚNG vật lý (Fresnel → khúc xạ trội + trời đêm tối), không phải bug.
 
 ## 5. Phòng tái phạm
 

@@ -7,7 +7,7 @@ Hồ/ao nước **phản chiếu gương thật** cho site-kit (anh em `GrassGro
 ## Cách hoạt động
 
 1. **`reflector({ resolution: 0.5, bounces: false })`** — three dựng virtual-camera đối xứng qua mặt nước, render scene vào RTT (HalfFloat). `resolution<1` = RTT nhỏ hơn buffer (rẻ + hơi mờ, hợp nước). `bounces:false` = render 1 lần/frame, né reflector-soi-reflector.
-2. **Gợn sóng** — 2 lớp `triNoise3D` cuộn ngược theo `uTime*uFlow` → `surfaceNormal` lắc nhẹ quanh trục Y. **Không cần texture** → module tự chứa, copy ra dùng được ngay.
+2. **Gợn sóng** — FBM 2 octave (4 lớp `triNoise3D`): octave lớn (tần 0.6×, sóng to) + octave chi tiết (tần 2.2× lệch, cuộn ngược 1.4× → phá tính đều) cuộn theo `uTime*uFlow` → `surfaceNormal` lắc quanh trục Y. **Không cần texture** → module tự chứa, copy ra dùng được ngay.
 3. **Distortion** — `surfaceNormal.xz` dời `uvNode` của reflector + uv khúc xạ → mặt gương + đáy "rung" theo sóng.
 4. **Khúc xạ (B)** — `viewportSharedTexture(viewportSafeUV(screenUV + lệch))` lấy cái-SAU-nước trong framebuffer (đáy/nền) → **nhìn xuyên thấy đáy, gợn sóng**. Ám về `waterColor` theo `tint` (absorption giả). Nước `transparent=true` (vẽ sau opaque → có đáy để khúc xạ).
 5. **Fresnel (Schlick)** — `mix(refraction, reflection, fresnel)`: nhìn xiên (grazing) → gương; nhìn thẳng xuống → **xuyên thấy đáy**.
@@ -41,9 +41,11 @@ Mesh tự nằm ngang trong XZ (`rotation.x = -π/2`) tại `baseY`. `reflector.
 | `waterColor` | ColorRepresentation | `0x254a59` | Màu nước (nhìn thẳng xuống); live `setWaterColor` |
 | `sunColor` | ColorRepresentation | `0xffffff` | Màu đốm nắng glint |
 | `reflectivity` | number | `0.35` | rf0 [0–1] — phản chiếu khi nhìn thẳng; live `setReflectivity` |
-| `rippleScale` | number | `4` | Tần số gợn sóng (1/m) |
+| `rippleScale` | number | `4` | Tần số gợn sóng (1/m) — THẤP = sóng to/thưa; live `setRippleScale` |
 | `flow` | number | `0.4` | Tốc độ cuộn sóng (cần `setTime`); live `setFlow` |
 | `distortion` | number | `0.4` | Cường độ rung gương + nghiêng normal; live `setDistortion` |
+| `detail` | number | `0.4` | Biên độ octave-2 FBM (độ nhiễu/turbulence chi tiết) [0–1.5]; live `setDetail` |
+| `refract` | number | `1` | Hệ số méo ảnh KHÚC XẠ (×distortion) [0–2] — gợn ảnh đáy nhìn-xuyên-nước; live `setRefract` |
 | `shininess` | number | `100` | Độ gắt đốm nắng (mũ specular) |
 | `alpha` | number | `1` | Độ mờ [0–1]; <1 = trong suốt |
 | `resolution` | number | `0.5` | Tỉ lệ RTT [0–1] — **cần gạt cost chính** |
@@ -66,9 +68,10 @@ w.setShape(newPoints)
 
 - **Reflector pass:** mỗi frame render lại scene qua virtual-camera → ~+1 render pass, draw calls vùng đó nhân đôi. Đây là cái giá của "gương thật".
 - **Cần gạt:** hạ `resolution` (0.5 → 0.25 nếu cần) và `bounces:false` (đã mặc định). Tránh đặt hồ ở nơi nhìn thấy nhiều mesh nặng (cả đống đó bị render thêm lần nữa).
-- **Fragment:** 2 `triNoise3D` (sóng) + fresnel + specular — nhẹ so với reflector pass.
-- **`forceUpdate=true` mỗi frame (BẮT BUỘC — né bug three) + shader tắt gương khi facing-away:** `ReflectorNode.updateBefore` set `_inReflector=true` (dòng 374) rồi reset SAU render (484); nhưng nhánh facing-away `if(isFacingAway && !forceUpdate) return` (401) thoát SỚM **bỏ qua reset** → `_inReflector` kẹt true → guard `if(bounces===false && _inReflector) return` (372) làm gương **chết VĨNH VIỄN** sau lần đầu camera chui dưới mặt nước. `forceUpdate=true` né nhánh 401 → luôn reset → không kẹt. Cái giá: khi camera DƯỚI mặt nước reflector render gương "từ dưới lên" SAI → **`_buildColor` tắt mượt** bằng `fres·smoothstep(0,0.04, dot(eye,n))` (ndv<0 = dưới nước → fade về khúc xạ). Kết quả: mọi góc TRÊN nước gương đúng+live; chui xuống dưới hiện khúc xạ (không ảnh sai, không đứng hình). `mesh.frustumCulled=false` chống freeze-do-cull khi pan.
-- **⚠ MSAA:** renderer phải `antialias:false` — MSAA phần cứng làm GPU TỪ CHỐI reflector RTT pass (mất phản chiếu + flood WebGPU validation). Khử răng cưa bằng FXAA post thay MSAA. Chi tiết: `known-issues/KI-007`.
+- **Fragment:** 4 `triNoise3D` (FBM 2 octave, sóng) + fresnel + specular — vẫn nhẹ so với reflector pass.
+- **`forceUpdate=true` mỗi frame (BẮT BUỘC — né bug three) + shader tắt gương khi facing-away:** `ReflectorNode.updateBefore` set `_inReflector=true` (dòng 374) rồi reset SAU render (484); nhưng nhánh facing-away `if(isFacingAway && !forceUpdate) return` (401) thoát SỚM **bỏ qua reset** → `_inReflector` kẹt true → guard `if(bounces===false && _inReflector) return` (372) làm gương **chết VĨNH VIỄN** sau lần đầu camera chui dưới mặt nước. `forceUpdate=true` né nhánh 401 → luôn reset → không kẹt. Cái giá: khi camera DƯỚI mặt nước reflector render gương "từ dưới lên" SAI → **`_buildColor` tắt mượt** bằng `fres·smoothstep(0, 0.04, eye.y)`. ⚠ Phép thử PHẢI dùng **`eye.y`** (= dot eye với normal PHẲNG +Y), KHÔNG dùng normal SÓNG `dot(eye,n)` — normal sóng nghiêng ±21° theo XZ → phụ-thuộc-azimuth → mất gương ở vài góc quay ngang dù camera vẫn trên nước.
+- **Tắt gương khi NHÌN GẦN THẲNG XUỐNG (top-down):** `fres·(1−smoothstep(0.97, 0.997, eye.y))`. Ở near-vertical virtualCamera reflector suy biến (`lookAt ∥ up`) → ảnh gương ĐƠ khi xoay azimuth. Fade về 0 ở elevation ~76°→86° → hiện khúc xạ (đáy hồ) thay ảnh đơ — top-down soi đáy hợp lý. Giữ gương cho mọi góc xiên thường. Kết quả: mọi góc TRÊN nước gương đúng+live; chui xuống dưới hiện khúc xạ (không ảnh sai, không đứng hình). `mesh.frustumCulled=false` chống freeze-do-cull khi pan.
+- **⚠ MSAA + post-AA:** renderer phải `antialias:false` — MSAA phần cứng làm GPU TỪ CHỐI reflector RTT pass (mất phản chiếu + flood WebGPU validation, `KI-007`). FXAA/PostProcessing-pass cũng **xung khắc reflector** trong WebGPU (đã thử & bỏ) → hiện **không post-AA** (chấp nhận răng cưa). Chi tiết + nguồn cộng đồng: `known-issues/KI-007`.
 
 ## Dispose
 
