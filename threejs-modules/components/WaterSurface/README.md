@@ -72,7 +72,8 @@ w.setShape(newPoints)
 ## Dispose
 
 ```typescript
-water.dispose() // giải phóng geometry + material
+water.setCamera(camera) // 1 lần sau khi tạo — cho dispose() giải phóng đúng RTT reflector
+water.dispose()         // giải phóng geometry + material + RTT reflector (nếu đã setCamera)
 ```
 
-⚠ **Giới hạn:** `reflector()` giữ RTT trong `WeakMap` theo virtual-camera; Three.js **không expose API dispose** cho RTT nội bộ này. Sau `dispose()` (material + mesh hết tham chiếu) + khi camera bị GC, RTT mới được thu. Với hồ sống lâu (tạo 1 lần cho cả scene) thì không phải vấn đề.
+⚠ **RTT reflector:** Three.js giữ RTT trong `WeakMap<virtualCamera, RenderTarget>` (virtualCamera lại trong `WeakMap<viewCamera, virtualCamera>`) và **không expose API dispose** — `material.dispose()` KHÔNG đụng tới → **leak GPU** (GC JS không free GPU mem). `dispose()` tự truy chuỗi `viewCam→virtualCameras→renderTargets→RT.dispose()` để giải phóng → **BẮT BUỘC `setCamera()` trước** (không set → RTT rớt cho GC = leak). Truy field nội-bộ three (fragile khi nâng version — `scan-versions.js` soi drift). Chi tiết: `known-issues/KI-006`.

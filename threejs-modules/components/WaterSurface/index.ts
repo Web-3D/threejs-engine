@@ -12,10 +12,11 @@
  *   6. Đốm nắng: reflect(-sunDir, normal)·eye^shininess → glint theo MẶT TRỜI (setSun, giống GrassBlades)
  * Nước transparent=true (vẽ SAU opaque → framebuffer có đáy để khúc xạ). Reflect↔refract = 1 chỗ blend (đổi C dễ).
  *
- * CÁCH DÙNG: const w = new WaterSurface({ width, depth, baseY }); scene.add(w.getMesh())
+ * CÁCH DÙNG: const w = new WaterSurface({ width, depth, baseY }); w.setCamera(cam); scene.add(w.getMesh())
  *   Sóng: gọi w.setTime(elapsedSeconds) mỗi frame. Nắng: w.setSun(sunPos.x, y, z) khi mặt trời đổi.
- * DISPOSE: dispose() giải phóng geometry + material. ⚠ RTT nội bộ của reflector nằm trong WeakMap
- *   theo virtual-camera — three KHÔNG expose dispose; GC thu khi camera + node-graph hết tham chiếu.
+ * DISPOSE: dispose() giải phóng geometry + material + RTT reflector. ⚠ RTT nội bộ nằm WeakMap theo
+ *   virtual-camera — three KHÔNG expose dispose → ta tự truy chuỗi viewCam→virtualCameras→renderTargets→RT
+ *   (cần setCamera trước; scan-versions bắt drift nếu three đổi tên field). KHÔNG setCamera → RTT rớt cho GC.
  */
 
 import * as THREE from 'three'
@@ -90,13 +91,23 @@ export interface WaterSurfaceOptions {
   points?: { x: number; z: number }[]
 }
 
+// Shape NỘI BỘ của ReflectorBaseNode (three 0.174) ta cần để giữ forceUpdate + dispose RTT. KHÔNG public
+// trong .d.ts → cast. scan-versions.js bắt drift nếu three đổi tên field (virtualCameras/renderTargets).
+type ReflectorBaseLike = {
+  forceUpdate: boolean
+  virtualCameras?: WeakMap<object, object>
+  renderTargets?: WeakMap<object, { dispose(): void }>
+}
+
 export class WaterSurface {
   private geometry: THREE.BufferGeometry | null = null
   private material: MeshBasicNodeMaterial | null = null
   private mesh: THREE.Mesh | null = null
   // Reflector base node — đặt forceUpdate=true mỗi frame để né guard isFacingAway (reflector BỎ render
   // RTT khi camera ở mặt SAU mặt phẳng nước → gương "đứng hình" lúc orbit thấp/ngang. Xem ReflectorNode.js).
-  private _reflector: { forceUpdate: boolean } | null = null
+  // virtualCameras/renderTargets = 2 WeakMap NỘI BỘ của ReflectorBaseNode (three 0.174) → dùng để dispose RTT.
+  private _reflector: ReflectorBaseLike | null = null
+  private _camera: THREE.Camera | null = null // view-camera → tra virtualCamera → RTT để dispose (né leak)
   private isDisposed = false
   private readonly _w: number // nhớ kích thước chữ nhật để fallback khi <3 đỉnh
   private readonly _d: number
@@ -132,8 +143,8 @@ export class WaterSurface {
     this.geometry = waterGeo(o.width, o.depth, o.points)
     const mat = new MeshBasicNodeMaterial()
     const sm = reflector({ resolution: o.resolution, bounces: false })
-    // base node giữ forceUpdate (không có trong .d.ts công khai → cast). setTime bật mỗi frame.
-    this._reflector = (sm as unknown as { reflector: { forceUpdate: boolean } }).reflector
+    // base node giữ forceUpdate + 2 WeakMap (không có trong .d.ts công khai → cast). setTime bật mỗi frame.
+    this._reflector = (sm as unknown as { reflector: ReflectorBaseLike }).reflector
     mat.colorNode = this._buildColor(sm)
     mat.opacityNode = this.uAlpha
     // transparent=true LUÔN: nước vẽ ở pass trong suốt (SAU opaque) → viewportSharedTexture có nền/đáy
@@ -208,8 +219,15 @@ export class WaterSurface {
     return this.mesh
   }
 
+  /** View-camera đang render scene → cho dispose() giải phóng đúng RTT reflector (né leak GPU).
+   *  Caller (editor) gọi 1 lần sau khi tạo. KHÔNG set → dispose() chỉ bỏ material (RTT rớt lại cho GC). */
+  setCamera(camera: THREE.Camera): void {
+    this._camera = camera
+  }
+
   dispose(): void {
     if (this.isDisposed) return
+    this._disposeReflectorRT() // TRƯỚC khi null _reflector — giải phóng RTT GPU (three không tự lo)
     this.mesh?.parent?.remove(this.mesh)
     this.geometry?.dispose()
     this.material?.dispose()
@@ -217,7 +235,20 @@ export class WaterSurface {
     this.material = null
     this.mesh = null
     this._reflector = null
+    this._camera = null
     this.isDisposed = true
+  }
+
+  // Giải phóng RTT reflector: three giữ RTT trong WeakMap<virtualCamera, RenderTarget>, mà virtualCamera lại
+  // trong WeakMap<viewCamera, virtualCamera>. material.dispose() KHÔNG đụng tới → leak GPU. Chuỗi: viewCam →
+  // virtualCameras → virtualCam → renderTargets → RT.dispose(). Truy field NỘI BỘ three (cast); scan-versions.js
+  // bắt drift nếu three đổi tên. KHÔNG có camera → bỏ qua (RTT rớt cho GC, không free GPU — caller nên setCamera).
+  private _disposeReflectorRT(): void {
+    const r = this._reflector
+    const cam = this._camera
+    if (!r || !cam) return
+    const virtualCam = r.virtualCameras?.get(cam)
+    if (virtualCam) r.renderTargets?.get(virtualCam)?.dispose()
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
