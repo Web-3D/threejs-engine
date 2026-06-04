@@ -14,6 +14,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
+import { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { GROUND_PRESETS, type SiteState } from '../state'
 
@@ -26,10 +27,11 @@ export interface SiteRenderCtx {
   shaders: { dispose(): void }[]
 }
 
-// Handle trả về caller: ref tới cỏ 3D đang sống → tinh chỉnh uniform live (KHÔNG instanceof = né lỗi
-// alias/relative khác class identity → live no-op).
+// Handle trả về caller: ref tới cỏ 3D + hồ nước đang sống → tinh chỉnh uniform live + setSun (KHÔNG
+// instanceof = né lỗi alias/relative khác class identity → live no-op).
 export interface SiteHandle {
   grass: GrassBlades | null
+  water: WaterSurface | null
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -45,22 +47,150 @@ export function renderSiteState(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts = {}
 ): SiteHandle {
-  if (!site.show) return { grass: null }
+  if (!site.show) return { grass: null, water: null }
   buildGround(site, ctx)
-  const grass = buildVegetation(site, ctx, opts.exclude ?? [])
+  // Cỏ né cả foundation (caller) LẪN footprint hồ → không mọc xuyên mặt nước.
+  const exclude = [...(opts.exclude ?? [])]
+  if (site.water.enabled) exclude.push(waterRect(site))
+  const grass = buildVegetation(site, ctx, exclude)
+  const water = site.water.enabled ? buildWater(site, ctx) : null
   if (site.fence.enabled) buildFence(site, ctx)
-  return { grass }
+  return { grass, water }
 }
 
-// Cỏ 3D nhú lên (tier B — GrassBlades) phủ lên nền cỏ. Chỉ khi ground='grass' & bật. Gốc ở mặt trên nền.
-// dispose qua ctx.shaders (GrassBlades.dispose gỡ mesh + geo + mat). B0: hình dáng trần + 1 màu.
-// exclude = footprint foundation → cỏ né (lá rơi trong rect bị bỏ).
+// Rect hồ (m, world XZ) cho cỏ né — cỏ KHÔNG mọc xuyên mặt nước. Free → bbox polygon (axis-aligned).
+function waterRect(site: SiteState): GrassExcludeRect {
+  const w = site.water
+  if (w.shape === 'free' && w.points.length >= 3) {
+    let minX = Infinity
+    let maxX = -Infinity
+    let minZ = Infinity
+    let maxZ = -Infinity
+    for (const p of w.points) {
+      minX = Math.min(minX, p.x)
+      maxX = Math.max(maxX, p.x)
+      minZ = Math.min(minZ, p.z)
+      maxZ = Math.max(maxZ, p.z)
+    }
+    return {
+      cx: (w.offsetX + (minX + maxX) / 2) / 1000,
+      cz: (w.offsetZ + (minZ + maxZ) / 2) / 1000,
+      halfW: (maxX - minX) / 2000,
+      halfD: (maxZ - minZ) / 2000,
+      rot: 0,
+    }
+  }
+  return {
+    cx: w.offsetX / 1000,
+    cz: w.offsetZ / 1000,
+    halfW: w.width / 2000,
+    halfD: w.depth / 2000,
+    rot: 0,
+  }
+}
+
+// Hồ nước phản chiếu (tier C — WaterSurface). Đặt tại offset trong lô, mặt nước trên slab nền (+5mm né
+// z-fight). push ctx.shaders → setTime mỗi frame (sóng) + dispose tự lo. Trả ref cho caller setSun + tune.
+function buildWater(site: SiteState, ctx: SiteRenderCtx): WaterSurface {
+  const w = site.water
+  buildBasin(site, ctx) // đáy hồ vẽ TRƯỚC (opaque) → nước (transparent) khúc xạ thấy đáy
+  const points =
+    w.shape === 'free' && w.points.length >= 3
+      ? w.points.map((p) => ({ x: p.x / 1000, z: p.z / 1000 })) // mm → m, local
+      : undefined
+  const water = new WaterSurface({
+    width: w.width / 1000,
+    depth: w.depth / 1000,
+    baseY: site.groundThick / 1000 + 0.005,
+    waterColor: w.color,
+    reflectivity: w.reflectivity,
+    flow: w.flow,
+    distortion: w.distortion,
+    rippleScale: w.rippleScale,
+    tint: w.tint,
+    points,
+  })
+  const mesh = water.getMesh()
+  mesh.position.x = w.offsetX / 1000
+  mesh.position.z = w.offsetZ / 1000
+  ctx.group.add(mesh)
+  ctx.shaders.push(water)
+  return water
+}
+
+// Đỉnh hồ trong world XZ (mét): rect → 4 góc quanh offset; free → offset + points.
+function pondWorldXZ(site: SiteState): { x: number; z: number }[] {
+  const w = site.water
+  const ox = w.offsetX / 1000
+  const oz = w.offsetZ / 1000
+  if (w.shape === 'free' && w.points.length >= 3) {
+    return w.points.map((p) => ({ x: ox + p.x / 1000, z: oz + p.z / 1000 }))
+  }
+  const hw = w.width / 2000
+  const hd = w.depth / 2000
+  return [
+    { x: ox - hw, z: oz - hd },
+    { x: ox + hw, z: oz - hd },
+    { x: ox + hw, z: oz + hd },
+    { x: ox - hw, z: oz + hd },
+  ]
+}
+
+// Đáy hồ = vách (quad mỗi cạnh, y=0 slab-bottom → floor) + sàn (ShapeGeometry). Material đục, DoubleSide
+// (né winding). Vách nối liền vách-lỗ-nền (0..t) → liên tục từ rim xuống đáy, không z-fight.
+function buildBasin(site: SiteState, ctx: SiteRenderCtx): void {
+  const yBot = site.groundThick / 1000 - site.water.depthY / 1000 // floor dưới rim depthY
+  const geo = basinGeometry(pondWorldXZ(site), 0, yBot)
+  const mat = new THREE.MeshStandardMaterial({
+    color: site.water.bottomColor,
+    roughness: 0.95,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.receiveShadow = true
+  ctx.geos.push(geo)
+  ctx.mats.push(mat)
+  ctx.group.add(mesh)
+}
+
+// Geometry basin: vách (pts world XZ, yTop→yBot) + sàn (ShapeGeometry ở yBot). Merge 1 mesh.
+function basinGeometry(
+  pts: { x: number; z: number }[],
+  yTop: number,
+  yBot: number
+): THREE.BufferGeometry {
+  const pos: number[] = []
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    pos.push(a.x, yTop, a.z, b.x, yTop, b.z, b.x, yBot, b.z) // quad cạnh → 2 tris
+    pos.push(a.x, yTop, a.z, b.x, yBot, b.z, a.x, yBot, a.z)
+  }
+  const walls = new THREE.BufferGeometry()
+  walls.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  walls.computeVertexNormals()
+  const s = new THREE.Shape()
+  pts.forEach((q, i) => (i === 0 ? s.moveTo(q.x, -q.z) : s.lineTo(q.x, -q.z))) // XY: x=worldX, y=−worldZ
+  s.closePath()
+  const floor = new THREE.ShapeGeometry(s)
+  floor.rotateX(-Math.PI / 2)
+  floor.translate(0, yBot, 0)
+  floor.deleteAttribute('uv') // khớp attribute với walls (position+normal) để merge
+  const merged = mergeGeometries([walls, floor], false)
+  walls.dispose()
+  floor.dispose()
+  return merged ?? new THREE.BufferGeometry()
+}
+
+// Cỏ 3D nhú lên (tier B — GrassBlades) = LỚP THỰC VẬT ĐỘC LẬP, KHÔNG dính loại surface: mọc trên nền BẤT KỲ
+// (grass/soil/gravel) khi grass3d.enabled. Gốc ở mặt trên nền. dispose qua ctx.shaders. exclude = footprint
+// foundation → cỏ né (lá rơi trong rect bị bỏ). Surface material (GrassGround/soil/gravel) là lớp riêng (buildGround).
 function buildVegetation(
   site: SiteState,
   ctx: SiteRenderCtx,
   exclude: GrassExcludeRect[]
 ): GrassBlades | null {
-  if (site.ground !== 'grass' || !site.grass3d.enabled) return null
+  if (!site.grass3d.enabled) return null // độc lập surface — bất kỳ nền nào cũng rải được
   const g = site.grass3d
   const blades = new GrassBlades({
     width: site.lotWidth / 1000,
@@ -76,28 +206,61 @@ function buildVegetation(
     bend: g.bend,
     cup: g.cup,
     cupGeo: g.cupGeo,
+    cupNormalGain: g.cupNormalGain,
     bladesPerClump: g.bladesPerClump,
     clumpRadius: g.clumpRadius,
     clumpSplay: g.clumpSplay,
     color: g.color,
+    innerColor: g.innerColor,
+    shadowDark: g.shadowDark,
+    shadowSpan: g.shadowSpan,
+    contactDark: g.contactDark, // luôn dựng contact mesh nếu >0 → toggle live cả 2 chiều
+    contactRadius: g.contactRadius,
     exclude,
   })
-  ctx.group.add(blades.getMesh())
+  if (!g.contactOn) blades.setContactDark(0) // tắt vệt = uniform 0 (mesh vẫn có, bật lại live được)
+  // Cỏ NHẬN bóng sun (nhà/rào/mái đổ xuống bãi) — xài lại shadow map có sẵn, rẻ. KHÔNG castShadow:
+  // lá 6mm < 1 texel @19mm/texel của shadow cam ±20m → rớt/nhấp nháy; self-shadow đã có bóng-gốc-giả lo.
+  const mesh = blades.getMesh()
+  mesh.receiveShadow = true
+  ctx.group.add(mesh)
   ctx.shaders.push(blades)
   return blades
 }
 
 // Nền = slab dày: đáy y=0, top y=t. PBR nhận IBL + đổ bóng. Lô tâm world (0,0).
+// Có hồ → ExtrudeGeometry lô KHOÉT LỖ polygon hồ (Shape.holes) → nhìn xuống basin được.
 function buildGround(site: SiteState, ctx: SiteRenderCtx): void {
-  const lw = site.lotWidth / 1000
-  const ld = site.lotDepth / 1000
   const t = site.groundThick / 1000
-  const geo = new THREE.BoxGeometry(lw, t, ld)
+  let geo: THREE.BufferGeometry
+  if (site.water.enabled) {
+    geo = new THREE.ExtrudeGeometry(lotShape(site), { depth: t, bevelEnabled: false })
+    geo.rotateX(-Math.PI / 2) // shape XY-extrude(+z) → slab XZ dày theo Y (0..t), top y=t
+  } else {
+    geo = new THREE.BoxGeometry(site.lotWidth / 1000, t, site.lotDepth / 1000)
+    geo.translate(0, t / 2, 0) // box tâm → đáy y=0
+  }
   const mesh = new THREE.Mesh(geo, groundMaterial(site, ctx))
-  mesh.position.set(0, t / 2, 0)
   mesh.receiveShadow = true
   ctx.geos.push(geo)
   ctx.group.add(mesh)
+}
+
+// Shape lô (XY: x=worldX, y=−worldZ) + lỗ polygon hồ cho ExtrudeGeometry nền.
+function lotShape(site: SiteState): THREE.Shape {
+  const hw = site.lotWidth / 2000
+  const hd = site.lotDepth / 2000
+  const s = new THREE.Shape()
+  s.moveTo(-hw, -hd)
+  s.lineTo(hw, -hd)
+  s.lineTo(hw, hd)
+  s.lineTo(-hw, hd)
+  s.closePath()
+  const hole = new THREE.Path()
+  pondWorldXZ(site).forEach((q, i) => (i === 0 ? hole.moveTo(q.x, -q.z) : hole.lineTo(q.x, -q.z)))
+  hole.closePath()
+  s.holes.push(hole)
+  return s
 }
 
 // grass = procedural shader (GrassGround, tier A — trông thật); soil/gravel = màu phẳng (nâng cấp sau).

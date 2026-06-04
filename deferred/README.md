@@ -39,6 +39,7 @@ deferred/
 | [future-effects.md](rendering/future-effects.md) | FireSystem · FluidSystem · TrailSystem | Scene cần particle effect (FluidSystem: cần WebGPU compute) |
 | [future-postprocessing.md](rendering/future-postprocessing.md) | SSAOPass · MotionBlurPass | Scene geometry phức tạp hoặc object di chuyển nhanh |
 | [perception-tricks-compact-spaces.md](rendering/perception-tricks-compact-spaces.md) | Phòng nhỏ thấy rộng: forced perspective · vista · verticality · fog · InteriorMapping · cảnh báo FOV. Ortho để thiết kế, perspective để trình bày | Dựng interior thật trong World, hoặc làm camera system (chốt FOV) |
+| [water-bottom-refraction.md](rendering/water-bottom-refraction.md) | Đáy hồ (Shape-holes khoét nền + basin extrude) + mặt nước vừa phản chiếu vừa nhìn xuyên (Fresnel reflect↔refract: trong suốt / `viewportSharedTexture` / PBR transmission) | Chốt mức refraction + chấp nhận cost tier-C++ |
 
 ---
 

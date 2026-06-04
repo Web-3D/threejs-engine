@@ -48,3 +48,4 @@ Copy `_TEMPLATE.md` → đổi tên `KI-NNN-<slug>.md` → điền → thêm 1 d
 | --- | --- | --- | --- | --- | --- |
 | 001 | Fix boundary `solidTraps` không propagate sang bản copy → răng cưa mép cửa brick-3d | geometry | high | fixed | 2026-05-30 |
 | 002 | `replace_all` thay luôn expression trong thân helper mới → self-recursion vô hạn | build-tooling | medium | fixed | 2026-05-31 |
+| 003 | Ghi đè `positionNode = vec3(...)` xoá instanceMatrix → mọi instance dồn về gốc (preview giấu bug) | shader | high | fixed | 2026-06-04 |

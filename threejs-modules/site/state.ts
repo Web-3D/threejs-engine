@@ -1,7 +1,7 @@
 /**
  * VỊ TRÍ   — threejs-modules/site/state.ts  (site-kit — anh em building-kit)
- * VAI TRÒ  — NGUỒN SỰ THẬT cho "lô đất là gì": SiteState schema (nền + hàng rào) + factory +
- *            GROUND_PRESETS + JP defaults + coverageStats (đối chiếu nhà/lô). Pure data — KHÔNG DOM.
+ * VAI TRÒ  — NGUỒN SỰ THẬT cho "lô đất là gì": SiteState schema (nền + cỏ-3D + hồ nước + hàng rào) +
+ *            factory + GROUND_PRESETS + JP defaults + coverageStats (đối chiếu nhà/lô). Pure data — KHÔNG DOM.
  * LIÊN HỆ  — Lô hoàn chỉnh = building (BuildingState) + site (SiteState). Renderer: ./render/fromState.
  *            ĐỘC LẬP building/ (footprint nhà truyền vào coverageStats như số m², không import building).
  *
@@ -21,10 +21,11 @@ export interface FenceConfig {
   inset: number // mm — lùi vào từ mép lô (setback)
 }
 
-// Cỏ 3D thật (tier B — GrassBlades instanced). Chỉ render khi ground==='grass'.
+// Cỏ 3D thật (tier B — GrassBlades instanced) = LỚP THỰC VẬT độc lập surface: render khi enabled, mọc trên
+// nền BẤT KỲ (grass/soil/gravel) — KHÔNG còn dính ground==='grass' (tách lớp material vs vegetation).
 // REBUILD TĂNG DẦN (preview-first): B0 = hình dáng trần. Thêm dần shape/màu-gradient/cong/xoắn/
 // gió/cao-thấp/ngả/đổ-bóng ở các bước sau (mỗi bước thêm 1 field ở đây + 1 row panel + 1 uniform).
-// Structural (density/height/width/segments/taper/curveLR/bend/cup/cupGeo/bladesPerClump/clumpRadius) → dựng lại; uniform (color) → live.
+// Structural (density/height/width/segments/taper/curveLR/bend/cup/cupGeo/cupNormalGain/clump*) → dựng lại; uniform (color/shadow*/contact*) → live.
 export interface Grass3DConfig {
   enabled: boolean
   density: number // lá/m² (cap trong GrassBlades — accent-only)
@@ -37,10 +38,44 @@ export interface Grass3DConfig {
   bend: number // cong DỌC 0..1 (1 chiều; 0 = đứng): mặt NGOÀI +Z lồi ra (Z = bend·H·t²)
   cup: number // cụp 0..1 (1 chiều, cường độ; 0 = phẳng): mặt TRONG -Z lõm vào. Shader normal / geometry nếu cupGeo
   cupGeo: boolean // BẬT geometry fold thật (trục giữa, ×3 tris, cận cảnh) thay vì shader normal. Mặc định false (ẩn/tắt)
+  cupNormalGain: number // độ nghiêng normal tạo cụp (shader mode); lớn = ăn sáng cụp gắt hơn (× với cup)
   bladesPerClump: number // số lá/cụm (bụi). 1 = lá đơn; >1 = gộp K lá vào 1 instance (budget-neutral, rải cụm)
   clumpRadius: number // m — bán kính xòe bụi
   clumpSplay: number // rad — nghiêng ngọn ra ngoài tâm (mặt trong vào tâm + xòe, bớt đâm xuyên)
-  color: number // màu lá (B0: 1 màu phẳng; gradient = bước sau)
+  color: number // màu lá mặt NGOÀI (+Z) (uniform live)
+  innerColor: number // màu lá mặt TRONG (-Z) (uniform live) — two-tone 2 mặt
+  shadowDark: number // bóng gốc mặt trong (uniform live): nhân màu ở gốc (0=đen, 1=tắt)
+  shadowSpan: number // bóng gốc vươn tới đâu (uniform live): tỉ lệ thân lá (1/6 mặc định)
+  contactOn: boolean // bật/tắt vệt tiếp đất (đậm hiệu lực = 0 khi tắt — qua tuneGrass/buildVegetation)
+  contactDark: number // vệt tiếp đất dưới gốc cụm (uniform live): độ đậm alpha (0 = tắt)
+  contactRadius: number // m — bán kính đĩa vệt tiếp đất (uniform live, scale shader)
+}
+
+// Hồ/ao nước phản chiếu (tier C — WaterSurface, reflector). SITE ELEMENT RỜI (khác cỏ phủ-cả-lô):
+// có VỊ TRÍ (offset so tâm lô) + kích thước riêng → đặt cạnh nhà. Structural (size/offset) → dựng lại;
+// uniform (color/reflectivity/flow/distortion) → live qua setX. ĐẮT: +1 render pass/RTT — 1 hồ/lô.
+// Đỉnh polygon mặt nước (mm, LOCAL so tâm hồ). Dùng khi shape='free'.
+export interface WaterPoint {
+  x: number
+  z: number
+}
+
+export interface WaterConfig {
+  enabled: boolean
+  shape: 'rect' | 'free' // rect = chữ nhật width×depth; free = polygon points[] (kéo đỉnh trong 3D)
+  width: number // mm — bề ngang hồ (X) — chỉ dùng khi shape='rect'
+  depth: number // mm — chiều sâu hồ (Z) — chỉ dùng khi shape='rect'
+  points: WaterPoint[] // đỉnh polygon (mm, local) — chỉ dùng khi shape='free'; <3 đỉnh → fallback rect
+  offsetX: number // mm — tâm hồ lệch so tâm lô (X)
+  offsetZ: number // mm — tâm hồ lệch so tâm lô (Z)
+  color: number // màu nước (uniform live)
+  reflectivity: number // rf0 [0..1] — phản chiếu khi nhìn thẳng (uniform live)
+  flow: number // tốc độ cuộn sóng (uniform live)
+  distortion: number // cường độ rung mặt gương (uniform live)
+  rippleScale: number // tần số gợn sóng (1/m)
+  depthY: number // mm — độ sâu lòng hồ (đáy dưới mặt nền) → basin + nền khoét lỗ
+  bottomColor: number // màu đáy hồ (đục)
+  tint: number // [0..1] — ám màu nước lên ảnh khúc xạ (absorption giả; cao = đục, đáy mờ) (uniform live)
 }
 
 export interface SiteState {
@@ -50,6 +85,7 @@ export interface SiteState {
   groundThick: number // mm — dày slab nền 10..100 (1..10cm); ≥10 để mặt trên cao hơn grid → hết z-fight
   ground: GroundMaterialKey
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
+  water: WaterConfig // hồ nước phản chiếu (tier C) — site element rời, đặt cạnh nhà
   fence: FenceConfig
 }
 
@@ -66,12 +102,13 @@ export const GROUND_THICK_MAX = 100 // mm = 10cm
 
 // ── Factory ────────────────────────────────────────────────────────────────────
 
-// Mặc định: lô ~96 m² (10.0×9.6m) ≈ 50% phủ nhà mặc định (rectangle 8×6 = 48 m²) — sân vừa, không quá to.
+// Mặc định: lô ~216 m² (15.0×14.4m = 10×9.6 ×1.5 mỗi cạnh) ≈ 22% phủ nhà (rectangle 8×6 = 48 m²) —
+// sân rộng có chỗ cho hồ nước cạnh nhà (sân = lô − footprint).
 export function defaultSiteState(): SiteState {
   return {
     show: true,
-    lotWidth: 10000,
-    lotDepth: 9600,
+    lotWidth: 15000,
+    lotDepth: 14400,
     groundThick: GROUND_THICK_MIN,
     ground: 'grass',
     grass3d: {
@@ -86,12 +123,41 @@ export function defaultSiteState(): SiteState {
       bend: 0, // đứng thẳng mặc định (ngả dọc = bước chỉnh thêm)
       cup: 0, // phẳng mặc định
       cupGeo: false, // mặc định shader normal (rẻ); bật geometry fold thủ công khi cần cận cảnh
+      cupNormalGain: 4, // độ gắt cụp shading (nhân với cup)
       bladesPerClump: 1, // mặc định lá đơn; tăng để thành bụi cỏ chân thật hơn
       clumpRadius: 0.04, // 4cm xòe bụi
       clumpSplay: 0.45, // ~26° nghiêng ngọn ra ngoài (mặt trong vào tâm)
-      color: 0x4f7a33, // 1 màu lá xanh vừa
+      color: 0x4f7a33, // màu mặt ngoài xanh vừa
+      innerColor: 0x273d19, // màu mặt trong (~0.5× ngoài) → two-tone
+      shadowDark: 0.2, // bóng gốc mặt trong đậm ×0.2
+      shadowSpan: 1 / 6, // bóng vươn tới 1/6 thân
+      contactOn: true, // vệt tiếp đất bật
+      contactDark: 0.45, // vệt tiếp đất đậm vừa (lọt khe lá vẫn thấy ở bãi dày nền cỏ xanh)
+      contactRadius: 0.07, // 7cm rộng ngang (phủ kín khe giữa lá → nền gốc liền mảng tối)
     },
+    water: defaultWater(),
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
+  }
+}
+
+// Tách riêng (rule-50 defaultSiteState) — default hồ nước.
+function defaultWater(): WaterConfig {
+  return {
+    enabled: true,
+    shape: 'rect', // mặc định chữ nhật; đổi 'free' để kéo đỉnh polygon trong 3D
+    width: 4000, // 4m ngang
+    depth: 3000, // 3m sâu
+    points: [], // rỗng khi rect; seed 4 góc khi chuyển sang free
+    offsetX: 0, // giữa theo X
+    offsetZ: 5000, // +5m về trước nhà (footprint z≤3m; hồ z 3.5..6.5 trong lô z≤7.2m) — "cạnh building"
+    color: 0x254a59, // xanh nước biển trầm
+    reflectivity: 0.35, // rf0 nhìn thẳng (grazing tự lên gần 1 qua fresnel)
+    flow: 0.4, // sóng cuộn vừa
+    distortion: 0.4, // rung gương vừa
+    rippleScale: 4, // sóng nhỏ/dày vừa
+    depthY: 600, // 60cm sâu lòng hồ
+    bottomColor: 0x3a3329, // bùn/đá đáy đục
+    tint: 0.4, // ám màu nước vừa (thấy đáy nhưng có chất nước)
   }
 }
 
@@ -153,10 +219,60 @@ function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig)
     bend: clamp(num(r.bend, d.bend), 0, 1),
     cup: clamp(num(r.cup, d.cup), 0, 1),
     cupGeo: typeof r.cupGeo === 'boolean' ? r.cupGeo : d.cupGeo,
+    cupNormalGain: clamp(num(r.cupNormalGain, d.cupNormalGain), 0, 10),
     bladesPerClump: clamp(Math.round(num(r.bladesPerClump, d.bladesPerClump)), 1, 12),
     clumpRadius: clamp(num(r.clumpRadius, d.clumpRadius), 0.005, 0.2),
     clumpSplay: clamp(num(r.clumpSplay, d.clumpSplay), 0, 1.2),
     color: parseColor(r.color, d.color),
+    innerColor: parseColor(r.innerColor, d.innerColor),
+    shadowDark: clamp(num(r.shadowDark, d.shadowDark), 0, 1),
+    shadowSpan: clamp(num(r.shadowSpan, d.shadowSpan), 0.001, 1),
+    contactOn: typeof r.contactOn === 'boolean' ? r.contactOn : d.contactOn,
+    contactDark: clamp(num(r.contactDark, d.contactDark), 0, 1),
+    contactRadius: clamp(num(r.contactRadius, d.contactRadius), 0.005, 0.3),
+  }
+}
+
+// 1 phần tử → WaterPoint hợp lệ (clamp ±50m) hoặc null. Tách riêng cho parsePoints giữ complexity thấp.
+function toWaterPoint(p: unknown): WaterPoint | null {
+  if (!p || typeof p !== 'object') return null
+  const px = (p as { x?: unknown }).x
+  const pz = (p as { z?: unknown }).z
+  if (typeof px !== 'number' || typeof pz !== 'number') return null
+  if (!Number.isFinite(px) || !Number.isFinite(pz)) return null
+  return { x: clamp(px, -50000, 50000), z: clamp(pz, -50000, 50000) }
+}
+
+// Polygon đỉnh: lọc phần tử hợp lệ, tối đa 32 đỉnh. Sai/thiếu → [].
+function parsePoints(v: unknown): WaterPoint[] {
+  if (!Array.isArray(v)) return []
+  const out: WaterPoint[] = []
+  for (const p of v) {
+    const wp = toWaterPoint(p)
+    if (wp) out.push(wp)
+    if (out.length >= 32) break
+  }
+  return out
+}
+
+function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): WaterConfig {
+  const r = raw ?? {}
+  return {
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    shape: r.shape === 'free' ? 'free' : 'rect',
+    width: clamp(num(r.width, d.width), 1000, 30000),
+    depth: clamp(num(r.depth, d.depth), 1000, 30000),
+    points: parsePoints(r.points),
+    offsetX: clamp(num(r.offsetX, d.offsetX), -20000, 20000),
+    offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
+    color: parseColor(r.color, d.color),
+    reflectivity: clamp(num(r.reflectivity, d.reflectivity), 0, 1),
+    flow: clamp(num(r.flow, d.flow), 0, 3),
+    distortion: clamp(num(r.distortion, d.distortion), 0, 2),
+    rippleScale: clamp(num(r.rippleScale, d.rippleScale), 0.5, 20),
+    depthY: clamp(num(r.depthY, d.depthY), 50, 3000),
+    bottomColor: parseColor(r.bottomColor, d.bottomColor),
+    tint: clamp(num(r.tint, d.tint), 0, 1),
   }
 }
 
@@ -166,6 +282,7 @@ export function parseSite(raw: unknown): SiteState {
   const o = raw as Partial<SiteState> & {
     fence?: Partial<FenceConfig>
     grass3d?: Partial<Grass3DConfig>
+    water?: Partial<WaterConfig>
   }
   return {
     show: typeof o.show === 'boolean' ? o.show : d.show,
@@ -174,6 +291,7 @@ export function parseSite(raw: unknown): SiteState {
     groundThick: clamp(num(o.groundThick, d.groundThick), GROUND_THICK_MIN, GROUND_THICK_MAX),
     ground: parseGround(o.ground, d.ground),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
+    water: parseWater(o.water, d.water),
     fence: parseFence(o.fence, d.fence),
   }
 }
