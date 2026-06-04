@@ -53,7 +53,11 @@ export interface Grass3DConfig {
 
 // Hồ/ao nước phản chiếu (tier C — WaterSurface, reflector). SITE ELEMENT RỜI (khác cỏ phủ-cả-lô):
 // có VỊ TRÍ (offset so tâm lô) + kích thước riêng → đặt cạnh nhà. Structural (size/offset) → dựng lại;
-// uniform (color/reflectivity/flow/distortion) → live qua setX. ĐẮT: +1 render pass/RTT — 1 hồ/lô.
+// uniform (color/reflectivity/flow/distortion) → live qua setX. ĐẮT: +1 render pass/RTT MỖI hồ bật →
+// instance mới mặc định enabled=false (perf). ĐA-INSTANCE: site.waters[]. CHỈ kind='pool' render; pond/
+// puddle = placeholder (coming soon, chưa dựng hình riêng) → renderPools() lọc ra.
+export type WaterKind = 'pool' | 'pond' | 'puddle'
+
 // Đỉnh polygon mặt nước (mm, LOCAL so tâm hồ). Dùng khi shape='free'.
 export interface WaterPoint {
   x: number
@@ -61,6 +65,7 @@ export interface WaterPoint {
 }
 
 export interface WaterConfig {
+  kind: WaterKind // pool = hồ gương (render); pond/puddle = placeholder, chưa render (lọc bởi renderPools)
   enabled: boolean
   shape: 'rect' | 'free' // rect = chữ nhật width×depth; free = polygon points[] (kéo đỉnh trong 3D)
   width: number // mm — bề ngang hồ (X) — chỉ dùng khi shape='rect'
@@ -74,9 +79,16 @@ export interface WaterConfig {
   distortion: number // cường độ rung mặt gương (uniform live)
   rippleScale: number // tần số gợn sóng (1/m)
   depthY: number // mm — độ sâu lòng hồ (đáy dưới mặt nền) → basin + nền khoét lỗ
-  bottomColor: number // màu đáy hồ (đục)
+  bottomColor: number // màu đáy hồ (đục) — hiện tô CẢ tường (basin 1 material; tách khi làm material thật)
   tint: number // [0..1] — ám màu nước lên ảnh khúc xạ (absorption giả; cao = đục, đáy mờ) (uniform live)
+  edgeWidth: number // mm — bề rộng dải coping/mép viền quanh hồ (0 = tắt). Render rect-frame ở mặt nền.
+  floorMaterial: WaterMaterialKey // chất liệu đáy — placeholder ('none'); render thật sau
+  wallMaterial: WaterMaterialKey // chất liệu tường — placeholder ('none'); render thật sau
+  edgeMaterial: WaterMaterialKey // chất liệu dải coping — placeholder ('none'); render thật sau
 }
+
+// Chất liệu bề mặt hồ (đáy/tường/coping) — PLACEHOLDER: chỉ 'none' hiện tại, thêm tile/stone/concrete… sau.
+export type WaterMaterialKey = 'none'
 
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
@@ -85,8 +97,14 @@ export interface SiteState {
   groundThick: number // mm — dày slab nền 10..100 (1..10cm); ≥10 để mặt trên cao hơn grid → hết z-fight
   ground: GroundMaterialKey
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
-  water: WaterConfig // hồ nước phản chiếu (tier C) — site element rời, đặt cạnh nhà
+  waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
   fence: FenceConfig
+}
+
+// Hồ render được = pool & pond ĐANG BẬT (puddle vẫn placeholder → bỏ). Dùng bởi renderer + editor (khoét
+// lỗ/drag). Pond "y như" pool (cùng WaterSurface) — phân hoá thông số sau; chỉ puddle chưa dựng hình.
+export function renderWaters(site: SiteState): WaterConfig[] {
+  return site.waters.filter((w) => (w.kind === 'pool' || w.kind === 'pond') && w.enabled)
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────────
@@ -135,29 +153,40 @@ export function defaultSiteState(): SiteState {
       contactDark: 0.45, // vệt tiếp đất đậm vừa (lọt khe lá vẫn thấy ở bãi dày nền cỏ xanh)
       contactRadius: 0.07, // 7cm rộng ngang (phủ kín khe giữa lá → nền gốc liền mảng tối)
     },
-    water: defaultWater(),
+    waters: defaultWaters(),
     fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
   }
 }
 
-// Tách riêng (rule-50 defaultSiteState) — default hồ nước.
-function defaultWater(): WaterConfig {
+// Bộ hồ mặc định: 1 Pool BẬT (= hồ cũ) + 1 Pond + 1 Puddle TẮT (placeholder, coming soon). Mỗi loại
+// có sẵn 1 instance để hàng tab không rỗng; nút "＋" thêm tiếp (instance mới luôn enabled=false — perf).
+export function defaultWaters(): WaterConfig[] {
+  return [makeWater('pool', true), makeWater('pond', false), makeWater('puddle', false)]
+}
+
+// Factory 1 hồ theo kind. enabled mặc định false (instance thêm-mới); chỉ pool đầu của defaultWaters bật.
+export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
   return {
-    enabled: true,
+    kind,
+    enabled,
     shape: 'rect', // mặc định chữ nhật; đổi 'free' để kéo đỉnh polygon trong 3D
-    width: 4000, // 4m ngang
-    depth: 3000, // 3m sâu
+    width: kind === 'puddle' ? 1500 : 4000, // puddle nhỏ; pool/pond 4m ngang
+    depth: kind === 'puddle' ? 1200 : 3000, // puddle nông/nhỏ; pool/pond 3m sâu
     points: [], // rỗng khi rect; seed 4 góc khi chuyển sang free
-    offsetX: 0, // giữa theo X
+    offsetX: 0, // giữa theo X (editor stagger khi thêm nhiều)
     offsetZ: 5000, // +5m về trước nhà (footprint z≤3m; hồ z 3.5..6.5 trong lô z≤7.2m) — "cạnh building"
     color: 0x254a59, // xanh nước biển trầm
     reflectivity: 0.35, // rf0 nhìn thẳng (grazing tự lên gần 1 qua fresnel)
     flow: 0.4, // sóng cuộn vừa
     distortion: 0.4, // rung gương vừa
     rippleScale: 4, // sóng nhỏ/dày vừa
-    depthY: 600, // 60cm sâu lòng hồ
+    depthY: kind === 'puddle' ? 200 : 600, // puddle 20cm nông; pool/pond 60cm
     bottomColor: 0x3a3329, // bùn/đá đáy đục
     tint: 0.4, // ám màu nước vừa (thấy đáy nhưng có chất nước)
+    edgeWidth: 500, // 500mm dải coping mặc định quanh hồ
+    floorMaterial: 'none', // placeholder — material thật sau
+    wallMaterial: 'none',
+    edgeMaterial: 'none',
   }
 }
 
@@ -255,9 +284,19 @@ function parsePoints(v: unknown): WaterPoint[] {
   return out
 }
 
+function parseKind(v: unknown, fallback: WaterKind): WaterKind {
+  return v === 'pool' || v === 'pond' || v === 'puddle' ? v : fallback
+}
+
+// Material placeholder: chỉ 'none' hợp lệ hiện tại; giá trị lạ → 'none' (forward-compat khi thêm material).
+function parseMat(v: unknown): WaterMaterialKey {
+  return v === 'none' ? v : 'none'
+}
+
 function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): WaterConfig {
   const r = raw ?? {}
   return {
+    kind: parseKind(r.kind, d.kind),
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     shape: r.shape === 'free' ? 'free' : 'rect',
     width: clamp(num(r.width, d.width), 1000, 30000),
@@ -273,7 +312,34 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     depthY: clamp(num(r.depthY, d.depthY), 50, 3000),
     bottomColor: parseColor(r.bottomColor, d.bottomColor),
     tint: clamp(num(r.tint, d.tint), 0, 1),
+    edgeWidth: clamp(num(r.edgeWidth, d.edgeWidth), 0, 2000),
+    floorMaterial: parseMat(r.floorMaterial),
+    wallMaterial: parseMat(r.wallMaterial),
+    edgeMaterial: parseMat(r.edgeMaterial),
   }
+}
+
+// Mảng hồ — 3 nguồn (ưu tiên giảm dần): waters[] (format mới) → water đơn cũ (MIGRATE → 1 pool + placeholder
+// pond/puddle) → default. Tolerant: phần tử sai bỏ qua, tối đa 16 hồ. Giữ backward-compat không bump schema.
+function parseWaters(rawArr: unknown, legacy: unknown): WaterConfig[] {
+  if (Array.isArray(rawArr)) {
+    const out: WaterConfig[] = []
+    for (const w of rawArr) {
+      const kind = parseKind((w as { kind?: unknown } | null)?.kind, 'pool')
+      out.push(parseWater(w as Partial<WaterConfig>, makeWater(kind, false)))
+      if (out.length >= 16) break
+    }
+    return out.length ? out : defaultWaters()
+  }
+  if (legacy && typeof legacy === 'object') {
+    // design cũ: 1 hồ `water` → thành Pl1 (pool, giữ enabled cũ) + seed placeholder Pond/Puddle TẮT.
+    return [
+      parseWater(legacy as Partial<WaterConfig>, makeWater('pool', true)),
+      makeWater('pond', false),
+      makeWater('puddle', false),
+    ]
+  }
+  return defaultWaters()
 }
 
 export function parseSite(raw: unknown): SiteState {
@@ -282,7 +348,8 @@ export function parseSite(raw: unknown): SiteState {
   const o = raw as Partial<SiteState> & {
     fence?: Partial<FenceConfig>
     grass3d?: Partial<Grass3DConfig>
-    water?: Partial<WaterConfig>
+    waters?: unknown
+    water?: Partial<WaterConfig> // legacy: design cũ lưu 1 hồ đơn → migrate trong parseWaters
   }
   return {
     show: typeof o.show === 'boolean' ? o.show : d.show,
@@ -291,7 +358,7 @@ export function parseSite(raw: unknown): SiteState {
     groundThick: clamp(num(o.groundThick, d.groundThick), GROUND_THICK_MIN, GROUND_THICK_MAX),
     ground: parseGround(o.ground, d.ground),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
-    water: parseWater(o.water, d.water),
+    waters: parseWaters(o.waters, o.water),
     fence: parseFence(o.fence, d.fence),
   }
 }

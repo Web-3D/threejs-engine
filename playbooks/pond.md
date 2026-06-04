@@ -32,15 +32,18 @@ xuống thấy đáy gợn sóng). KHÔNG có lớp nào (nền/lưới) cắt s
   glint = `reflect(-sunDir, n)` mũ shininess. `setTime`/`setSun` mỗi frame.
 
 **(B) Đáy = basin** (dựng ở `site/render/fromState`, KHÔNG trong component — component chỉ lo MẶT nước):
-- vách = quad mỗi cạnh polygon (yTop=0 → yBot), sàn = `ShapeGeometry` ở yBot, **merge 1 mesh**, material
+- vách = quad mỗi cạnh polygon (**yTop=RIM** → yBot), sàn = `ShapeGeometry` ở yBot, **merge 1 mesh**, material
   đục `DoubleSide`. ⚠ `mergeGeometries` đòi đồng nhất index → `floor.toNonIndexed()` trước merge (xem KI-004).
+- Vách chạy từ **mặt nền (rim)** xuống → liền coping↔tường, KHÔNG lộ mặt-cắt slab (đường xanh cỏ). Nền lô khi
+  có hồ dựng **PHẲNG** (ShapeGeometry, không khối dày) nên không còn cut-face để hở — xem (C)+§3.
 - Vẽ basin (opaque) **TRƯỚC** nước (transparent) → `viewportSharedTexture` của nước bắt được đáy.
 
 **(C) Khoét lỗ xuyên MỌI lớp che** (xem §3 — đây là chỗ chính hay sai):
-- slab cỏ (lõi): `buildGround` → `ExtrudeGeometry(lotShape)` với `Shape.holes` = polygon hồ.
+- nền lô (lõi): `buildGround` → **`ShapeGeometry(lotShape)` PHẲNG ở rim** (KHÔNG ExtrudeGeometry dày — né mặt-cắt
+  xanh) với `Shape.holes` = polygon hồ.
 - nền backdrop editor (vỏ): `_rebuildEditorGround` → `ShapeGeometry(80×80 − lỗ hồ)`.
 - lưới editor (vỏ): `_buildGridGeo` → `LineSegments` tự dựng, cắt đoạn nằm trong bbox hồ (GridHelper KHÔNG hole được).
-- **Single source** polygon lỗ = `pondWorldXZ(site)` export từ lõi → cả 3 chỗ dùng chung, không drift.
+- **Single source** polygon lỗ = `pondWorldXZ(w)` / `poolPolygons(site)` export từ lõi → cả 3 chỗ dùng chung, không drift. ĐA-INSTANCE: loop MỖI pool bật (`renderPools`).
 
 **(D) Cao độ mặt nước:** `baseY = max(yBot + 3cm, rim − 3cm)` — chìm ~3cm dưới vành, LUÔN trên đáy ≥3cm
 (slab mỏng ~1cm nên kẹp theo ĐÁY, không theo slab). Skills áp dụng → §6.
@@ -50,13 +53,15 @@ xuống thấy đáy gợn sóng). KHÔNG có lớp nào (nền/lưới) cắt s
 Cao độ (mét, `rim = groundThick/1000 ≈ 0.01`, `depthY` mặc định 0.6):
 
 ```
-y = rim (0.01)      ── vành nền (mặt cỏ)            ← lawn slab top
-y = rim − 0.03      ── MẶT NƯỚC (baseY)             ← WaterSurface
-y = 0               ── đáy slab = mức 3 lớp che     ← slab/backdrop/grid đều ở đây
-y = rim − depthY    ── SÀN ĐÁY basin (yBot)         ← floor
+y = rim (= groundThick) ── mặt nền PHẲNG (cỏ) + ĐỈNH vách basin + coping (rim+3mm)  ← lawn ShapeGeometry
+y = rim − 0.03          ── MẶT NƯỚC (baseY)                                          ← WaterSurface
+y = 0                   ── mức backdrop+grid editor (vỏ)                             ← carve cùng lỗ
+y = rim − depthY        ── SÀN ĐÁY basin (yBot)                                      ← floor
 ```
 
-**3 lớp che ở y≈0** đều phải khoét cùng lỗ: (1) slab cỏ, (2) backdrop `PlaneGeometry(80×80)`, (3) lưới
+(Nền lô PHẲNG ở rim — KHÔNG còn slab dày 0..t → hết mặt-cắt xanh; vách basin chạy rim→yBot phủ toàn bộ thành.)
+
+**Lớp che phải khoét cùng lỗ:** (1) nền cỏ (ShapeGeometry phẳng @rim), (2) backdrop `PlaneGeometry(80×80)` @0, (3) lưới
 `GridHelper`. Carve thiếu 1 lớp = lớp đó che basin (nhìn trên) hoặc backface-cull (nhìn dưới → nước lơ lửng).
 
 **Ánh xạ toạ độ:** Shape ở XY, mesh/geo xoay −90°X → điểm shape `(x, −z)` ↦ world `(x, z)`. Mọi nơi (lawn
@@ -77,6 +82,10 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 - `2026-06-04` — tier B: reflect + refract (`viewportSharedTexture`) + Fresnel-blend + form tự do (kéo đỉnh) + kéo-thả 3D.
 - `2026-06-04` — đáy basin (vách+sàn) + khoét lỗ slab (`Shape.holes`) + config depthY/bottomColor/tint + GUI.
 - `2026-06-04` — fix gương đứng hình (`reflector.forceUpdate`); fix basin merge null + khoét backdrop + lưới (KI-004).
+- `2026-06-04` — GUI (archplan): tab Water tách BẬC 2 **Pool|Pond|Puddle** (controls hồ hiện ở **Water▸Pool**; Pond/Puddle coming soon) + tông xanh curated `--wt-*`. State vẫn `site.water`, KHÔNG đổi schema.
+- `2026-06-04` — hồ **ĐA-INSTANCE**: `site.water`→`site.waters[]` + `kind`; Pool có BẬC 3 tab **Pl1/Pl2/＋** (mỗi tab 1 hồ thật, render `renderPools`); Pond/Puddle placeholder Pd/Pe. Render + khoét lỗ loop mọi pool bật; 3D drag/handle/tune nhắm pool **ACTIVE** (tab đang chọn). Instance mới `enabled=false` (perf). Migrate `water`→`waters` tolerant, không bump schema.
+- `2026-06-04` — fix **đường xanh cỏ ở mép hồ**: nền lô khi có hồ dựng **PHẲNG** (`ShapeGeometry` @rim, bỏ `ExtrudeGeometry` dày) → hết mặt-cắt slab; vách basin `yTop=0`→**`rim`** phủ rim→đáy → coping↔tường liền. (Càng tăng `groundThick` cut-face cũ càng lộ — nay triệt gốc.)
+- `2026-06-04` — Pl chia BẬC 4/5: **Pool edge|Surface|Bottom▸(Floor|Walls)**. +**coping** `edgeWidth` (500mm, `buildPoolEdge` rect-frame mặt nền) + select **chất liệu** placeholder (`floorMaterial`/`wallMaterial`/`edgeMaterial`='none', render thật sau — basin vẫn 1 material). **Pond render Y NHƯ Pool** (`renderPools`→`renderWaters` gồm pool+pond; puddle còn placeholder); `poolPolygons`→`waterPolygons`. Cỏ né thêm theo edgeWidth.
 
 ## 6. Liên hệ
 
