@@ -94,6 +94,9 @@ export class WaterSurface {
   private geometry: THREE.BufferGeometry | null = null
   private material: MeshBasicNodeMaterial | null = null
   private mesh: THREE.Mesh | null = null
+  // Reflector base node — đặt forceUpdate=true mỗi frame để né guard isFacingAway (reflector BỎ render
+  // RTT khi camera ở mặt SAU mặt phẳng nước → gương "đứng hình" lúc orbit thấp/ngang. Xem ReflectorNode.js).
+  private _reflector: { forceUpdate: boolean } | null = null
   private isDisposed = false
   private readonly _w: number // nhớ kích thước chữ nhật để fallback khi <3 đỉnh
   private readonly _d: number
@@ -129,6 +132,8 @@ export class WaterSurface {
     this.geometry = waterGeo(o.width, o.depth, o.points)
     const mat = new MeshBasicNodeMaterial()
     const sm = reflector({ resolution: o.resolution, bounces: false })
+    // base node giữ forceUpdate (không có trong .d.ts công khai → cast). setTime bật mỗi frame.
+    this._reflector = (sm as unknown as { reflector: { forceUpdate: boolean } }).reflector
     mat.colorNode = this._buildColor(sm)
     mat.opacityNode = this.uAlpha
     // transparent=true LUÔN: nước vẽ ở pass trong suốt (SAU opaque) → viewportSharedTexture có nền/đáy
@@ -140,6 +145,7 @@ export class WaterSurface {
     const mesh = new THREE.Mesh(this.geometry, mat)
     mesh.rotation.x = -Math.PI / 2 // plane XY → nằm ngang XZ, normal local +Z = world +Y
     mesh.position.y = o.baseY
+    mesh.frustumCulled = false // mặt phẳng dẹt → bounding sphere hay bị cull khi pan → reflector ngừng update
     mesh.add(sm.target) // reflector cần target làm CON → mặt phẳng phản chiếu = mặt nước
     this.mesh = mesh
   }
@@ -148,6 +154,8 @@ export class WaterSurface {
   setTime(seconds: number): void {
     if (this.isDisposed) return
     this.uTime.value = seconds
+    // ép reflector render RTT kể cả khi camera "facing away" (orbit thấp/ngang) → hết đứng gương.
+    if (this._reflector) this._reflector.forceUpdate = true
   }
 
   /** Hướng mặt trời (vector tới sun, target ở gốc) — đốm nắng glint theo. */
@@ -208,6 +216,7 @@ export class WaterSurface {
     this.geometry = null
     this.material = null
     this.mesh = null
+    this._reflector = null
     this.isDisposed = true
   }
 

@@ -98,10 +98,16 @@ function buildWater(site: SiteState, ctx: SiteRenderCtx): WaterSurface {
     w.shape === 'free' && w.points.length >= 3
       ? w.points.map((p) => ({ x: p.x / 1000, z: p.z / 1000 })) // mm → m, local
       : undefined
+  // Mặt nước chìm ~3cm dưới vành nền (rim = groundThick) → đọc ra "lỗ" — nhưng LUÔN cao hơn đáy basin
+  // ≥3cm. Slab nền mỏng (~1cm) nên KHÔNG kẹp lip theo slab mà kẹp theo đáy (yBot). Nền editor được khoét
+  // CÙNG lỗ ở vỏ (_rebuildEditorGround) → nhìn từ trên xuyên xuống thấy đáy, không bị tấm backdrop che.
+  const rimY = site.groundThick / 1000
+  const yBot = rimY - w.depthY / 1000 // cao độ đáy basin
+  const baseY = Math.max(yBot + 0.03, rimY - 0.03)
   const water = new WaterSurface({
     width: w.width / 1000,
     depth: w.depth / 1000,
-    baseY: site.groundThick / 1000 + 0.005,
+    baseY,
     waterColor: w.color,
     reflectivity: w.reflectivity,
     flow: w.flow,
@@ -119,7 +125,8 @@ function buildWater(site: SiteState, ctx: SiteRenderCtx): WaterSurface {
 }
 
 // Đỉnh hồ trong world XZ (mét): rect → 4 góc quanh offset; free → offset + points.
-function pondWorldXZ(site: SiteState): { x: number; z: number }[] {
+// EXPORT: vỏ (editor) cần khoét CÙNG lỗ này vào nền backdrop của nó (nếu không sẽ che đáy hồ).
+export function pondWorldXZ(site: SiteState): { x: number; z: number }[] {
   const w = site.water
   const ox = w.offsetX / 1000
   const oz = w.offsetZ / 1000
@@ -172,10 +179,14 @@ function basinGeometry(
   const s = new THREE.Shape()
   pts.forEach((q, i) => (i === 0 ? s.moveTo(q.x, -q.z) : s.lineTo(q.x, -q.z))) // XY: x=worldX, y=−worldZ
   s.closePath()
-  const floor = new THREE.ShapeGeometry(s)
-  floor.rotateX(-Math.PI / 2)
-  floor.translate(0, yBot, 0)
-  floor.deleteAttribute('uv') // khớp attribute với walls (position+normal) để merge
+  const floorIdx = new THREE.ShapeGeometry(s)
+  floorIdx.rotateX(-Math.PI / 2)
+  floorIdx.translate(0, yBot, 0)
+  floorIdx.deleteAttribute('uv') // khớp attribute với walls (position+normal) để merge
+  // walls = NON-indexed (raw position), ShapeGeometry = INDEXED → mergeGeometries trộn 2 loại = NULL
+  // (mất sàn đáy!). Ép floor về non-indexed cho đồng nhất trước khi merge.
+  const floor = floorIdx.toNonIndexed()
+  floorIdx.dispose()
   const merged = mergeGeometries([walls, floor], false)
   walls.dispose()
   floor.dispose()
