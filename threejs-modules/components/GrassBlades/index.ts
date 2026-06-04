@@ -463,13 +463,16 @@ function bladeHalfWidth(t: number, baseHW: number, midHW: number, taper: number)
 
 // Quad SUY BIẾN cho vệt tiếp đất: 4 đỉnh ở GỐC (0,0,0) + uv 4 góc. InstanceNode cho positionLocal = gốc lá
 // (instanceMatrix·0 = tịnh tiến thuần); positionNode `.add` nở quad ra từ uv+sun → GIỮ instance (positionNode
-// replace sẽ ghi đè làm rớt instanceMatrix → mọi vệt dồn về gốc bãi). MeshBasic unlit → normal không cần.
+// replace sẽ ghi đè làm rớt instanceMatrix → mọi vệt dồn về gốc bãi). MeshBasic không lit, NHƯNG pipeline TSL
+// WebGPU vẫn tham chiếu attribute `normal` → THIẾU = spam "TSL.NormalNode: normal not found" MỖI frame (mesh
+// instanced lớn → flood console, DevTools mở lúc kéo = giật giả). Thêm normal (0,0,1) thuần để câm cảnh báo.
 function contactQuad(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry()
   g.setAttribute(
     'position',
     new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 3)
   )
+  g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3))
   g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2))
   g.setIndex([0, 2, 1, 2, 3, 1])
   return g
