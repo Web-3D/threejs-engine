@@ -101,10 +101,16 @@ export interface SiteState {
   fence: FenceConfig
 }
 
-// Hồ render được = pool & pond ĐANG BẬT (puddle vẫn placeholder → bỏ). Dùng bởi renderer + editor (khoét
-// lỗ/drag). Pond "y như" pool (cùng WaterSurface) — phân hoá thông số sau; chỉ puddle chưa dựng hình.
+// Hồ LÕM render được = pool & pond ĐANG BẬT (có basin đáy+vách + KHOÉT lỗ nền). Dùng bởi renderer (basin/
+// coping) + editor (khoét lỗ/lưới/drag). Pond "y như" pool (cùng WaterSurface) — phân hoá thông số sau.
 export function renderWaters(site: SiteState): WaterConfig[] {
   return site.waters.filter((w) => (w.kind === 'pool' || w.kind === 'pond') && w.enabled)
+}
+
+// Vũng nước (puddle) ĐANG BẬT = mặt nước PHẲNG đặt TRÊN nền (KHÔNG đáy/vách/coping, KHÔNG khoét lỗ). Tách
+// khỏi renderWaters vì khác hẳn cách dựng (flat surface) — chỉ né cỏ (exclude) + drag/tune như hồ thường.
+export function renderPuddles(site: SiteState): WaterConfig[] {
+  return site.waters.filter((w) => w.kind === 'puddle' && w.enabled)
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────────

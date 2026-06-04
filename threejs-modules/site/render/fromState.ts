@@ -16,7 +16,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
 import { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
-import { GROUND_PRESETS, renderWaters, type SiteState, type WaterConfig } from '../state'
+import {
+  GROUND_PRESETS,
+  renderPuddles,
+  renderWaters,
+  type SiteState,
+  type WaterConfig,
+} from '../state'
 
 // Resource caller sở hữu — renderer build vào đây, KHÔNG dispose (giống building BuildRenderCtx).
 // shaders: vật liệu procedural (vd GrassGround) có dispose() riêng (ngoài mats phẳng).
@@ -39,6 +45,9 @@ export interface SiteRenderOpts {
   // Footprint foundation (m, world XZ) — cỏ KHÔNG mọc trong các rect này ("nơi có foundation thì
   // không đặt nền cỏ"). Plain numbers → site-kit độc lập building-kit.
   exclude?: GrassExcludeRect[]
+  // Bỏ qua dựng cỏ (caller TỰ quản cỏ riêng qua buildSiteGrass + dirty-check để né re-scatter mỗi
+  // edit). Khi true → handle.grass = null. Mặc định false (consumer khác giữ hành vi cũ: lõi dựng cỏ).
+  skipGrass?: boolean
 }
 
 // Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0). Trả handle (grass) cho live-tune.
@@ -51,12 +60,27 @@ export function renderSiteState(
   buildGround(site, ctx)
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
   // Cỏ né cả foundation (caller) LẪN footprint+coping MỖI hồ → không mọc xuyên mặt nước/dải viền.
-  const exclude = [...(opts.exclude ?? [])]
-  for (const w of pools) exclude.push(waterRect(w))
-  const grass = buildVegetation(site, ctx, exclude)
+  const exclude = siteGrassExclude(site, opts.exclude ?? [])
+  // skipGrass → caller TỰ dựng cỏ (buildSiteGrass) + giữ bền qua dirty-check (né re-scatter mỗi edit).
+  const grass = opts.skipGrass ? null : buildVegetation(site, ctx, exclude)
+  // waters: hồ LÕM (pool/pond, có basin) TRƯỚC rồi VŨNG phẳng (puddle) SAU — caller zip theo ĐÚNG thứ tự
+  // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
   const waters = pools.map((w) => buildWater(w, site, ctx)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
+  for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
   if (site.fence.enabled) buildFence(site, ctx)
   return { grass, waters }
+}
+
+// Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật. Export để
+// CALLER dùng đúng tập exclude này cho cả dirty-check (grassBuildSig) LẪN buildSiteGrass → khớp với lõi.
+export function siteGrassExclude(
+  site: SiteState,
+  foundation: GrassExcludeRect[]
+): GrassExcludeRect[] {
+  const exclude = [...foundation]
+  for (const w of renderWaters(site)) exclude.push(waterRect(w))
+  for (const w of renderPuddles(site)) exclude.push(waterRect(w)) // cỏ né cả vũng nước (không mọc xuyên mặt)
+  return exclude
 }
 
 // Rect 1 hồ (m, world XZ) cho cỏ né — cỏ KHÔNG mọc xuyên mặt nước LẪN dải coping. Mở rộng halfW/D theo
@@ -110,6 +134,34 @@ function buildWater(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): WaterS
     width: w.width / 1000,
     depth: w.depth / 1000,
     baseY,
+    waterColor: w.color,
+    reflectivity: w.reflectivity,
+    flow: w.flow,
+    distortion: w.distortion,
+    rippleScale: w.rippleScale,
+    tint: w.tint,
+    points,
+  })
+  const mesh = water.getMesh()
+  mesh.position.x = w.offsetX / 1000
+  mesh.position.z = w.offsetZ / 1000
+  ctx.group.add(mesh)
+  ctx.shaders.push(water)
+  return water
+}
+
+// Vũng nước (puddle) = mặt nước PHẲNG đặt TRÊN nền — KHÔNG basin (đáy/vách), KHÔNG coping, KHÔNG khoét lỗ
+// nền. baseY = mặt nền + 5mm (đậu trên, né z-fight). Khúc xạ (viewportSharedTexture) xuyên thấy NỀN/cỏ phía
+// sau → đúng cảm giác vũng nông; vẫn phản chiếu trời/nhà (+1 RTT như hồ). depthY/edgeWidth/bottomColor KHÔNG dùng.
+function buildPuddle(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): WaterSurface {
+  const points =
+    w.shape === 'free' && w.points.length >= 3
+      ? w.points.map((p) => ({ x: p.x / 1000, z: p.z / 1000 }))
+      : undefined
+  const water = new WaterSurface({
+    width: w.width / 1000,
+    depth: w.depth / 1000,
+    baseY: site.groundThick / 1000 + 0.005, // 5mm trên mặt nền (đậu trên, không lõm)
     waterColor: w.color,
     reflectivity: w.reflectivity,
     flow: w.flow,
@@ -247,6 +299,17 @@ function buildVegetation(
   ctx: SiteRenderCtx,
   exclude: GrassExcludeRect[]
 ): GrassBlades | null {
+  const blades = buildSiteGrass(site, exclude)
+  if (!blades) return null
+  ctx.group.add(blades.getMesh())
+  ctx.shaders.push(blades) // lõi quản dispose qua ctx.shaders (consumer KHÔNG skipGrass)
+  return blades
+}
+
+// Dựng RIÊNG bãi cỏ (GrassBlades) cho lô — KHÔNG add vào ctx, KHÔNG track dispose → CALLER sở hữu (add
+// mesh + dispose). Dùng khi caller=editor tự quản cỏ trong group bền + dirty-check (skipGrass), để né
+// re-scatter 24000 lá mỗi lần sửa thứ KHÔNG liên quan cỏ. Trả null nếu cỏ tắt.
+export function buildSiteGrass(site: SiteState, exclude: GrassExcludeRect[]): GrassBlades | null {
   if (!site.grass3d.enabled) return null // độc lập surface — bất kỳ nền nào cũng rải được
   const g = site.grass3d
   const blades = new GrassBlades({
@@ -278,11 +341,38 @@ function buildVegetation(
   if (!g.contactOn) blades.setContactDark(0) // tắt vệt = uniform 0 (mesh vẫn có, bật lại live được)
   // Cỏ NHẬN bóng sun (nhà/rào/mái đổ xuống bãi) — xài lại shadow map có sẵn, rẻ. KHÔNG castShadow:
   // lá 6mm < 1 texel @19mm/texel của shadow cam ±20m → rớt/nhấp nháy; self-shadow đã có bóng-gốc-giả lo.
-  const mesh = blades.getMesh()
-  mesh.receiveShadow = true
-  ctx.group.add(mesh)
-  ctx.shaders.push(blades)
+  blades.getMesh().receiveShadow = true
   return blades
+}
+
+// Chữ ký STRUCTURAL của bãi cỏ: CHỈ field buộc dựng lại geometry/scatter — KHÔNG gồm field live (màu/bóng/
+// vệt = uniform, đổi qua setter KHÔNG rebuild). Caller so sánh sig: giống → giữ nguyên mesh (bỏ re-scatter
+// khi sửa thứ KHÔNG liên quan cỏ: di chuyển nhà, đổi màu tường…); khác → dựng lại. Footprint/hồ đổi (exclude)
+// → sig đổi → rải lại (cỏ né chỗ mới). contactDark>0 = mesh vệt CÓ/KHÔNG (giá trị + on/off vẫn live).
+export function grassBuildSig(site: SiteState, exclude: GrassExcludeRect[]): string {
+  const g = site.grass3d
+  if (!site.show || !g.enabled) return 'off'
+  return JSON.stringify([
+    site.lotWidth,
+    site.lotDepth,
+    site.groundThick,
+    g.density,
+    g.height,
+    g.bladeWidth,
+    g.midWidth,
+    g.segments,
+    g.taper,
+    g.curveLR,
+    g.bend,
+    g.cup,
+    g.cupGeo,
+    g.cupNormalGain,
+    g.bladesPerClump,
+    g.clumpRadius,
+    g.clumpSplay,
+    g.contactDark > 0,
+    exclude,
+  ])
 }
 
 // Nền lô. PBR nhận IBL + đổ bóng. Lô tâm world (0,0). KHÔNG hồ → BoxGeometry dày (đáy y=0, top y=t).

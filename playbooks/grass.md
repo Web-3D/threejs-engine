@@ -8,6 +8,7 @@ modules:
   - threejs-modules/shaders/ground/GrassGround    # bề mặt cỏ procedural (tier A) — LỚP RIÊNG
 issues:
   - KI-003
+  - KI-005
 updated: 2026-06-04
 ---
 
@@ -69,6 +70,7 @@ slab nền                          ← buildGround
 - tier B — lá instanced (segments/taper/curve/bend/cup) + bụi (clump).
 - vệt tiếp đất giả theo nắng (+ toggle on/off) — distilled `sun-contact-shadow-instanced-foliage`.
 - `2026-06-04` — 2 mặt 2 màu (ngoài/trong) + GUI Lab reorg (Số đo / Bóng đổ / Vệt).
+- `2026-06-04` — **perf dirty-check (hết re-scatter mỗi edit):** cỏ sống trong `_grassGroup` BỀN (ngoài `_clearSite`); lõi thêm `skipGrass` opt + export `buildSiteGrass`/`grassBuildSig`(chỉ field STRUCTURAL, bỏ uniform-live)/`siteGrassExclude`; vỏ `_syncGrass` so chữ ký → giống thì giữ nguyên scatter (sửa nhà/màu KHÔNG rải lại 24000 lá); LIVE-drag chỉ đổi exclude → **hoãn re-scatter tới khi buông**. Chi tiết: `KI-005`.
 
 ## 6. Liên hệ
 

@@ -51,3 +51,4 @@ Copy `_TEMPLATE.md` → đổi tên `KI-NNN-<slug>.md` → điền → thêm 1 d
 | 002 | `replace_all` thay luôn expression trong thân helper mới → self-recursion vô hạn | — | build-tooling | medium | fixed | 2026-05-31 |
 | 003 | Ghi đè `positionNode = vec3(...)` xoá instanceMatrix → mọi instance dồn về gốc (preview giấu bug) | window, grass | shader | high | fixed | 2026-06-04 |
 | 004 | Đáy hồ không hiện — basin merge null (trộn index) + nền backdrop đặc che basin dưới y=0 | pond | geometry | high | fixed | 2026-06-04 |
+| 005 | Sửa/kéo 1 thứ → rebuild thứ không-đổi (cỏ re-scatter, hồ tái-RTT, **gạch-3D dựng lại 60×/s**) → tụt fps + leak | grass, pond, wall | perf | high | fixed | 2026-06-04 |

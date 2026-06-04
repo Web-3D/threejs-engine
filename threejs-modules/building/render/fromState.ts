@@ -108,10 +108,12 @@ function segToSpec(seg: SegmentState): WallSpec {
 class StateRenderer {
   private out: Placement[] = []
   private asm!: WallAsmCtx
+  private plainWalls = false // LOD lúc kéo: ép mọi tường về phẳng ('none') — bỏ brick-3d/gỗ instanced (rất nặng)
 
   constructor(private readonly ctx: BuildRenderCtx) {}
 
-  run(state: BuildingState): Placement[] {
+  run(state: BuildingState, plainWalls = false): Placement[] {
+    this.plainWalls = plainWalls
     this.asm = {
       cache: this.ctx.wallCache,
       buckets: new Map(),
@@ -127,7 +129,8 @@ class StateRenderer {
       yAcc += this.buildFloor(state, fi, yAcc, stairHoles.get(fi) ?? [])
     }
     mergeWalls(this.asm)
-    this.ctx.wallCache.sweep(new Set(this.asm.buckets.keys()))
+    // plainWalls (live-drag): KHÔNG sweep → giữ material brick/gỗ trong cache để buông tay KHÔNG recompile.
+    if (!this.plainWalls) this.ctx.wallCache.sweep(new Set(this.asm.buckets.keys()))
     return this.out
   }
 
@@ -183,7 +186,11 @@ class StateRenderer {
       zOffset: cfg.zOffset,
       yBase: cfg.yBase,
     }
-    assembleWall(place, segToSpec(cfg.seg), this.asm)
+    let spec = segToSpec(cfg.seg)
+    // LOD live-drag: tường phẳng 'none' (giữ MÀU) + bỏ panel decor → KHÔNG dựng brick-3d/gỗ instanced
+    // (per-brick matrices = thủ phạm CPU). Khúc xạ/khoét cửa vẫn giữ. Full chi tiết khi buông (rebuild thường).
+    if (this.plainWalls) spec = { ...spec, material: 'none', panels: [] }
+    assembleWall(place, spec, this.asm)
   }
 
   // Tường: box ôm đúng WallConfig.
@@ -498,8 +505,13 @@ class StateRenderer {
 }
 
 // Dựng BuildingState vào ctx (caller sở hữu resource) → trả Placement[] cho caller gắn pick-box.
-export function renderBuildingState(state: BuildingState, ctx: BuildRenderCtx): Placement[] {
-  return new StateRenderer(ctx).run(state)
+// plainWalls=true (editor lúc live-drag): LOD — tường phẳng, bỏ brick-3d/gỗ instanced → rebuild rẻ hơn nhiều.
+export function renderBuildingState(
+  state: BuildingState,
+  ctx: BuildRenderCtx,
+  plainWalls = false
+): Placement[] {
+  return new StateRenderer(ctx).run(state, plainWalls)
 }
 
 /**

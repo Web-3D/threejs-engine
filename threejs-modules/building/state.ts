@@ -198,7 +198,8 @@ export function mkStructure(): StructureState {
   return {
     showFoundation: false,
     foundH: 500,
-    foundOh: { n: 0.3, e: 0.3, s: 0.3, w: 0.3 },
+    foundOh: { n: 0, e: 0, s: 0, w: 0 }, // mặc định KHÍT footprint tường (không nhô) → ghép khối shape liền mép
+
     showSlab: false,
     slabThick: 150,
     columns: [],

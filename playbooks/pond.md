@@ -8,6 +8,7 @@ modules:
   - threejs-modules/site/render/fromState   # basin + khoét lỗ nền (không phải module rời)
 issues:
   - KI-004
+  - KI-005
 updated: 2026-06-04
 ---
 
@@ -86,6 +87,9 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 - `2026-06-04` — hồ **ĐA-INSTANCE**: `site.water`→`site.waters[]` + `kind`; Pool có BẬC 3 tab **Pl1/Pl2/＋** (mỗi tab 1 hồ thật, render `renderPools`); Pond/Puddle placeholder Pd/Pe. Render + khoét lỗ loop mọi pool bật; 3D drag/handle/tune nhắm pool **ACTIVE** (tab đang chọn). Instance mới `enabled=false` (perf). Migrate `water`→`waters` tolerant, không bump schema.
 - `2026-06-04` — fix **đường xanh cỏ ở mép hồ**: nền lô khi có hồ dựng **PHẲNG** (`ShapeGeometry` @rim, bỏ `ExtrudeGeometry` dày) → hết mặt-cắt slab; vách basin `yTop=0`→**`rim`** phủ rim→đáy → coping↔tường liền. (Càng tăng `groundThick` cut-face cũ càng lộ — nay triệt gốc.)
 - `2026-06-04` — Pl chia BẬC 4/5: **Pool edge|Surface|Bottom▸(Floor|Walls)**. +**coping** `edgeWidth` (500mm, `buildPoolEdge` rect-frame mặt nền) + select **chất liệu** placeholder (`floorMaterial`/`wallMaterial`/`edgeMaterial`='none', render thật sau — basin vẫn 1 material). **Pond render Y NHƯ Pool** (`renderPools`→`renderWaters` gồm pool+pond; puddle còn placeholder); `poolPolygons`→`waterPolygons`. Cỏ né thêm theo edgeWidth.
+- `2026-06-04` — **PUDDLE render** (vũng nước): `renderPuddles` + `buildPuddle` = mặt nước **PHẲNG trên nền** (`baseY=rim+5mm`, KHÔNG basin/coping/khoét-lỗ — khúc xạ xuyên thấy cỏ; vẫn phản chiếu). GUI Pe = **Shape|Surface** (bỏ Bottom/Edge). Cỏ né cả puddle (`siteGrassExclude` gồm renderWaters+renderPuddles). Click thường mặt nước → trỏ GUI tab hồ (`_pickWaterEntry`/`_maybeClickFocus`, cả pool/pond/puddle).
+- `2026-06-04` — **kéo hồ KHÔNG rebuild (né leak reflector)** + **mảng định-vị**: 3D-drag thân/đỉnh chỉ dời `mesh.position`/`setShape` (reflector con theo, KHÔNG tái-tạo); slider commit-khi-buông. Vì mặt nước chìm dưới rim → lúc kéo chui dưới đất (lỗ-nền chưa theo) → **`_showWaterOutline`** = ShapeGeometry FILL cyan mờ ở mặt nền, vẽ-trên-cùng (`depthTest/Write=false`, renderOrder cao), bám theo cả **3D-drag** lẫn **slider** (`ctx.previewWater`) cho **pool/pond/puddle**; commit (`_applySite` persist) ẩn. (Live-bằng-rebuild = tái-tạo reflector/frame = leak+lag — xem `KI-005`; pool `WaterSurface` chưa pool-hoá.)
+- `2026-06-04` — **perf:** kéo NHÀ không còn rebuild nước (dirty-check `_siteSig` ở vỏ; `site` không đổi khi kéo `state`) → hết leak reflector RTT. Chi tiết: `KI-005`.
 
 ## 6. Liên hệ
 
