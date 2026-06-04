@@ -2,6 +2,7 @@
 id: KI-001
 title: Fix boundary solidTraps (!b && !t → !b || !t) không propagate sang bản copy → răng cưa mép cửa brick-3d
 category: geometry
+domain: window
 severity: high
 status: fixed
 when: Tường có lỗ cửa/sổ + material 'brick-3d' (InstancedBrickWall) hoặc render qua WallSingle. Nhìn mặt NGOÀI có nắng — mép trên (header) & dưới (sill) lỗ bị răng cưa/lỗ xuyên thấu.

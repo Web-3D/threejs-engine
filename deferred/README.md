@@ -55,6 +55,7 @@ deferred/
 | [building-warehouse-pipeline.md](systems/building-warehouse-pipeline.md) | Xương sống: lõi share (THREEJS root) → vỏ editor per-project → kho thành phẩm baked (Engine root) → project pick-by-tag. Luật tier hero-procedural vs mass-baked | Chốt ≥3 kiểu nhà + dựng khu phố thật, hoặc kích hoạt workspace package |
 | [procedural-generation-techniques.md](systems/procedural-generation-techniques.md) | Bản đồ "họ" sinh hình thủ tục: phân hoạch (Voronoi/BSP/Poisson) · noise tế bào · **shape grammar/CGA · L-system · WFC** — cái nào hợp nhà vuông | Làm build-editor, city/neighborhood, hoặc bố trí phòng (chọn đúng công cụ thay vì mặc định Voronoi) |
 | [garden-ground-patches.md](systems/garden-ground-patches.md) | Mảng nền sân (bê tông/cát/sỏi/**nước**) tự exclude cỏ — cắt ~1000 tris/m² cỏ + bố cục sân thật; nước = shader (reflection = pass riêng, không vào budget tri) | Soạn sân vườn trong ArchPlanLab, hoặc cần cắt budget cỏ cho city/nhiều lô |
+| [playbook-tier-ladder.md](systems/playbook-tier-ladder.md) | Thang tier A/B/C/D dùng chung cho playbooks (tổng quát hoá `material-roadmap`) + check `tier` hợp lệ | ≥4–5 playbook lệch nghĩa tier, hoặc plan mảng mới cần so tier |
 
 ---
 
@@ -65,6 +66,7 @@ deferred/
 | [turborepo-nx.md](tooling/turborepo-nx.md) | Workspace task orchestration (build cache) | 5+ projects, build time > 5 phút |
 | [release-workflow.md](tooling/release-workflow.md) | SemVer + CI/CD — publish npm + auto-deploy | Có collaborator hoặc muốn publish npm |
 | [asset-tag-search.md](tooling/asset-tag-search.md) | Tag index ngược + search-assets.js script | 30+ asset trong REGISTRY.json |
+| [playbook-open-nudge-hook.md](tooling/playbook-open-nudge-hook.md) | Hook PostToolUse nhắc mở `playbooks/<domain>.md` khi sửa file của mảng đó | Đã verify playbook lợi thật + recall-gate "quên mở" xảy ra |
 
 ---
 

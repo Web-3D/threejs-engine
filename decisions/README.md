@@ -22,3 +22,4 @@ Mỗi quyết định kiến trúc quan trọng có 1 file. Format chuẩn:
 | 003 | No singleton cho shared state        | 2026-05-16 | Accepted   |
 | 004 | Rendering quality baseline (pixelRatio/shadow/light) | 2026-05-24 | Accepted   |
 | 005 | building-kit là LÕI — dồn logic dựng-nhà, retire AP4, 1 renderer | 2026-06-01 | Accepted   |
+| 006 | Playbooks theo mảng — cẩm nang dựng + lỗi + nâng cấp (`playbooks/`) | 2026-06-04 | Accepted   |

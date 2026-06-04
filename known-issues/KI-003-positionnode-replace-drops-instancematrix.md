@@ -2,6 +2,7 @@
 id: KI-003
 title: Ghi đè `material.positionNode = vec3(...)` xoá instanceMatrix → mọi instance dồn về gốc
 category: shader
+domain: window, grass
 severity: high
 status: fixed
 when: Override positionNode bằng giá trị TUYỆT ĐỐI (không dựa positionLocal) trên InstancedMesh + NodeMaterial (WebGPU/TSL)

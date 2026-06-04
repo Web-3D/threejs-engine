@@ -2,6 +2,8 @@
 
 > Trạng thái: **B ĐÃ LÀM** (2026-06-04) — `viewportSharedTexture` refraction + Fresnel-blend + basin (vách+sàn)
 > + khoét lỗ nền (`Shape.holes`) + config depthY/bottomColor/tint + GUI. C vẫn deferred (NgQuan báo khi nâng).
+> ⚠ **Basin visibility fix (2026-06-04):** basin merge từng trả null (trộn indexed/non-indexed) + nền backdrop
+> editor `y=0` che basin dưới → đã fix (`toNonIndexed` + `_rebuildEditorGround` khoét lỗ backdrop). Xem `KI-004`.
 > Liên hệ: `WaterSurface._buildColor` (reflect↔refract), `site/render/fromState` (buildBasin/lotShape/buildGround).
 > CÒN deferred ở file này: **C (PBR transmission)** + **vision lòng-hồ-tương-tác** (contents/cá-rig) + **physics G/IOR**.
 

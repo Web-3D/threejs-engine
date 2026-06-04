@@ -2,6 +2,7 @@
 id: KI-002
 title: replace_all 1 expression mà expression đó cũng nằm trong định nghĩa helper mới → self-recursion vô hạn
 category: build-tooling
+domain: —
 severity: medium
 status: fixed
 when: Tạo helper mới có body chứa expression X, RỒI replace_all X→helper(...) trong cùng file → replace_all thay luôn X bên trong thân helper → helper gọi chính nó.

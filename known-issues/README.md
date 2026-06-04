@@ -37,6 +37,7 @@ Copy `_TEMPLATE.md` → đổi tên `KI-NNN-<slug>.md` → điền → thêm 1 d
 ## Bảng meta — giá trị hợp lệ (giữ enum để filter)
 
 - **category:** `geometry` · `state-persist` · `shader` · `gpu-dispose` · `css-ui` · `build-tooling` · `api-version` · `perf`
+- **domain** (BẮT BUỘC): slug mảng playbook — `pond` · `window` · `grass` · `roof` · `wall` · `fence` · `boulder` … (nhiều mảng ngăn dấu phẩy) · `—` nếu KHÔNG thuộc mảng build (lỗi tooling/workflow). → tra "lỗi của mảng X": `grep -rl "domain:.*X" known-issues/`; playbook §4 của mảng đó trỏ ngược về.
 - **severity:** `low` · `medium` · `high`
 - **status:** `open` (chưa sửa) · `fixed` (đã sửa, giữ để nhớ) · `mitigated` (chặn tạm) · `wontfix`
 
@@ -44,8 +45,9 @@ Copy `_TEMPLATE.md` → đổi tên `KI-NNN-<slug>.md` → điền → thêm 1 d
 
 ## Index
 
-| #   | Tiêu đề | Category | Severity | Status | Ngày |
-| --- | --- | --- | --- | --- | --- |
-| 001 | Fix boundary `solidTraps` không propagate sang bản copy → răng cưa mép cửa brick-3d | geometry | high | fixed | 2026-05-30 |
-| 002 | `replace_all` thay luôn expression trong thân helper mới → self-recursion vô hạn | build-tooling | medium | fixed | 2026-05-31 |
-| 003 | Ghi đè `positionNode = vec3(...)` xoá instanceMatrix → mọi instance dồn về gốc (preview giấu bug) | shader | high | fixed | 2026-06-04 |
+| #   | Tiêu đề | Domain | Category | Severity | Status | Ngày |
+| --- | --- | --- | --- | --- | --- | --- |
+| 001 | Fix boundary `solidTraps` không propagate sang bản copy → răng cưa mép cửa brick-3d | window | geometry | high | fixed | 2026-05-30 |
+| 002 | `replace_all` thay luôn expression trong thân helper mới → self-recursion vô hạn | — | build-tooling | medium | fixed | 2026-05-31 |
+| 003 | Ghi đè `positionNode = vec3(...)` xoá instanceMatrix → mọi instance dồn về gốc (preview giấu bug) | window, grass | shader | high | fixed | 2026-06-04 |
+| 004 | Đáy hồ không hiện — basin merge null (trộn index) + nền backdrop đặc che basin dưới y=0 | pond | geometry | high | fixed | 2026-06-04 |

@@ -94,6 +94,7 @@ Câu đầu tiên khi mở THREEJS session:
 | `c:\Editions\studio-3D\STATUS.md` | Command center — active project, phase, blockers cross-repo          |
 | `deferred/`               | Tính năng đã nghiên cứu nhưng hoãn — mỗi file 1 tính năng, đọc trước khi đề xuất implement |
 | `known-issues/`           | Catalog lỗi thường gặp + cách sửa (`KI-NNN`) — **đọc khi gặp triệu chứng lạ / trước khi sửa geometry-state-shader**, tránh tái phạm |
+| `playbooks/`              | Cẩm nang dựng theo MẢNG (hồ/cửa sổ/cỏ/mái…) — recipe + tầng/toạ độ + lỗi (link KI) + lịch sử nâng cấp. **Đọc trước khi build/sửa 1 mảng**; có tiến triển → cập nhật cùng commit |
 | `../assets/REGISTRY.json` | Index tổng hợp tất cả assets đã validate — auto-generated, không sửa tay                   |
 
 ---
@@ -109,6 +110,7 @@ Câu đầu tiên khi mở THREEJS session:
 | Quyết định / context session trước?         | `../SYNC.md`                                   |
 | Tại sao chọn pattern/stack này?             | `decisions/` — ADR index (thay đổi cấu trúc lớn) |
 | Lỗi này gặp rồi? Sửa sao? Sao đừng tái phạm? | `known-issues/README.md` — KI catalog (lỗi thường gặp) |
+| Dựng 1 mảng (hồ/cửa sổ/cỏ/mái…) thế nào? Tầng/toạ độ? Lỗi mảng đó? | `playbooks/<slug>.md` — cẩm nang theo mảng |
 | Tính năng đã nghiên cứu nhưng hoãn?         | `deferred/README.md`                           |
 | Workflow import + tích hợp module?          | `../.claude/skills/module-handoff/SKILL.md` |
 | Kế hoạch asset, budget tier, shaderProfile? | `../assets/ROADMAP.md`                         |

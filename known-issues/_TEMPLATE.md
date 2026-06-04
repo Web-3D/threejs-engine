@@ -2,6 +2,7 @@
 id: KI-NNN
 title: <ngắn gọn 1 dòng — triệu chứng chính>
 category: <geometry | state-persist | shader | gpu-dispose | css-ui | build-tooling | api-version | perf>
+domain: <slug mảng playbook: pond | window | grass | roof | wall | fence | boulder … — nhiều mảng ngăn dấu phẩy; "—" nếu KHÔNG thuộc mảng build (lỗi tooling/workflow)>
 severity: <low | medium | high>
 status: <open | fixed | mitigated | wontfix>
 when: <KHI NÀO lỗi xuất hiện — điều kiện/thao tác trigger>
