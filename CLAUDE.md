@@ -18,7 +18,9 @@ THREEJS/
 ├── validate.js        ← Three.js module/asset validator
 ├── update-index.js    ← cập nhật Living Index trong file này
 ├── check-imports.js   ← kiểm tra import path hợp lệ
-└── scan-versions.js   ← detect Three.js version drift — chạy sau mỗi Three.js upgrade
+├── check-perf.js      ← duyệt bẫy tụt-fps + geometry (PERFORMANCE.md) — chạy sau khi thêm geometry/material
+├── scan-versions.js   ← detect Three.js version drift — chạy sau mỗi Three.js upgrade
+└── PERFORMANCE.md     ← hợp đồng chống tụt-fps: 8 bẫy + checklist BẮT BUỘC cho element live-editable mới
 ```
 
 Assets dùng chung: `../assets/[category]/[name]/production/` — không nằm trong thư mục này.
@@ -66,6 +68,7 @@ Effects/VFX → `threejs-modules/effects/` (GPUParticleSystem, SparkSystem ✅ P
 node validate.js ../assets/[category]/[name]       # sau khi thêm/sửa asset (từ thư mục THREEJS/)
 node validate.js threejs-modules/[category]/[Name] # sau khi thêm/sửa module
 node check-imports.js                               # sau khi copy module vào 00-Threejs/src/imported/
+node check-perf.js                                  # sau khi thêm geometry/material mới — bẫy tụt-fps (PERFORMANCE.md)
 ```
 
 Hook tự chạy validate.js sau mỗi lần Claude Code write/edit file trong `../assets/` hoặc `threejs-modules/`.  
@@ -110,6 +113,7 @@ Câu đầu tiên khi mở THREEJS session:
 | Quyết định / context session trước?         | `../SYNC.md`                                   |
 | Tại sao chọn pattern/stack này?             | `decisions/` — ADR index (thay đổi cấu trúc lớn) |
 | Lỗi này gặp rồi? Sửa sao? Sao đừng tái phạm? | `known-issues/README.md` — KI catalog (lỗi thường gặp) |
+| Thêm element live-editable mới mà KHÔNG tụt fps? | `PERFORMANCE.md` — 8 bẫy + checklist BẮT BUỘC; `node check-perf.js` duyệt |
 | Dựng 1 mảng (hồ/cửa sổ/cỏ/mái…) thế nào? Tầng/toạ độ? Lỗi mảng đó? | `playbooks/<slug>.md` — cẩm nang theo mảng |
 | Tính năng đã nghiên cứu nhưng hoãn?         | `deferred/README.md`                           |
 | Workflow import + tích hợp module?          | `../.claude/skills/module-handoff/SKILL.md` |
