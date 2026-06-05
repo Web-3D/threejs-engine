@@ -443,6 +443,7 @@ class StateRenderer {
         worldZ: inst.posZ / 1000,
         rotY: inst.rotY,
         yBase: wallBase,
+        style: s.style, // #8: solid | wood-plank | wood-float
       }),
       inst,
       'stairs'

@@ -409,6 +409,71 @@ export interface PositionedStairsOpts {
   worldZ: number
   rotY: number // deg — rotation của shape
   yBase: number // m — cao độ sàn (đáy bậc)
+  style?: 'solid' | 'wood-plank' | 'wood-float' // #8: đặc | ván gỗ + đà bên | ván gỗ nổi
+}
+
+// #8 Bậc ĐẶC (bê tông): mỗi bậc box từ SÀN lên mặt bậc → khối liền. (kiểu mặc định cũ)
+function solidStepGeos(
+  inner: THREE.Group,
+  mat: THREE.Material,
+  opts: PositionedStairsOpts,
+  n: number,
+  riser: number,
+  tread: number
+): THREE.BufferGeometry[] {
+  const geos: THREE.BufferGeometry[] = []
+  for (let i = 0; i < n; i++) {
+    const stepH = (i + 1) * riser
+    const ax = -opts.runL / 2 + (i + 0.5) * tread
+    const geo = new THREE.BoxGeometry(tread, stepH, opts.width)
+    geos.push(geo)
+    const m = new THREE.Mesh(geo, mat)
+    m.position.set(ax, stepH / 2, 0)
+    m.castShadow = true
+    m.receiveShadow = true
+    inner.add(m)
+  }
+  return geos
+}
+
+// #8 Bậc VÁN GỖ MỎNG xếp dần: mỗi bậc 1 tấm ván ~40mm ở đúng cao độ bậc (hở dưới = open riser). withStringers
+// → +2 đà nghiêng 2 bên đỡ ván (wood-plank); không → ván nổi (wood-float).
+function woodPlankGeos(
+  inner: THREE.Group,
+  mat: THREE.Material,
+  opts: PositionedStairsOpts,
+  n: number,
+  riser: number,
+  tread: number,
+  withStringers: boolean
+): THREE.BufferGeometry[] {
+  const geos: THREE.BufferGeometry[] = []
+  const plankT = 0.04 // ván dày 40mm
+  for (let i = 0; i < n; i++) {
+    const ax = -opts.runL / 2 + (i + 0.5) * tread
+    const geo = new THREE.BoxGeometry(tread, plankT, opts.width)
+    geos.push(geo)
+    const m = new THREE.Mesh(geo, mat)
+    m.position.set(ax, (i + 1) * riser - plankT / 2, 0) // mặt ván tại cao độ bậc
+    m.castShadow = true
+    m.receiveShadow = true
+    inner.add(m)
+  }
+  if (!withStringers) return geos
+  const len = Math.hypot(opts.runL, opts.totalH) // đà chạy chéo sàn→đỉnh
+  const ang = Math.atan2(opts.totalH, opts.runL)
+  const strT = 0.04
+  for (const sz of [-1, 1]) {
+    const geo = new THREE.BoxGeometry(len, 0.14, strT)
+    geo.rotateZ(ang)
+    geos.push(geo)
+    const m = new THREE.Mesh(geo, mat)
+    m.position.set(0, opts.totalH / 2, sz * (opts.width / 2 - strT / 2))
+    m.castShadow = true
+    m.receiveShadow = true
+    inner.add(m)
+  }
+  return geos
 }
 
 export function makePositionedStairs(opts: PositionedStairsOpts): PartResult {
@@ -420,28 +485,20 @@ export function makePositionedStairs(opts: PositionedStairsOpts): PartResult {
   inner.rotation.y = (opts.rotDeg * Math.PI) / 180
   outer.add(inner)
 
+  const style = opts.style ?? 'solid'
   const mat = new THREE.MeshToonMaterial({
-    color: COL_STAIRS,
+    color: style === 'solid' ? COL_STAIRS : 0x9b6b43, // gỗ nâu cho 2 kiểu ván
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
   })
-  const geos: THREE.BufferGeometry[] = []
   const n = Math.max(2, Math.round(opts.steps))
   const riser = opts.totalH / n
   const tread = opts.runL / n
-
-  for (let i = 0; i < n; i++) {
-    const stepH = (i + 1) * riser // solid từ sàn lên mặt bậc → dáng bậc thang
-    const ax = -opts.runL / 2 + (i + 0.5) * tread // dọc +X: −runL/2 → +runL/2
-    const geo = new THREE.BoxGeometry(tread, stepH, opts.width)
-    geos.push(geo)
-    const m = new THREE.Mesh(geo, mat)
-    m.position.set(ax, stepH / 2, 0)
-    m.castShadow = true
-    m.receiveShadow = true
-    inner.add(m)
-  }
+  const geos =
+    style === 'solid'
+      ? solidStepGeos(inner, mat, opts, n, riser, tread)
+      : woodPlankGeos(inner, mat, opts, n, riser, tread, style === 'wood-plank')
   return { geos, mats: [mat], meshes: [outer] }
 }
 

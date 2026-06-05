@@ -81,6 +81,7 @@ export interface StairState {
   width: number // mm — bề rộng cầu thang (vuông góc hướng leo)
   steps: number // số bậc
   rotDeg: number // độ — xoay cầu thang quanh Y (0–360), cộng thêm rotation của shape
+  style?: 'solid' | 'wood-plank' | 'wood-float' // kiểu bậc: đặc bê tông (mặc định) | ván gỗ + 2 đà bên | ván gỗ nổi. Optional → backward-compat
 }
 
 // Ban công: sàn vươn ra mặt ngoài 1 tường + lan can 3 phía. Gắn vào segment wallIdx.
@@ -207,7 +208,7 @@ export function mkStructure(): StructureState {
     slabThick: 150,
     slabMaterial: 'none', // bê tông xám mặc định; đổi 'wood' (demo ván gỗ) ở GUI Slab ▸ Material
     columns: [],
-    stairs: { show: false, x: 0, z: 0, runL: 3000, width: 1000, steps: 12, rotDeg: 0 },
+    stairs: { show: false, x: 0, z: 0, runL: 3000, width: 1000, steps: 12, rotDeg: 0, style: 'solid' },
     balconies: [],
   }
 }
