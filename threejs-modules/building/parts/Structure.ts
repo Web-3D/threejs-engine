@@ -138,8 +138,13 @@ export interface PositionedFoundationOpts {
   worldZ: number
   rotY: number // degrees
   openings?: SlabOpening[] // lỗ khoét móng — shape LỒNG (#3): khoét móng shape lớn để nhét shape nhỏ (né z-fight)
-  foundType?: 'concrete' | 'wood-deck' // #6: bê tông khối (mặc định) | sàn gỗ Nhật (mặt gỗ ngang + lưới cột)
+  foundType?: 'concrete' | 'wood-deck' | 'stone-pillar' // bê tông khối | sàn gỗ Nhật (lưới cột) | sàn gỗ trên 1 trụ đá giữa + váy
   deckPostSpacing?: number // m? KHÔNG — mm (đồng bộ state); #10 khoảng cách lưới cột deck (default 1500mm)
+  pillarRadius?: number // mm — bán kính trụ đá giữa (stone-pillar); cao trụ = h. Default 500
+  beamWidth?: number // mm — bề rộng tiết diện 16 xà (stone-pillar). Default 100
+  beamHeight?: number // mm — bề cao tiết diện 16 xà (stone-pillar); kẹp ≤ khoảng hở dưới deck. Default 120
+  strutSegments?: number // số ĐỐT mỗi thanh chống xiên (stone-pillar): nhiều = cong mượt. Default 6
+  strutCurve?: number // mm — độ CONG thanh chống xiên (bulge control-point); 0 = thẳng. Default 0
 }
 
 export interface SlabOpening {
@@ -174,6 +179,7 @@ export interface PositionedColumnOpts {
 
 const COL_SLAB = 0x9e9b93 // sàn bê tông xám nhạt
 const COL_COLUMN_AP = 0xe2ddd6 // cột bê tông sáng
+const COL_STONE_PILLAR = 0x8d8880 // trụ đá móng stone-pillar — xám đá (khớp tông fence stone phẳng)
 
 // Geo móng ĐẶC (không lỗ) — box dời theo overhang offset (cx,cz). Tách để makePositionedFoundation chọn nhánh.
 function boxFoundationGeo(
@@ -231,6 +237,191 @@ function makeWoodDeckFoundation(
   return { geos: [geo], mats: [mat], meshes: [m] }
 }
 
+// 8 hướng toả từ tâm: 4 GÓC + 4 TRUNG ĐIỂM cạnh (offset dx,dz so tâm). Dùng chung xà + trụ-nối (DRY).
+function radialTargets(hw: number, hd: number): [number, number][] {
+  return [
+    [hw, hd],
+    [-hw, hd],
+    [hw, -hd],
+    [-hw, -hd], // 4 góc
+    [hw, 0],
+    [-hw, 0],
+    [0, hd],
+    [0, -hd], // 4 trung điểm cạnh
+  ]
+}
+
+// 8 xà ngang gỗ TOẢ ĐỒNG TÂM từ tâm (cx,cz) ra 8 hướng, ở cao độ yc (local). Push vào out (merge với deck sau).
+// ang = atan2(-uz,ux) (local +X → hướng target, khớp woodEdge). Gọi nhiều lần = nhiều tầng.
+function pushRadialBeams(
+  out: THREE.BufferGeometry[],
+  cx: number,
+  cz: number,
+  hw: number,
+  hd: number,
+  yc: number,
+  beamH: number,
+  beamTk: number
+): void {
+  for (const [dx, dz] of radialTargets(hw, hd)) {
+    const L = Math.hypot(dx, dz)
+    if (L < 0.05) continue
+    const beam = new THREE.BoxGeometry(L, beamH, beamTk) // dài L theo local +X (tâm→target)
+    beam.rotateY(Math.atan2(-dz / L, dx / L))
+    beam.translate(cx + dx / 2, yc, cz + dz / 2) // giữa xà tại nửa đường tâm→target
+    out.push(beam)
+  }
+}
+
+// 8 trụ dọc gỗ HÌNH TRỤ TRÒN nối MÚT-NGOÀI 2 tầng xà (yTop↔yBot) trên mỗi hướng, LÙI vào `inset` (m) từ mút xà.
+// Trụ từ đỉnh xà trên xuống, THÒ QUA xà dưới thêm `extend` (m) (như chân). r = bán kính trụ. Push vào out (merge
+// với deck — Cylinder + Box đều indexed, cùng attr → merge OK). Gọi khi có đủ 2 tầng (caller guard).
+function pushBeamPosts(
+  out: THREE.BufferGeometry[],
+  cx: number,
+  cz: number,
+  hw: number,
+  hd: number,
+  yTop: number,
+  yBot: number,
+  beamH: number,
+  r: number,
+  inset: number,
+  extend: number
+): void {
+  const top = yTop + beamH / 2 // đỉnh trụ = mặt trên xà trên
+  const bot = yBot - beamH / 2 - extend // đáy trụ = thò qua xà dưới thêm `extend`
+  const postH = top - bot
+  const yc = (top + bot) / 2
+  for (const [dx, dz] of radialTargets(hw, hd)) {
+    const L = Math.hypot(dx, dz)
+    if (L < inset + 0.05) continue
+    const k = (L - inset) / L
+    const post = new THREE.CylinderGeometry(r, r, postH, 12, 1) // trụ tròn (trục Y dọc — không cần xoay)
+    post.translate(cx + dx * k, yc, cz + dz * k) // lùi `inset` từ mút xà vào trong
+    out.push(post)
+  }
+}
+
+// 1 thanh chống dạng CHUỖI ĐỐT (box) từ start→end, uốn cong qua quadratic-bezier (control = trung điểm chord +
+// bendDir×curve). seg = số đốt; w = tiết diện vuông. curve=0 → thẳng. Mỗi đốt = box xoay theo hướng đốt (local
+// +Y → hướng đốt qua quaternion + Matrix4.compose). Nhiều đốt → cong mượt (đốt thẳng nối nhau xấp xỉ cung).
+function pushBentStrut(
+  out: THREE.BufferGeometry[],
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  bendDir: THREE.Vector3,
+  seg: number,
+  curve: number,
+  w: number
+): void {
+  const n = Math.max(1, Math.round(seg))
+  const ctrl = start.clone().lerp(end, 0.5).addScaledVector(bendDir, curve)
+  const at = (t: number): THREE.Vector3 => {
+    const u = 1 - t // quadratic bezier B(t) = u²·start + 2ut·ctrl + t²·end
+    return start
+      .clone()
+      .multiplyScalar(u * u)
+      .addScaledVector(ctrl, 2 * u * t)
+      .addScaledVector(end, t * t)
+  }
+  const up = new THREE.Vector3(0, 1, 0)
+  let prev = at(0)
+  for (let i = 1; i <= n; i++) {
+    const cur = at(i / n)
+    const d = cur.clone().sub(prev)
+    const len = d.length()
+    if (len > 1e-4) {
+      const box = new THREE.BoxGeometry(w, len, w) // local +Y = trục đốt
+      const q = new THREE.Quaternion().setFromUnitVectors(up, d.clone().normalize())
+      const m = new THREE.Matrix4().compose(prev.clone().lerp(cur, 0.5), q, new THREE.Vector3(1, 1, 1))
+      box.applyMatrix4(m)
+      out.push(box)
+    }
+    prev = cur
+  }
+}
+
+// 8 thanh chống XIÊN từ TRUNG ĐIỂM mỗi xà dưới đâm vào TRỤC trụ giữa @45° (drop = run = L/2). Dạng chuỗi đốt
+// UỐN CONG được (seg = số đốt, curve = độ cong m). Bend trong MẶT PHẲNG ĐỨNG chứa thanh (bendDir = side⟂radial × chord).
+function pushDiagonalStruts(
+  out: THREE.BufferGeometry[],
+  cx: number,
+  cz: number,
+  hw: number,
+  hd: number,
+  yBot: number,
+  w: number,
+  seg: number,
+  curve: number
+): void {
+  for (const [dx, dz] of radialTargets(hw, hd)) {
+    const L = Math.hypot(dx, dz)
+    if (L < 0.2) continue
+    const start = new THREE.Vector3(cx + dx / 2, yBot, cz + dz / 2) // trung điểm xà dưới
+    const end = new THREE.Vector3(cx, yBot - L / 2, cz) // trục trụ giữa, 45°
+    const side = new THREE.Vector3(-dz / L, 0, dx / L) // ngang ⟂ bán kính = pháp tuyến mặt phẳng đứng
+    const chord = end.clone().sub(start).normalize()
+    const bendDir = new THREE.Vector3().crossVectors(side, chord).normalize() // ⟂ chord, trong mặt phẳng đứng
+    pushBentStrut(out, start, end, bendDir, seg, curve, w)
+  }
+}
+
+// Móng 'stone-pillar' (NgQuan 2026-06-05): sàn gỗ NGANG ở đỉnh + 1 TRỤ ĐÁ TRÒN TO ở giữa (đỡ chính) + 2 TẦNG
+// XÀ NGANG gỗ dưới đáy deck TOẢ ĐỒNG TÂM ra 4 GÓC + 4 TRUNG ĐIỂM cạnh (tầng dưới nhích xuống 150cm, song song;
+// bỏ qua nếu chui xuống đất) + 8 TRỤ DỌC TRÒN nối mút-ngoài 2 tầng xà (lùi 30cm, thò 30cm qua xà dưới) + 8 THANH
+// CHỐNG XIÊN từ trung điểm xà-dưới đâm vào trục trụ giữa @45° (chuỗi đốt uốn cong được: strutSegments/strutCurve).
+// 2 mesh: gỗ (deck + xà + trụ + chống merge) + đá (trụ giữa) riêng material. Trụ giữa cao = postH; r = pillarRadius. Cao tổng = foundH (≤4m).
+function makeStonePillarFoundation(
+  fw: number,
+  fd: number,
+  cx: number,
+  cz: number,
+  opts: PositionedFoundationOpts
+): PartResult {
+  const h = opts.h
+  const deckThick = Math.min(0.12, h * 0.5)
+  const postH = Math.max(0.05, h - deckThick) // trụ chạy từ đất tới đáy deck
+  const wood: THREE.BufferGeometry[] = []
+  const deck = new THREE.BoxGeometry(fw, deckThick, fd) // mặt gỗ ngang ở đỉnh
+  deck.translate(cx, h / 2 - deckThick / 2, cz)
+  wood.push(deck)
+  // 8 XÀ NGANG dưới đáy deck, ĐỒNG TÂM (toả từ tâm/đỉnh-trụ) ra 4 GÓC + 4 TRUNG ĐIỂM cạnh. top xà = đáy deck
+  // (= đỉnh trụ) → xà gác trên trụ, đỡ deck ra mép. ang = atan2(-uz,ux) (local +X → hướng target, như woodEdge).
+  const beamTk = (opts.beamWidth ?? 100) / 1000 // bề rộng tiết diện xà (slider)
+  const beamH = Math.min((opts.beamHeight ?? 120) / 1000, postH) // bề cao (slider), kẹp ≤ khoảng hở dưới deck
+  const beamY = h / 2 - deckThick - beamH / 2 // tầng TRÊN: tâm y ngay dưới đáy deck
+  const hw = fw / 2
+  const hd = fd / 2
+  pushRadialBeams(wood, cx, cz, hw, hd, beamY, beamH, beamTk) // 8 xà tầng trên
+  const lowerY = beamY - 1.5 // tầng DƯỚI: 8 xà song song, nhích xuống 150cm
+  if (lowerY - beamH / 2 > -h / 2) {
+    pushRadialBeams(wood, cx, cz, hw, hd, lowerY, beamH, beamTk) // 8 xà tầng dưới (chỉ khi còn trên đất)
+    const postR = (0.1 / 2) * (4 / 3) // bán kính trụ tròn: cũ 0.05 (½×0.1) +1/3 = 0.0667
+    pushBeamPosts(wood, cx, cz, hw, hd, beamY, lowerY, beamH, postR, 0.3, 0.3) // 8 trụ tròn, lùi 30cm, thò 30cm qua xà dưới
+    const seg = opts.strutSegments ?? 6
+    const curve = (opts.strutCurve ?? 0) / 1000
+    pushDiagonalStruts(wood, cx, cz, hw, hd, lowerY, beamTk, seg, curve) // 8 thanh chống xiên @45° (đốt+cong)
+  }
+  const woodGeo = mergeGeometries(wood, false) ?? new THREE.BufferGeometry()
+  for (const b of wood) b.dispose()
+  const woodMat = new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ nâu (như wood-deck)
+  // Trụ đá tròn giữa: bán kính clamp để luôn nằm gọn trong deck.
+  const r = Math.max(0.15, Math.min((opts.pillarRadius ?? 500) / 1000, Math.min(fw, fd) / 2 - 0.05))
+  const pillarGeo = new THREE.CylinderGeometry(r, r, postH, 20, 1)
+  pillarGeo.translate(cx, -h / 2 + postH / 2, cz)
+  const stoneMat = new THREE.MeshToonMaterial({ color: COL_STONE_PILLAR })
+  const woodMesh = new THREE.Mesh(woodGeo, woodMat)
+  const stoneMesh = new THREE.Mesh(pillarGeo, stoneMat)
+  for (const m of [woodMesh, stoneMesh]) {
+    m.rotation.y = (opts.rotY * Math.PI) / 180
+    m.position.set(opts.worldX, h / 2, opts.worldZ)
+    m.castShadow = true
+    m.receiveShadow = true
+  }
+  return { geos: [woodGeo, pillarGeo], mats: [woodMat, stoneMat], meshes: [woodMesh, stoneMesh] }
+}
+
 export function makePositionedFoundation(opts: PositionedFoundationOpts): PartResult {
   const { oh } = opts
   // base mỗi cạnh = bbox/2 + wallDepth/2 (mặt ngoài tường) → tổng base 2 cạnh = wallDepth.
@@ -240,6 +431,7 @@ export function makePositionedFoundation(opts: PositionedFoundationOpts): PartRe
   const cx = (oh.e - oh.w) / 2 // đông nhô nhiều → lệch +X (local, trước rotY)
   const cz = (oh.n - oh.s) / 2 // bắc nhô nhiều → lệch +Z
   if (opts.foundType === 'wood-deck') return makeWoodDeckFoundation(fw, fd, cx, cz, opts) // #6 sàn gỗ Nhật
+  if (opts.foundType === 'stone-pillar') return makeStonePillarFoundation(fw, fd, cx, cz, opts) // sàn gỗ + trụ đá giữa
   // Có lỗ (shape lồng) → ExtrudeGeometry khoét (overhang bake vào outer rect qua ocx/ocz, lỗ giữ local thật);
   // không → BoxGeometry + translate như cũ. Lỗ vẫn khớp shape nhỏ bất kể overhang.
   const geo = opts.openings?.length

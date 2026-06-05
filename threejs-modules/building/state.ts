@@ -109,8 +109,13 @@ export interface StructureState {
   showFoundation: boolean
   foundH: number // mm — height above ground (lifts building up when shown)
   foundOh: RoofOverhang // m — móng nhô riêng 4 hướng N/E/S/W tính TỪ mặt ngoài tường (min 0, max 2)
-  foundType?: 'concrete' | 'wood-deck' // kiểu móng: bê tông khối (mặc định) | sàn gỗ Nhật (mặt gỗ ngang + lưới cột). Optional → backward-compat
+  foundType?: 'concrete' | 'wood-deck' | 'stone-pillar' // móng: bê tông khối | sàn gỗ Nhật (lưới cột) | sàn gỗ trên 1 TRỤ ĐÁ tròn giữa + 2 tầng xà toả ra góc/cạnh + 8 trụ dọc nối. Optional → backward-compat
   deckPostSpacing?: number // mm — khoảng cách cột deck sàn gỗ (wood-deck): nhỏ = dày. Optional, default 1500
+  pillarRadius?: number // mm — bán kính trụ đá giữa (stone-pillar): cao trụ = foundH. Optional, default 500
+  beamWidth?: number // mm — bề RỘNG tiết diện 16 xà (stone-pillar). Optional, default 100
+  beamHeight?: number // mm — bề CAO tiết diện 16 xà (stone-pillar); render kẹp ≤ khoảng hở dưới deck. Optional, default 120
+  strutSegments?: number // số ĐỐT mỗi thanh chống xiên (stone-pillar): nhiều = cong mượt. Optional, default 6
+  strutCurve?: number // mm — độ CONG thanh chống xiên (stone-pillar); 0 = thẳng. Optional, default 0
   showSlab: boolean
   slabThick: number // mm — floor slab thickness
   slabMaterial?: WallMaterial | 'walnut-tex' // vật liệu sàn: 'none' = bê tông xám; 'wood' = ván gỗ procedural (demo); 'walnut-tex' = texture ảnh PBR (PhotoGround, caller bơm material). Optional → backward-compat
@@ -221,8 +226,13 @@ export function mkStructure(): StructureState {
     showFoundation: false,
     foundH: 500,
     foundOh: { n: 0, e: 0, s: 0, w: 0 }, // mặc định KHÍT footprint tường (không nhô) → ghép khối shape liền mép
-    foundType: 'concrete', // bê tông khối; đổi 'wood-deck' (sàn gỗ Nhật) ở GUI Foundation ▸ Type
+    foundType: 'concrete', // bê tông khối; đổi 'wood-deck'/'stone-pillar' ở GUI Foundation ▸ Type
     deckPostSpacing: 1500, // 1.5m giữa các cột deck (wood-deck)
+    pillarRadius: 500, // 0.5m bán kính trụ đá giữa (stone-pillar)
+    beamWidth: 100, // 100mm bề rộng tiết diện xà (stone-pillar)
+    beamHeight: 120, // 120mm bề cao tiết diện xà (stone-pillar)
+    strutSegments: 6, // 6 đốt mỗi thanh chống xiên (stone-pillar)
+    strutCurve: 0, // thẳng (stone-pillar)
 
     showSlab: false,
     slabThick: 150,

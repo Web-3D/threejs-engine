@@ -294,8 +294,13 @@ class StateRenderer {
         openings: this.nestedOpenings(inst, (s) => s.showFoundation), // #3: khoét chỗ shape nhỏ lồng (cũng có móng)
         // LOD lúc kéo (plainWalls): ép 'concrete' = slab phẳng, BỎ lưới cột deck (rất nặng khi rebuild/frame).
         // Buông tay → full 'wood-deck' lại. Footprint/cao giữ nguyên → không nhảy hình.
-        foundType: this.plainWalls ? 'concrete' : inst.structure.foundType, // #6 wood-deck = deck + lưới cột
+        foundType: this.plainWalls ? 'concrete' : inst.structure.foundType, // #6 wood-deck/stone-pillar
         deckPostSpacing: inst.structure.deckPostSpacing, // #10: mật độ lưới cột deck
+        pillarRadius: inst.structure.pillarRadius, // bán kính trụ đá giữa (stone-pillar)
+        beamWidth: inst.structure.beamWidth, // bề rộng tiết diện 16 xà (stone-pillar)
+        beamHeight: inst.structure.beamHeight, // bề cao tiết diện 16 xà (stone-pillar)
+        strutSegments: inst.structure.strutSegments, // số đốt thanh chống xiên (stone-pillar)
+        strutCurve: inst.structure.strutCurve, // độ cong thanh chống xiên (stone-pillar)
       }),
       inst,
       'found'
