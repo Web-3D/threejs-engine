@@ -56,8 +56,8 @@ export class ShojiScreen {
     this.uScale = uniform(opts.scale ?? 1)
     this.uPaper = uniform(new THREE.Color(opts.paperColor ?? 0xf3ecd6))
     this.uWood = uniform(new THREE.Color(opts.woodColor ?? 0x7a4a30)) // gỗ ấm reddish (khớp ảnh shoji thật)
-    this.uCellW = uniform(opts.cellW ?? 0.11)
-    this.uCellH = uniform(opts.cellH ?? 0.14)
+    this.uCellW = uniform(opts.cellW ?? 0.22) // ô to (gộp 4 ô nhỏ cũ thành 1)
+    this.uCellH = uniform(opts.cellH ?? 0.28)
     this.uPanelW = uniform(opts.panelW ?? 0.9)
     this.uPanelH = uniform(opts.panelH ?? 1.8)
     this.uKoshita = uniform(opts.koshita ?? 0.33)
@@ -104,13 +104,15 @@ export class ShojiScreen {
     const cv = pv.div(this.uCellH).fract()
     const du = min(cu, float(1).sub(cu))
     const dv = min(cv, float(1).sub(cv))
-    const barW = float(0.06) // nửa-bề-rộng đường (đơn vị ô)
-    const lattice = max(smoothstep(barW, float(0), du), smoothstep(barW, float(0), dv))
+    // Bar kumiko SOLID + AA mỏng (sắc nét + đậm, thay gradient mờ): full gỗ tới barH, viền AA chỉ 0.012 ô.
+    const barH = float(0.05) // nửa-bề-rộng bar (đơn vị ô) — bar giữa 2 ô ≈ 0.1 ô
+    const aa = float(0.012)
+    const lattice = max(smoothstep(barH.add(aa), barH, du), smoothstep(barH.add(aa), barH, dv))
     const withLattice = mix(this.uPaper, this.uWood, lattice)
-    // Khung tấm shoji (lưới world panelW/H) — đậm hơn lưới kumiko.
+    // Khung tấm shoji (lưới world panelW/H) SOLID + AA — đường gỗ CHÍNH đậm sắc.
     const pf = vec2(pu.div(this.uPanelW), pv.div(this.uPanelH)).fract()
     const g = min(min(pf.x, float(1).sub(pf.x)), min(pf.y, float(1).sub(pf.y)))
-    const frame = smoothstep(float(0.045), float(0.02), g)
+    const frame = smoothstep(float(0.04), float(0.028), g)
     return mix(withLattice, this.uWood, frame) as TSLNode
   }
 
