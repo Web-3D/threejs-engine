@@ -107,3 +107,22 @@ export function footprintXZ(configs: WallConfig[]): FootXZ {
     sz: Math.max(0.3, maxZ - minZ),
   }
 }
+
+// World AABB MẶT NGOÀI 1 instance (footprint tim-tường computeLocalBbox + wallDepth/2 mỗi phía; rotY 90/270
+// hoán w↔d). rotY ∈ {0,90,180,270} → axis-aligned. NGUỒN DUY NHẤT dùng chung: Ctrl-snap (vỏ snap.ts) +
+// đục-lỗ-shape-lồng (render/fromState). Né drift (KI-001) — đừng copy logic này ra nơi khác.
+export function instWorldAABB(inst: ShapeInstance): {
+  minX: number
+  maxX: number
+  minZ: number
+  maxZ: number
+} {
+  const { w, d } = computeLocalBbox(inst)
+  const t = inst.wallDepth / 1000
+  const swap = inst.rotY === 90 || inst.rotY === 270
+  const hw = (swap ? d : w) / 2 + t / 2
+  const hd = (swap ? w : d) / 2 + t / 2
+  const cx = inst.posX / 1000
+  const cz = inst.posZ / 1000
+  return { minX: cx - hw, maxX: cx + hw, minZ: cz - hd, maxZ: cz + hd }
+}

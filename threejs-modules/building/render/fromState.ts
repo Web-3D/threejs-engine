@@ -23,6 +23,7 @@ import {
   computeWallConfigs,
   footprintXZ,
   type FootXZ,
+  instWorldAABB,
   stairFootprintWorld,
   type WorldRect,
   worldRectToSlabOpening,
@@ -35,7 +36,14 @@ import {
   makePositionedSlab,
   makePositionedStairs,
 } from '../parts/Structure'
-import type { BalconyState, BuildingState, SegmentState, ShapeInstance, WallConfig } from '../state'
+import type {
+  BalconyState,
+  BuildingState,
+  SegmentState,
+  ShapeInstance,
+  StructureState,
+  WallConfig,
+} from '../state'
 import { type PartResult } from '../tokens'
 import {
   assembleWall,
@@ -110,6 +118,7 @@ class StateRenderer {
   private asm!: WallAsmCtx
   private plainWalls = false // LOD lúc kéo: ép mọi tường về phẳng ('none') — bỏ brick-3d/gỗ instanced (rất nặng)
   private hidden = new Set<string>() // floor.id ẩn — bỏ dựng mesh/pick nhưng GIỮ chiều cao (stacking đúng)
+  private floorInstances: ShapeInstance[] = [] // instance CÙNG TẦNG đang dựng — cho đục-lỗ shape lồng (#3)
 
   constructor(private readonly ctx: BuildRenderCtx) {}
 
@@ -139,6 +148,7 @@ class StateRenderer {
   // Build 1 tầng → trả độ cao (lift + floorH) cộng dồn cho tầng kế.
   private buildFloor(state: BuildingState, fi: number, yAcc: number, holes: WorldRect[]): number {
     const floor = state.floors[fi]
+    this.floorInstances = floor.instances // cho nestedOpenings (đục lỗ shape lồng) biết các khối cùng tầng
     const isGround = fi === 0
     const hidden = this.hidden.has(floor.id) // ẩn: giữ chiều cao (cộng dồn dưới) nhưng KHÔNG dựng mesh/pick
     let maxLift = 0
@@ -266,6 +276,7 @@ class StateRenderer {
         worldX: inst.posX / 1000,
         worldZ: inst.posZ / 1000,
         rotY: inst.rotY,
+        openings: this.nestedOpenings(inst, (s) => s.showFoundation), // #3: khoét chỗ shape nhỏ lồng (cũng có móng)
       }),
       inst,
       'found'
@@ -290,7 +301,10 @@ class StateRenderer {
         worldX: wx,
         worldZ: wz,
         rotY: inst.rotY,
-        openings: this.slabOpenings(holes, wx, wz, inst.rotY, w, d),
+        openings: [
+          ...this.slabOpenings(holes, wx, wz, inst.rotY, w, d), // lỗ cầu thang
+          ...this.nestedOpenings(inst, (s) => s.showSlab), // #3: lỗ shape nhỏ lồng (cũng có slab)
+        ],
       }),
       inst,
       'slab'
@@ -365,6 +379,31 @@ class StateRenderer {
       if (Math.abs(h.cx - wx) <= halfX && Math.abs(h.cz - wz) <= halfZ) {
         out.push(worldRectToSlabOpening(h, wx, wz, ry))
       }
+    }
+    return out
+  }
+
+  // #3 "đục lỗ shape lớn": instance khác CÙNG TẦNG nằm GỌN trong footprint inst (AABB chứa trọn) → khoét
+  // nền/slab inst đúng chỗ shape nhỏ để nhét vào (né z-fight 2 lớp móng/sàn trùng). `needs` lọc theo loại
+  // (chỉ khoét khi shape nhỏ CŨNG có móng/slab — cùng cao độ mới chồng). Trả SlabOpening (local frame inst).
+  private nestedOpenings(
+    inst: ShapeInstance,
+    needs: (s: StructureState) => boolean
+  ): ReturnType<typeof worldRectToSlabOpening>[] {
+    const me = instWorldAABB(inst)
+    const out: ReturnType<typeof worldRectToSlabOpening>[] = []
+    for (const other of this.floorInstances) {
+      if (other.id === inst.id || !needs(other.structure)) continue
+      const o = instWorldAABB(other)
+      if (o.minX < me.minX || o.maxX > me.maxX || o.minZ < me.minZ || o.maxZ > me.maxZ) continue
+      const rect: WorldRect = {
+        cx: (o.minX + o.maxX) / 2,
+        cz: (o.minZ + o.maxZ) / 2,
+        w: o.maxX - o.minX,
+        d: o.maxZ - o.minZ,
+        rot: 0,
+      }
+      out.push(worldRectToSlabOpening(rect, inst.posX / 1000, inst.posZ / 1000, inst.rotY))
     }
     return out
   }

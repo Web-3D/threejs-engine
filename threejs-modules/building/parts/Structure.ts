@@ -135,6 +135,7 @@ export interface PositionedFoundationOpts {
   worldX: number
   worldZ: number
   rotY: number // degrees
+  openings?: SlabOpening[] // lỗ khoét móng — shape LỒNG (#3): khoét móng shape lớn để nhét shape nhỏ (né z-fight)
 }
 
 export interface SlabOpening {
@@ -169,6 +170,13 @@ export interface PositionedColumnOpts {
 const COL_SLAB = 0x9e9b93 // sàn bê tông xám nhạt
 const COL_COLUMN_AP = 0xe2ddd6 // cột bê tông sáng
 
+// Geo móng ĐẶC (không lỗ) — box dời theo overhang offset (cx,cz). Tách để makePositionedFoundation chọn nhánh.
+function boxFoundationGeo(fw: number, h: number, fd: number, cx: number, cz: number): THREE.BoxGeometry {
+  const geo = new THREE.BoxGeometry(fw, h, fd)
+  if (cx !== 0 || cz !== 0) geo.translate(cx, 0, cz)
+  return geo
+}
+
 export function makePositionedFoundation(opts: PositionedFoundationOpts): PartResult {
   const { oh } = opts
   // base mỗi cạnh = bbox/2 + wallDepth/2 (mặt ngoài tường) → tổng base 2 cạnh = wallDepth.
@@ -177,8 +185,11 @@ export function makePositionedFoundation(opts: PositionedFoundationOpts): PartRe
   const fd = opts.bboxD + opts.wallDepth + oh.n + oh.s
   const cx = (oh.e - oh.w) / 2 // đông nhô nhiều → lệch +X (local, trước rotY)
   const cz = (oh.n - oh.s) / 2 // bắc nhô nhiều → lệch +Z
-  const geo = new THREE.BoxGeometry(fw, opts.h, fd)
-  if (cx !== 0 || cz !== 0) geo.translate(cx, 0, cz)
+  // Có lỗ (shape lồng) → ExtrudeGeometry khoét (overhang bake vào outer rect qua ocx/ocz, lỗ giữ local thật);
+  // không → BoxGeometry + translate như cũ. Lỗ vẫn khớp shape nhỏ bất kể overhang.
+  const geo = opts.openings?.length
+    ? makeSlabWithHoles(fw, fd, opts.h, opts.openings, cx, cz)
+    : boxFoundationGeo(fw, opts.h, fd, cx, cz)
   const mat = new THREE.MeshToonMaterial({
     color: COL_FOUNDATION,
     polygonOffset: true,
@@ -200,13 +211,15 @@ function makeSlabWithHoles(
   w: number,
   d: number,
   thick: number,
-  holes: SlabOpening[]
+  holes: SlabOpening[],
+  ocx = 0, // dời tâm OUTER rect (overhang móng) — lỗ giữ toạ độ local thật nên vẫn khớp shape lồng
+  ocz = 0
 ): THREE.BufferGeometry {
   const shape = new THREE.Shape()
-  shape.moveTo(-w / 2, -d / 2)
-  shape.lineTo(w / 2, -d / 2)
-  shape.lineTo(w / 2, d / 2)
-  shape.lineTo(-w / 2, d / 2)
+  shape.moveTo(-w / 2 + ocx, -d / 2 - ocz)
+  shape.lineTo(w / 2 + ocx, -d / 2 - ocz)
+  shape.lineTo(w / 2 + ocx, d / 2 - ocz)
+  shape.lineTo(-w / 2 + ocx, d / 2 - ocz)
   shape.closePath()
   for (const op of holes) {
     // Rect lỗ xoay quanh tâm (op.rot, Three Ry). shape.y = -localZ (do rotateX(-PI/2)).
