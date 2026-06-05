@@ -12,7 +12,19 @@
 import * as THREE from 'three'
 import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
-import { float, max, min, mix, normalWorld, positionWorld, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl'
+import {
+  float,
+  max,
+  min,
+  mix,
+  normalWorld,
+  positionWorld,
+  smoothstep,
+  triNoise3D,
+  uniform,
+  uv,
+  vec3,
+} from 'three/tsl'
 import { NodeMaterial } from 'three/webgpu'
 
 type TSLNode = ShaderNodeObject<Node>
@@ -28,13 +40,14 @@ export interface ShojiScreenOptions {
   cellW?: number
   /** Cao ô kumiko (m, world). Default: 0.14 */
   cellH?: number
-  /** Bề rộng tấm shoji chia khung (m). Default: 0.9 / 1.8 */
-  panelW?: number
-  panelH?: number
   /** Ô = KÍNH thay giấy: roughness thấp (bóng/phản chiếu env) qua getRoughnessNode. Default: false */
   glass?: boolean
   /** Koshita (腰板): tỉ lệ phần DƯỚI tường làm GỖ ĐẶC (no lattice) — uv.y < koshita. 0 = tắt. Default: 0.33 */
   koshita?: number
+  /** (glass) Độ phản chiếu ô kính [0–1] — cao = mịn/bóng (roughness thấp). Default: 0.6 */
+  reflect?: number
+  /** (glass) Độ mờ ô kính [0–1] — thấp = trong (thấy xuyên), cao = đục. Default: 0.45 */
+  opacity?: number
 }
 
 export class ShojiScreen {
@@ -46,20 +59,21 @@ export class ShojiScreen {
   private readonly uWood: ReturnType<typeof uniform>
   private readonly uCellW: ReturnType<typeof uniform>
   private readonly uCellH: ReturnType<typeof uniform>
-  private readonly uPanelW: ReturnType<typeof uniform>
-  private readonly uPanelH: ReturnType<typeof uniform>
   private readonly uKoshita: ReturnType<typeof uniform>
+  private readonly uReflect: ReturnType<typeof uniform>
+  private readonly uOpacity: ReturnType<typeof uniform>
   private readonly _glass: boolean
+  private _woodnessNode: TSLNode | null = null // GỖ-NESS triplanar — build 1 lần, share color/rough/opacity
 
   constructor(opts: ShojiScreenOptions = {}) {
     this._glass = opts.glass ?? false
+    this.uReflect = uniform(opts.reflect ?? 0.6)
+    this.uOpacity = uniform(opts.opacity ?? 0.45)
     this.uScale = uniform(opts.scale ?? 1)
     this.uPaper = uniform(new THREE.Color(opts.paperColor ?? 0xf3ecd6))
     this.uWood = uniform(new THREE.Color(opts.woodColor ?? 0x7a4a30)) // gỗ ấm reddish (khớp ảnh shoji thật)
-    this.uCellW = uniform(opts.cellW ?? 0.22) // ô to (gộp 4 ô nhỏ cũ thành 1)
-    this.uCellH = uniform(opts.cellH ?? 0.28)
-    this.uPanelW = uniform(opts.panelW ?? 0.9)
-    this.uPanelH = uniform(opts.panelH ?? 1.8)
+    this.uCellW = uniform(opts.cellW ?? 1.0) // grid CHÍNH 100cm (H+V); fine = dọc 20cm bên trong
+    this.uCellH = uniform(opts.cellH ?? 1.0)
     this.uKoshita = uniform(opts.koshita ?? 0.33)
 
     const mat = new NodeMaterial()
@@ -83,9 +97,19 @@ export class ShojiScreen {
     return this.material
   }
 
-  /** Roughness: KÍNH (glass) → 0.16 (bóng, phản chiếu env); GIẤY → 0.9 (matte washi). */
+  /** Roughness: GIẤY → 0.9 matte; KÍNH → ô bóng (theo reflect) + gỗ matte (qua woodness). */
   getRoughnessNode(): TSLNode {
-    return float(this._glass ? 0.16 : 0.9) as TSLNode
+    if (!this._glass) return float(0.97) as TSLNode // gỗ + giấy MAT (né nhựa)
+    // glassR = lerp(0.4 → 0.02, reflect) bằng arithmetic (né mix() với uniform-node = lỗi type).
+    const glassR = float(0.4).add(float(0.02).sub(float(0.4)).mul(this.uReflect))
+    return mix(glassR, float(0.85), this._woodness()) as TSLNode // ô kính bóng, gỗ matte
+  }
+
+  /** Opacity (CHỈ glass): ô KÍNH mờ theo uOpacity (transparent), GỖ đặc (=1). null = opaque. */
+  getOpacityNode(): TSLNode | null {
+    if (!this._glass) return null
+    // opacity = uOpacity + (1 − uOpacity)·woodness (ô = uOpacity, gỗ = 1) — arithmetic.
+    return this.uOpacity.add(float(1).sub(this.uOpacity).mul(this._woodness())) as TSLNode
   }
 
   dispose(): void {
@@ -97,36 +121,64 @@ export class ShojiScreen {
 
   // ── TSL node graph ────────────────────────────────────────────────────────
 
-  // 1 mặt phẳng (pu,pv = world*scale): nền giấy + lưới kumiko (đường mảnh dọc+ngang theo cellW/H) + khung tấm.
-  private _face(pu: TSLNode, pv: TSLNode): TSLNode {
-    // Kumiko: khoảng-cách-tới-đường-lưới-gần-nhất theo từng trục → đường mảnh gỗ.
-    const cu = pu.div(this.uCellW).fract()
-    const cv = pv.div(this.uCellH).fract()
-    const du = min(cu, float(1).sub(cu))
-    const dv = min(cv, float(1).sub(cv))
-    // Bar kumiko SOLID + AA mỏng (sắc nét + đậm, thay gradient mờ): full gỗ tới barH, viền AA chỉ 0.012 ô.
-    const barH = float(0.05) // nửa-bề-rộng bar (đơn vị ô) — bar giữa 2 ô ≈ 0.1 ô
-    const aa = float(0.012)
-    const lattice = max(smoothstep(barH.add(aa), barH, du), smoothstep(barH.add(aa), barH, dv))
-    const withLattice = mix(this.uPaper, this.uWood, lattice)
-    // Khung tấm shoji (lưới world panelW/H) SOLID + AA — đường gỗ CHÍNH đậm sắc.
-    const pf = vec2(pu.div(this.uPanelW), pv.div(this.uPanelH)).fract()
-    const g = min(min(pf.x, float(1).sub(pf.x)), min(pf.y, float(1).sub(pf.y)))
-    const frame = smoothstep(float(0.04), float(0.028), g)
-    return mix(withLattice, this.uWood, frame) as TSLNode
+  // Bar lưới 1 trục: kẻ tại bội số `cell` (world m), nửa-bề-rộng `hw` (world m). SOLID + AA mỏng (sắc nét).
+  private _bars(p: TSLNode, cell: TSLNode, hw: TSLNode): TSLNode {
+    const f = p.div(cell).fract()
+    const d = min(f, float(1).sub(f)).mul(cell) // world m tới đường lưới gần nhất
+    return smoothstep(hw.add(float(0.004)), hw, d) as TSLNode
   }
 
-  // Triplanar: 3 mặt chiếu world blend theo |normal|^8 (giống SeigaihaScreen).
-  private _buildColorNode(): TSLNode {
+  // Mask LƯỚI kumiko 1 mặt phẳng [0..1] = grid CHÍNH 1.0m (bar dày, cả DỌC+NGANG) + grid NHỎ chỉ DỌC ~20cm
+  // (bar mảnh, cell/5) — bỏ ngang nhỏ theo yêu cầu (tate-shige). uCellW/H = uniform → cast TSLNode khi truyền.
+  private _gridLattice(pu: TSLNode, pv: TSLNode): TSLNode {
+    const main = max(
+      this._bars(pu, this.uCellW as unknown as TSLNode, float(0.022)), // bar chính dày ~44mm
+      this._bars(pv, this.uCellH as unknown as TSLNode, float(0.022))
+    )
+    const subV = this._bars(pu, this.uCellW.div(float(5)), float(0.009)) // CHỈ dọc ~20cm, mảnh ~18mm
+    return max(main, subV) as TSLNode
+  }
+
+  // Triplanar blend 1 hàm-mặt qua 3 mặt chiếu world (|normal|^8) — giống SeigaihaScreen.
+  private _triplanar(face: (pu: TSLNode, pv: TSLNode) => TSLNode): TSLNode {
     const s = this.uScale
-    const colZY = this._face(positionWorld.z.mul(s), positionWorld.y.mul(s)) // tường mặt ±X
-    const colXY = this._face(positionWorld.x.mul(s), positionWorld.y.mul(s)) // tường mặt ±Z
-    const colXZ = this._face(positionWorld.x.mul(s), positionWorld.z.mul(s)) // sàn/mái
+    const fZY = face(positionWorld.z.mul(s), positionWorld.y.mul(s))
+    const fXY = face(positionWorld.x.mul(s), positionWorld.y.mul(s))
+    const fXZ = face(positionWorld.x.mul(s), positionWorld.z.mul(s))
     const sharp = normalWorld.abs().pow(vec3(8))
     const w = sharp.div(sharp.dot(vec3(1)).max(float(0.001)))
-    const blended = colZY.mul(w.x).add(colXZ.mul(w.y)).add(colXY.mul(w.z))
-    // Koshita: phần DƯỚI tường (uv.y < uKoshita) = GỖ ĐẶC (no lattice). uv.y per-wall (BoxGeometry, 0=đáy→1=đỉnh).
-    const ks = smoothstep(this.uKoshita, this.uKoshita.add(float(0.012)), uv().y)
-    return mix(this.uWood, blended, ks) as TSLNode
+    return fZY.mul(w.x).add(fXZ.mul(w.y)).add(fXY.mul(w.z)) as TSLNode
+  }
+
+  // GỖ-NESS [0..1] = 1 gỗ, 0 ô (giấy/kính). = lưới kumiko (world triplanar) ∪ KHUNG NGOÀI (uv: cạnh trên +
+  // 2 cạnh bên) ∪ KOSHITA (uv: đáy 1/3). Khung/koshita per-wall (uv), lưới đều theo world. Build 1 LẦN.
+  private _woodness(): TSLNode {
+    if (this._woodnessNode) return this._woodnessNode
+    const grid = this._triplanar((pu, pv) => this._gridLattice(pu, pv))
+    const uvN = uv()
+    // Khung ngoài: cạnh trên (uv.y→1) + 2 cạnh bên (uv.x→0/1). KHÔNG cạnh đáy (đáy = koshita). fw = % bề tường.
+    const fw = float(0.045)
+    const left = smoothstep(fw, float(0), uvN.x)
+    const right = smoothstep(float(1).sub(fw), float(1), uvN.x)
+    const top = smoothstep(float(1).sub(fw), float(1), uvN.y)
+    const frame = max(max(left, right), top)
+    // Koshita: đáy (uv.y < uKoshita) = gỗ đặc.
+    const koshita = float(1).sub(smoothstep(this.uKoshita, this.uKoshita.add(float(0.012)), uvN.y))
+    this._woodnessNode = max(max(grid, frame), koshita) as TSLNode
+    return this._woodnessNode
+  }
+
+  // Màu gỗ + VÂN DỌC: triNoise tần cao ngang (X,Z) + thấp dọc (Y) → streak đứng (vân ván) ±brightness.
+  private _woodColor(): TSLNode {
+    const grain = triNoise3D(
+      positionWorld.mul(vec3(float(13), float(1.4), float(13))),
+      float(0),
+      float(0)
+    ).sub(float(0.5))
+    return this.uWood.add(this.uWood.mul(grain.mul(float(0.4)))) as TSLNode // ±20% sáng theo vân
+  }
+
+  private _buildColorNode(): TSLNode {
+    return mix(this.uPaper, this._woodColor(), this._woodness()) as TSLNode
   }
 }

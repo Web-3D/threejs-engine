@@ -2,12 +2,13 @@
 
 Tường **shoji (障子)** Nhật procedural — TSL `NodeMaterial`, lit, world-space triplanar.
 
-Gồm 3 lớp:
-1. **Lưới gỗ kumiko** — đường mảnh dọc + ngang đều theo `cellW`×`cellH` (mặc định 0.11×0.14 m → ô đứng).
-2. **Nền giấy washi** — `paperColor` trắng-ấm (cảm giác mờ cho ánh sáng xuyên).
-3. **Khung tấm** — lưới world `panelW`×`panelH` (0.9×1.8 m), gỗ đậm hơn.
+Kết cấu (theo shoji thật):
+1. **Khung ngoài** (per-wall, uv) — cạnh TRÊN + 2 cạnh BÊN (đáy = koshita).
+2. **Grid kumiko** (world triplanar) — bar CHÍNH dày 1.0m (cả dọc+ngang) + bar mảnh **CHỈ DỌC** ~20cm trong mỗi ô (tate-shige).
+3. **Koshita** (per-wall, uv) — đáy `koshita` (1/3) = GỖ ĐẶC, có **vân gỗ dọc** (triNoise).
+4. **Nền giấy washi** (`paperColor`) ở các ô; gỗ MAT cao (roughness 0.97) né nhựa.
 
-> Dùng qua `WallMaterial = 'jp-shoji'` (Walls ▸ Japanese ▸ Shoji). Anh em `SeigaihaScreen` (fusuma tranh sóng).
+> `'jp-shoji'` = giấy; `'jp-shoji-glass'` = ô KÍNH (transparent, slider Reflect/Opacity). Walls ▸ Japanese. Anh em `SeigaihaScreen`.
 
 ## Usage
 
@@ -24,8 +25,10 @@ mesh.material = s.getMaterial()
 | `scale` | number | `1` | World scale (lớn = ô nhỏ) |
 | `paperColor` | ColorRep | `0xf3ecd6` | Giấy washi trắng-ấm; live `setPaperColor` |
 | `woodColor` | ColorRep | `0x4a3826` | Gỗ kumiko + khung; live `setWoodColor` |
-| `cellW` / `cellH` | number | `0.11` / `0.14` | Kích thước ô kumiko (m) |
-| `panelW` / `panelH` | number | `0.9` / `1.8` | Kích thước tấm shoji (m) |
+| `cellW` / `cellH` | number | `1.0` / `1.0` | Grid CHÍNH (m); fine dọc = cell/5 (~20cm) |
+| `koshita` | number | `0.33` | Tỉ lệ đáy làm gỗ đặc (uv.y) |
+| `glass` | boolean | `false` | Ô = kính (transparent + reflect) |
+| `reflect` / `opacity` | number | `0.6` / `0.45` | (glass) độ phản chiếu / độ mờ ô kính |
 
 ## Dispose
 

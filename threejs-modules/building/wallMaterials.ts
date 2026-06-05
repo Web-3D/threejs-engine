@@ -65,6 +65,8 @@ export interface WallMatInput {
   matScale: number
   mortarColor: number
   brickRelief: number
+  glassReflect?: number // jp-shoji-glass — optional (backward-compat)
+  glassOpacity?: number
 }
 
 // AP5 — registry entry: material đã build + shader instance (giữ để dispose). 'none' → null.
@@ -79,6 +81,7 @@ type SurfaceShader = {
   getMaterial(): NodeMaterial
   getNormalNode?(): NodeMaterial['normalNode'] // chỉ shader có bump (vd BrickWall)
   getRoughnessNode?(): MeshStandardNodeMaterial['roughnessNode'] // roughness biến thiên (anti-nhựa)
+  getOpacityNode?(): MeshStandardNodeMaterial['opacityNode'] // null = opaque; non-null → transparent (kính shoji)
   dispose(): void
 }
 
@@ -87,11 +90,18 @@ type SurfaceShader = {
 export interface BrickOpts {
   mortarColor: number
   relief: number
+  glassReflect?: number // jp-shoji-glass: độ phản chiếu [0–1] (tái dùng bag opts đã threaded — né đổi signature)
+  glassOpacity?: number // jp-shoji-glass: độ mờ ô kính [0–1] (thấp = trong)
 }
 export const DEFAULT_BRICK: BrickOpts = { mortarColor: 0xc7c4be, relief: 0.5 }
 
 export function brickOptsOf(seg: WallMatInput): BrickOpts {
-  return { mortarColor: seg.mortarColor, relief: seg.brickRelief }
+  return {
+    mortarColor: seg.mortarColor,
+    relief: seg.brickRelief,
+    glassReflect: seg.glassReflect,
+    glassOpacity: seg.glassOpacity,
+  }
 }
 
 // Màu tường thực tế: brush palette (paintColor) ưu tiên; chưa sơn → WALL_COLORS theo colorIndex.
@@ -127,7 +137,13 @@ function buildSurfaceShader(
     case 'jp-shoji':
       return new ShojiScreen({ paperColor: color, scale: 1 / s }) // màu tường = giấy washi
     case 'jp-shoji-glass':
-      return new ShojiScreen({ paperColor: color, scale: 1 / s, glass: true }) // ô kính (bóng)
+      return new ShojiScreen({
+        paperColor: color,
+        scale: 1 / s,
+        glass: true,
+        reflect: brick.glassReflect,
+        opacity: brick.glassOpacity,
+      }) // ô = kính trong (transparent + phản chiếu)
   }
 }
 
@@ -145,6 +161,12 @@ export function makeSurfaceMaterial(
   mat.roughness = 0.92
   if (shader.getRoughnessNode) mat.roughnessNode = shader.getRoughnessNode() // varied → bớt nhựa
   mat.metalness = material === 'metal' ? 0.55 : 0
+  // Kính shoji: opacityNode (ô mờ, gỗ đặc) → transparent. depthWrite giữ true (kính MỜ/frosted occlude đúng).
+  const opacityNode = shader.getOpacityNode?.()
+  if (opacityNode) {
+    mat.transparent = true
+    mat.opacityNode = opacityNode
+  }
   mat.polygonOffset = true
   mat.polygonOffsetFactor = 1
   mat.polygonOffsetUnits = 1
@@ -173,6 +195,9 @@ export class WallMaterialCache {
   matKey(material: WallMaterial, color: number, scale: number, brick: BrickOpts): string {
     if (material === 'none') return `n:${color}`
     if (material === 'brick') return `brick:${color}:${scale}:${brick.mortarColor}:${brick.relief}`
+    if (material === 'jp-shoji-glass') {
+      return `jp-shoji-glass:${color}:${scale}:${brick.glassReflect}:${brick.glassOpacity}`
+    }
     return `${material}:${color}:${scale}`
   }
 

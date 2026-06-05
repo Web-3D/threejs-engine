@@ -60,6 +60,8 @@ export interface SegmentState {
   woodReveal: number // mm — chiều cao mỗi tấm ván (chỉ 'wood-strip')
   woodButt: number // mm — độ nhô mép butt (chỉ 'wood-strip')
   woodStepTilt: number // deg — nghiêng mép butt ±85 (0=phẳng, +dốc lên, −hắt xuống; chỉ 'wood-strip')
+  glassReflect?: number // 0–1 — độ phản chiếu ô kính (chỉ 'jp-shoji-glass'). Optional → backward-compat
+  glassOpacity?: number // 0–1 — độ mờ ô kính (thấp = trong; chỉ 'jp-shoji-glass'). Optional
   paintColor: number | null // hex sơn từ palette atelier (brush). null = dùng colorIndex/WALL_COLORS
 }
 
@@ -243,6 +245,8 @@ export function mkSeg(length: number, turnBefore: number): SegmentState {
     woodReveal: 500,
     woodButt: 50,
     woodStepTilt: 1,
+    glassReflect: 0.6, // jp-shoji-glass: phản chiếu vừa
+    glassOpacity: 0.45, // jp-shoji-glass: hơi mờ (thấy mờ xuyên)
     paintColor: null,
   }
 }
