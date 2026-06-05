@@ -1,0 +1,10 @@
+{
+  "name": "ShojiScreen",
+  "category": "shaders",
+  "version": "1.0.0",
+  "description": "Tường shoji Nhật (障子) — lưới gỗ kumiko đều + nền giấy washi trắng-ấm + khung tấm, triplanar lit",
+  "dependencies": ["three"],
+  "tags": ["wall", "japanese", "shoji", "kumiko", "procedural", "triplanar"],
+  "three-version": ">=0.174",
+  "status": "stable"
+}

@@ -35,6 +35,7 @@ import { BrickWall } from '../shaders/fragment/BrickWall'
 import { ConcretePanel } from '../shaders/fragment/ConcretePanel'
 import { MetalPanel } from '../shaders/fragment/MetalPanel'
 import { SeigaihaScreen } from '../shaders/fragment/SeigaihaScreen'
+import { ShojiScreen } from '../shaders/fragment/ShojiScreen'
 import { WoodPlank } from '../shaders/fragment/WoodPlank'
 import { WALL_COLORS } from './tokens'
 
@@ -48,6 +49,7 @@ export type WallMaterial =
   | 'wood'
   | 'metal'
   | 'jp-screen' // tường tranh Nhật (fusuma seigaiha) — procedural surface shader lit
+  | 'jp-shoji' // tường shoji Nhật (lưới kumiko + giấy washi) — procedural surface shader lit
   | 'brick-tex'
   | 'brick-3d'
   | 'wood-3d'
@@ -121,6 +123,8 @@ function buildSurfaceShader(
       return new MetalPanel({ metalColor: color, scale: 1 / s })
     case 'jp-screen':
       return new SeigaihaScreen({ paperColor: color, scale: 1 / s }) // màu tường = nền washi/vàng
+    case 'jp-shoji':
+      return new ShojiScreen({ paperColor: color, scale: 1 / s }) // màu tường = giấy washi
   }
 }
 
