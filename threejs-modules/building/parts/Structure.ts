@@ -137,7 +137,8 @@ export interface PositionedFoundationOpts {
   worldZ: number
   rotY: number // degrees
   openings?: SlabOpening[] // lỗ khoét móng — shape LỒNG (#3): khoét móng shape lớn để nhét shape nhỏ (né z-fight)
-  foundType?: 'concrete' | 'wood-deck' // #6: bê tông khối (mặc định) | sàn gỗ Nhật (mặt gỗ ngang + 4 cột vuông góc)
+  foundType?: 'concrete' | 'wood-deck' // #6: bê tông khối (mặc định) | sàn gỗ Nhật (mặt gỗ ngang + lưới cột)
+  deckPostSpacing?: number // m? KHÔNG — mm (đồng bộ state); #10 khoảng cách lưới cột deck (default 1500mm)
 }
 
 export interface SlabOpening {
@@ -197,12 +198,18 @@ function makeWoodDeckFoundation(
   const deck = new THREE.BoxGeometry(fw, deckThick, fd) // mặt gỗ ngang ở đỉnh
   deck.translate(cx, h / 2 - deckThick / 2, cz)
   boxes.push(deck)
-  const px = Math.max(0, fw / 2 - postSize / 2) // cột lùi vào nửa cạnh → nằm trong mép deck
-  const pz = Math.max(0, fd / 2 - postSize / 2)
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
+  // #10 Lưới cột ĐỀU theo diện tích deck (gồm 4 góc). Mật độ = deckPostSpacing (mm→m). Merge nên rẻ (12 tri/cột, 1 draw).
+  const spacing = Math.max(0.6, (opts.deckPostSpacing ?? 1500) / 1000)
+  const nx = Math.max(2, Math.round(fw / spacing) + 1)
+  const nz = Math.max(2, Math.round(fd / spacing) + 1)
+  const x0 = cx - fw / 2 + postSize / 2
+  const z0 = cz - fd / 2 + postSize / 2
+  const sx = nx > 1 ? (fw - postSize) / (nx - 1) : 0
+  const sz = nz > 1 ? (fd - postSize) / (nz - 1) : 0
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
       const post = new THREE.BoxGeometry(postSize, postH, postSize)
-      post.translate(cx + sx * px, -h / 2 + postH / 2, cz + sz * pz)
+      post.translate(x0 + i * sx, -h / 2 + postH / 2, z0 + j * sz)
       boxes.push(post)
     }
   }
