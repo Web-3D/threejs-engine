@@ -118,14 +118,21 @@ class StateRenderer {
   private asm!: WallAsmCtx
   private plainWalls = false // LOD lúc kéo: ép mọi tường về phẳng ('none') — bỏ brick-3d/gỗ instanced (rất nặng)
   private hidden = new Set<string>() // floor.id ẩn — bỏ dựng mesh/pick nhưng GIỮ chiều cao (stacking đúng)
+  private filter?: (instId: string) => boolean // lọc instance để dựng (split-render lúc kéo); giữ stacking
   private floorInstances: ShapeInstance[] = [] // instance CÙNG TẦNG đang dựng — cho đục-lỗ shape lồng (#3)
   private slabMatKeys = new Set<string>() // key material slab (gỗ) đã lấy từ cache — thêm vào sweep keep-set kẻo bị evict
 
   constructor(private readonly ctx: BuildRenderCtx) {}
 
-  run(state: BuildingState, plainWalls = false, hidden = new Set<string>()): Placement[] {
+  run(
+    state: BuildingState,
+    plainWalls = false,
+    hidden = new Set<string>(),
+    filter?: (instId: string) => boolean
+  ): Placement[] {
     this.plainWalls = plainWalls
     this.hidden = hidden
+    this.filter = filter
     this.asm = {
       cache: this.ctx.wallCache,
       buckets: new Map(),
@@ -165,6 +172,7 @@ class StateRenderer {
         inst.segments.length > 0 ? Math.max(...inst.segments.map((s) => s.wallH)) / 1000 : 3
       if (instHm > maxFloorH) maxFloorH = instHm
       if (hidden) continue // tầng ẩn → bỏ dựng (chiều cao maxLift/maxFloorH đã cộng ở trên cho stacking)
+      if (this.filter && !this.filter(inst.id)) continue // split-render: instance bị lọc → bỏ dựng (chiều cao đã cộng)
       computeWallConfigs(inst, wallBase).forEach((cfg, si) => {
         this.assembleFromConfig(cfg)
         this.pushWallPick(cfg, inst.id, si)
@@ -281,7 +289,9 @@ class StateRenderer {
         worldZ: inst.posZ / 1000,
         rotY: inst.rotY,
         openings: this.nestedOpenings(inst, (s) => s.showFoundation), // #3: khoét chỗ shape nhỏ lồng (cũng có móng)
-        foundType: inst.structure.foundType, // #6: 'wood-deck' = sàn gỗ Nhật (deck + lưới cột)
+        // LOD lúc kéo (plainWalls): ép 'concrete' = slab phẳng, BỎ lưới cột deck (rất nặng khi rebuild/frame).
+        // Buông tay → full 'wood-deck' lại. Footprint/cao giữ nguyên → không nhảy hình.
+        foundType: this.plainWalls ? 'concrete' : inst.structure.foundType, // #6 wood-deck = deck + lưới cột
         deckPostSpacing: inst.structure.deckPostSpacing, // #10: mật độ lưới cột deck
       }),
       inst,
@@ -444,7 +454,8 @@ class StateRenderer {
         worldZ: inst.posZ / 1000,
         rotY: inst.rotY,
         yBase: wallBase,
-        style: s.style, // #8: solid | wood-plank | wood-float
+        // LOD lúc kéo: ép 'solid' (bậc đặc, BỎ planks/ván nhiều mảnh) → rebuild rẻ; buông tay → style thật.
+        style: this.plainWalls ? 'solid' : s.style, // #8: solid | wood-plank | wood-float
       }),
       inst,
       'stairs'
@@ -574,9 +585,12 @@ export function renderBuildingState(
   state: BuildingState,
   ctx: BuildRenderCtx,
   plainWalls = false,
-  hiddenFloors?: Set<string> // floor.id ẩn (editor) — bỏ dựng, giữ stacking. undefined = hiện tất cả
+  hiddenFloors?: Set<string>, // floor.id ẩn (editor) — bỏ dựng, giữ stacking. undefined = hiện tất cả
+  // Lọc instance để DỰNG (vẫn cộng chiều cao stacking cho instance bị lọc). Cho editor SPLIT-render lúc kéo:
+  // shape đang kéo → 1 group riêng (translate/rebuild rẻ), shape khác → group static (dựng 1 lần). undefined = dựng tất cả.
+  filter?: (instId: string) => boolean
 ): Placement[] {
-  return new StateRenderer(ctx).run(state, plainWalls, hiddenFloors)
+  return new StateRenderer(ctx).run(state, plainWalls, hiddenFloors, filter)
 }
 
 /**
