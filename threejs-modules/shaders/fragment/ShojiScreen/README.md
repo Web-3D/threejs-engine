@@ -10,6 +10,15 @@ Kết cấu (theo shoji thật):
 
 > `'jp-shoji'` = giấy; `'jp-shoji-glass'` = ô KÍNH (transparent, slider Reflect/Opacity). Walls ▸ Japanese. Anh em `SeigaihaScreen`.
 
+## Quy ước thuật ngữ (NgQuan, dùng khi yêu cầu chỉnh)
+
+| Từ | Nghĩa | Code |
+| --- | --- | --- |
+| **trục gỗ** | Cạnh gỗ DỌC ~20cm (chia tường thành cột) | `_gridLattice` → `subV` (`_bars(pu, cellW/5, 0.009)`) — spacing `cellW/5`, dày `0.009` |
+| **nan gỗ** | Đường gỗ NHỎ chia ô giấy thành VUÔNG | (chưa có — sẽ là lớp đường nhỏ cả ngang, chia ô vuông giữa các trục gỗ) |
+| khung | Cạnh ngoài (trên + 2 bên) | `_woodness` frame (uv) |
+| koshita (腰板) | Gỗ đặc đáy 1/3 | `_woodness` koshita (uv.y < `koshita`) |
+
 ## Usage
 
 ```typescript
