@@ -101,6 +101,7 @@ export interface StructureState {
   foundOh: RoofOverhang // m — móng nhô riêng 4 hướng N/E/S/W tính TỪ mặt ngoài tường (min 0, max 2)
   showSlab: boolean
   slabThick: number // mm — floor slab thickness
+  slabMaterial?: WallMaterial // vật liệu sàn: 'none' = bê tông xám; 'wood' = ván gỗ procedural (demo). Optional → backward-compat
   columns: ColumnState[]
   // Cầu thang: footprint chiếu thẳng lên Y → khoét lỗ slab tầng trên (cầu thang đi xuống)
   stairs: StairState
@@ -202,6 +203,7 @@ export function mkStructure(): StructureState {
 
     showSlab: false,
     slabThick: 150,
+    slabMaterial: 'none', // bê tông xám mặc định; đổi 'wood' (demo ván gỗ) ở GUI Slab ▸ Material
     columns: [],
     stairs: { show: false, x: 0, z: 0, runL: 3000, width: 1000, steps: 12, rotDeg: 0 },
     balconies: [],

@@ -155,6 +155,7 @@ export interface PositionedSlabOpts {
   worldZ: number
   rotY: number
   openings?: SlabOpening[] // lỗ khoét trên sàn (cầu thang, ban công, ống nước...)
+  material?: THREE.Material // override vật liệu (vd gỗ từ WallMaterialCache); KHÔNG set → MeshToon bê tông tự tạo
 }
 
 export interface PositionedColumnOpts {
@@ -256,17 +257,20 @@ export function makePositionedSlab(opts: PositionedSlabOpts): PartResult {
   const geo = opts.openings?.length
     ? makeSlabWithHoles(opts.bboxW, opts.bboxD, opts.thick, opts.openings)
     : new THREE.BoxGeometry(opts.bboxW, opts.thick, opts.bboxD)
-  const mat = new THREE.MeshToonMaterial({
-    color: COL_SLAB,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
-  })
+  // material ngoài (gỗ từ WallMaterialCache) → cache SỞ HỮU dispose ⇒ KHÔNG đưa vào mats; không set → MeshToon bê tông.
+  const mat =
+    opts.material ??
+    new THREE.MeshToonMaterial({
+      color: COL_SLAB,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    })
   const m = new THREE.Mesh(geo, mat)
   m.rotation.y = (opts.rotY * Math.PI) / 180
   m.position.set(opts.worldX, (opts.yBase ?? 0) + opts.thick / 2, opts.worldZ)
   m.receiveShadow = true
-  return { geos: [geo], mats: [mat], meshes: [m] }
+  return { geos: [geo], mats: opts.material ? [] : [mat], meshes: [m] }
 }
 
 export function makePositionedColumn(opts: PositionedColumnOpts): PartResult {

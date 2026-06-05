@@ -52,7 +52,7 @@ import {
   type WallPlace,
   type WallSpec,
 } from '../wallAssembly'
-import { WallMaterialCache } from '../wallMaterials'
+import { DEFAULT_BRICK, WallMaterialCache } from '../wallMaterials'
 
 // Vị trí + kích thước 1 pick-box (caller tạo mesh vô hình từ đây). cx/cy/cz tâm, sx/sy/sz size, rotDeg
 // xoay quanh Y, ud = userData định danh element (instId + segIdx/opIdx/key).
@@ -119,6 +119,7 @@ class StateRenderer {
   private plainWalls = false // LOD lúc kéo: ép mọi tường về phẳng ('none') — bỏ brick-3d/gỗ instanced (rất nặng)
   private hidden = new Set<string>() // floor.id ẩn — bỏ dựng mesh/pick nhưng GIỮ chiều cao (stacking đúng)
   private floorInstances: ShapeInstance[] = [] // instance CÙNG TẦNG đang dựng — cho đục-lỗ shape lồng (#3)
+  private slabMatKeys = new Set<string>() // key material slab (gỗ) đã lấy từ cache — thêm vào sweep keep-set kẻo bị evict
 
   constructor(private readonly ctx: BuildRenderCtx) {}
 
@@ -141,7 +142,10 @@ class StateRenderer {
     }
     mergeWalls(this.asm)
     // plainWalls (live-drag): KHÔNG sweep → giữ material brick/gỗ trong cache để buông tay KHÔNG recompile.
-    if (!this.plainWalls) this.ctx.wallCache.sweep(new Set(this.asm.buckets.keys()))
+    // Keep-set = key tường (buckets) + key material SLAB (gỗ) → sweep không evict material sàn đang dùng.
+    if (!this.plainWalls) {
+      this.ctx.wallCache.sweep(new Set([...this.asm.buckets.keys(), ...this.slabMatKeys]))
+    }
     return this.out
   }
 
@@ -301,6 +305,7 @@ class StateRenderer {
         worldX: wx,
         worldZ: wz,
         rotY: inst.rotY,
+        material: this.slabMaterial(inst), // #4: gỗ (procedural từ cache) hoặc undefined = bê tông MeshToon
         openings: [
           ...this.slabOpenings(holes, wx, wz, inst.rotY, w, d), // lỗ cầu thang
           ...this.nestedOpenings(inst, (s) => s.showSlab), // #3: lỗ shape nhỏ lồng (cũng có slab)
@@ -313,6 +318,19 @@ class StateRenderer {
       instId: inst.id,
       key: 'slab',
     })
+  }
+
+  // #4 Material sàn: 'none' → undefined (makePositionedSlab tự tạo MeshToon bê tông). Khác → lấy material
+  // procedural TỪ CACHE (gỗ demo: nâu + scale 1) + ghi key vào slabMatKeys (sweep keep-set kẻo bị evict =
+  // recompile mỗi frame / dispose nhầm). Cache sở hữu dispose → makePositionedSlab KHÔNG đưa vào ctx.mats.
+  private slabMaterial(inst: ShapeInstance): THREE.Material | undefined {
+    const sm = inst.structure.slabMaterial ?? 'none'
+    if (sm === 'none') return undefined
+    const color = 0x9b6b43 // nâu gỗ demo
+    const scale = 1
+    const key = this.ctx.wallCache.matKey(sm, color, scale, DEFAULT_BRICK)
+    this.slabMatKeys.add(key)
+    return this.ctx.wallCache.ensureMat(key, sm, color, scale, DEFAULT_BRICK)
   }
 
   private buildBalconies(inst: ShapeInstance, wallBase: number): void {
