@@ -109,11 +109,13 @@ class StateRenderer {
   private out: Placement[] = []
   private asm!: WallAsmCtx
   private plainWalls = false // LOD lúc kéo: ép mọi tường về phẳng ('none') — bỏ brick-3d/gỗ instanced (rất nặng)
+  private hidden = new Set<string>() // floor.id ẩn — bỏ dựng mesh/pick nhưng GIỮ chiều cao (stacking đúng)
 
   constructor(private readonly ctx: BuildRenderCtx) {}
 
-  run(state: BuildingState, plainWalls = false): Placement[] {
+  run(state: BuildingState, plainWalls = false, hidden = new Set<string>()): Placement[] {
     this.plainWalls = plainWalls
+    this.hidden = hidden
     this.asm = {
       cache: this.ctx.wallCache,
       buckets: new Map(),
@@ -138,6 +140,7 @@ class StateRenderer {
   private buildFloor(state: BuildingState, fi: number, yAcc: number, holes: WorldRect[]): number {
     const floor = state.floors[fi]
     const isGround = fi === 0
+    const hidden = this.hidden.has(floor.id) // ẩn: giữ chiều cao (cộng dồn dưới) nhưng KHÔNG dựng mesh/pick
     let maxLift = 0
     let maxFloorH = 0
     for (const inst of floor.instances) {
@@ -147,6 +150,7 @@ class StateRenderer {
       const instHm =
         inst.segments.length > 0 ? Math.max(...inst.segments.map((s) => s.wallH)) / 1000 : 3
       if (instHm > maxFloorH) maxFloorH = instHm
+      if (hidden) continue // tầng ẩn → bỏ dựng (chiều cao maxLift/maxFloorH đã cộng ở trên cho stacking)
       computeWallConfigs(inst, wallBase).forEach((cfg, si) => {
         this.assembleFromConfig(cfg)
         this.pushWallPick(cfg, inst.id, si)
@@ -509,9 +513,10 @@ class StateRenderer {
 export function renderBuildingState(
   state: BuildingState,
   ctx: BuildRenderCtx,
-  plainWalls = false
+  plainWalls = false,
+  hiddenFloors?: Set<string> // floor.id ẩn (editor) — bỏ dựng, giữ stacking. undefined = hiện tất cả
 ): Placement[] {
-  return new StateRenderer(ctx).run(state, plainWalls)
+  return new StateRenderer(ctx).run(state, plainWalls, hiddenFloors)
 }
 
 /**
