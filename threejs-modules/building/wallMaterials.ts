@@ -67,6 +67,9 @@ export interface WallMatInput {
   brickRelief: number
   glassReflect?: number // jp-shoji-glass — optional (backward-compat)
   glassOpacity?: number
+  trucCell?: number // jp-shoji* — khoảng cách trục/nan gỗ + độ nhiễu vân
+  nanCell?: number
+  woodGrain?: number
 }
 
 // AP5 — registry entry: material đã build + shader instance (giữ để dispose). 'none' → null.
@@ -92,6 +95,9 @@ export interface BrickOpts {
   relief: number
   glassReflect?: number // jp-shoji-glass: độ phản chiếu [0–1] (tái dùng bag opts đã threaded — né đổi signature)
   glassOpacity?: number // jp-shoji-glass: độ mờ ô kính [0–1] (thấp = trong)
+  trucCell?: number // jp-shoji*: khoảng cách trục gỗ dọc (m)
+  nanCell?: number // jp-shoji*: khoảng cách nan gỗ (m)
+  woodGrain?: number // jp-shoji*: độ nhiễu vân gỗ (nhám koshita) [0–1]
 }
 export const DEFAULT_BRICK: BrickOpts = { mortarColor: 0xc7c4be, relief: 0.5 }
 
@@ -101,6 +107,9 @@ export function brickOptsOf(seg: WallMatInput): BrickOpts {
     relief: seg.brickRelief,
     glassReflect: seg.glassReflect,
     glassOpacity: seg.glassOpacity,
+    trucCell: seg.trucCell,
+    nanCell: seg.nanCell,
+    woodGrain: seg.woodGrain,
   }
 }
 
@@ -135,11 +144,20 @@ function buildSurfaceShader(
     case 'jp-screen':
       return new SeigaihaScreen({ paperColor: color, scale: 1 / s }) // màu tường = nền washi/vàng
     case 'jp-shoji':
-      return new ShojiScreen({ paperColor: color, scale: 1 / s }) // màu tường = giấy washi
+      return new ShojiScreen({
+        paperColor: color,
+        scale: 1 / s,
+        trucCell: brick.trucCell,
+        nanCell: brick.nanCell,
+        grain: brick.woodGrain,
+      })
     case 'jp-shoji-glass':
       return new ShojiScreen({
         paperColor: color,
         scale: 1 / s,
+        trucCell: brick.trucCell,
+        nanCell: brick.nanCell,
+        grain: brick.woodGrain,
         glass: true,
         reflect: brick.glassReflect,
         opacity: brick.glassOpacity,
@@ -195,8 +213,10 @@ export class WallMaterialCache {
   matKey(material: WallMaterial, color: number, scale: number, brick: BrickOpts): string {
     if (material === 'none') return `n:${color}`
     if (material === 'brick') return `brick:${color}:${scale}:${brick.mortarColor}:${brick.relief}`
-    if (material === 'jp-shoji-glass') {
-      return `jp-shoji-glass:${color}:${scale}:${brick.glassReflect}:${brick.glassOpacity}`
+    if (material === 'jp-shoji' || material === 'jp-shoji-glass') {
+      const sj = `${color}:${scale}:${brick.trucCell}:${brick.nanCell}:${brick.woodGrain}`
+      if (material === 'jp-shoji-glass') return `jp-shoji-glass:${sj}:${brick.glassReflect}:${brick.glassOpacity}`
+      return `jp-shoji:${sj}`
     }
     return `${material}:${color}:${scale}`
   }

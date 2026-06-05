@@ -34,7 +34,9 @@ mesh.material = s.getMaterial()
 | `scale` | number | `1` | World scale (lớn = ô nhỏ) |
 | `paperColor` | ColorRep | `0xf3ecd6` | Giấy washi trắng-ấm; live `setPaperColor` |
 | `woodColor` | ColorRep | `0x4a3826` | Gỗ kumiko + khung; live `setWoodColor` |
-| `cellW` / `cellH` | number | `1.0` / `1.0` | Grid CHÍNH (m); fine dọc = cell/5 (~20cm) |
+| `trucCell` | number | `0.25` | Khoảng cách trục gỗ dọc (m) — slider GUI |
+| `nanCell` | number | `0.125` | Khoảng cách nan gỗ (m, dọc+ngang) — slider GUI |
+| `grain` | number | `0.4` | Độ nhiễu vân gỗ / nhám koshita [0–1] — slider GUI |
 | `koshita` | number | `0.33` | Tỉ lệ đáy làm gỗ đặc (uv.y) |
 | `glass` | boolean | `false` | Ô = kính (transparent + reflect) |
 | `reflect` / `opacity` | number | `0.6` / `0.45` | (glass) độ phản chiếu / độ mờ ô kính |

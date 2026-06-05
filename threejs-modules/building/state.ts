@@ -62,6 +62,9 @@ export interface SegmentState {
   woodStepTilt: number // deg — nghiêng mép butt ±85 (0=phẳng, +dốc lên, −hắt xuống; chỉ 'wood-strip')
   glassReflect?: number // 0–1 — độ phản chiếu ô kính (chỉ 'jp-shoji-glass'). Optional → backward-compat
   glassOpacity?: number // 0–1 — độ mờ ô kính (thấp = trong; chỉ 'jp-shoji-glass'). Optional
+  trucCell?: number // m — khoảng cách trục gỗ dọc (jp-shoji*). Optional
+  nanCell?: number // m — khoảng cách nan gỗ (jp-shoji*). Optional
+  woodGrain?: number // 0–1 — độ nhiễu vân gỗ / nhám koshita (jp-shoji*). Optional
   paintColor: number | null // hex sơn từ palette atelier (brush). null = dùng colorIndex/WALL_COLORS
 }
 
@@ -247,6 +250,9 @@ export function mkSeg(length: number, turnBefore: number): SegmentState {
     woodStepTilt: 1,
     glassReflect: 0.6, // jp-shoji-glass: phản chiếu vừa
     glassOpacity: 0.45, // jp-shoji-glass: hơi mờ (thấy mờ xuyên)
+    trucCell: 0.25, // jp-shoji*: trục gỗ 25cm
+    nanCell: 0.125, // jp-shoji*: nan gỗ 12.5cm
+    woodGrain: 0.4, // jp-shoji*: độ nhiễu vân gỗ
     paintColor: null,
   }
 }

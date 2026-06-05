@@ -36,10 +36,12 @@ export interface ShojiScreenOptions {
   paperColor?: THREE.ColorRepresentation
   /** Gỗ kumiko + khung. Default: nâu sẫm 0x4a3826 */
   woodColor?: THREE.ColorRepresentation
-  /** Bề rộng ô kumiko (m, world). Default: 0.11 */
-  cellW?: number
-  /** Cao ô kumiko (m, world). Default: 0.14 */
-  cellH?: number
+  /** Khoảng cách TRỤC GỖ dọc (m, world). Default: 0.25 */
+  trucCell?: number
+  /** Khoảng cách NAN GỖ (m, world, cả dọc+ngang). Default: 0.125 */
+  nanCell?: number
+  /** Độ nhiễu vân gỗ (koshita/gỗ) [0–1]. Default: 0.4 */
+  grain?: number
   /** Ô = KÍNH thay giấy: roughness thấp (bóng/phản chiếu env) qua getRoughnessNode. Default: false */
   glass?: boolean
   /** Koshita (腰板): tỉ lệ phần DƯỚI tường làm GỖ ĐẶC (no lattice) — uv.y < koshita. 0 = tắt. Default: 0.33 */
@@ -57,8 +59,9 @@ export class ShojiScreen {
   private readonly uScale: ReturnType<typeof uniform>
   private readonly uPaper: ReturnType<typeof uniform>
   private readonly uWood: ReturnType<typeof uniform>
-  private readonly uCellW: ReturnType<typeof uniform>
-  private readonly uCellH: ReturnType<typeof uniform>
+  private readonly uTruc: ReturnType<typeof uniform>
+  private readonly uNan: ReturnType<typeof uniform>
+  private readonly uGrain: ReturnType<typeof uniform>
   private readonly uKoshita: ReturnType<typeof uniform>
   private readonly uReflect: ReturnType<typeof uniform>
   private readonly uOpacity: ReturnType<typeof uniform>
@@ -72,8 +75,9 @@ export class ShojiScreen {
     this.uScale = uniform(opts.scale ?? 1)
     this.uPaper = uniform(new THREE.Color(opts.paperColor ?? 0xf3ecd6))
     this.uWood = uniform(new THREE.Color(opts.woodColor ?? 0x7a4a30)) // gỗ ấm reddish (khớp ảnh shoji thật)
-    this.uCellW = uniform(opts.cellW ?? 0.25) // trục gỗ dọc 25cm; nan gỗ = trục/2 (12.5cm) cả dọc+ngang
-    this.uCellH = uniform(opts.cellH ?? 0.25)
+    this.uTruc = uniform(opts.trucCell ?? 0.25) // trục gỗ dọc 25cm
+    this.uNan = uniform(opts.nanCell ?? 0.125) // nan gỗ 12.5cm (cả dọc+ngang)
+    this.uGrain = uniform(opts.grain ?? 0.4) // độ nhiễu vân gỗ (tăng = nhám koshita)
     this.uKoshita = uniform(opts.koshita ?? 0.33)
 
     const mat = new NodeMaterial()
@@ -131,9 +135,9 @@ export class ShojiScreen {
   // Mask LƯỚI kumiko 1 mặt phẳng [0..1]: TRỤC GỖ dọc (uCellW=25cm, DÀY) + NAN GỖ (uCellW/2=12.5cm, MẢNH,
   // cả dọc+ngang → ô vuông). uCellW/H uniform → cast TSLNode khi truyền vào _bars. (trục ngang-top ở _woodness.)
   private _gridLattice(pu: TSLNode, pv: TSLNode): TSLNode {
-    const trucV = this._bars(pu, this.uCellW as unknown as TSLNode, float(0.013)) // trục dọc dày ~26mm
-    const nanV = this._bars(pu, this.uCellW.div(float(2)), float(0.006)) // nan dọc mảnh ~12mm
-    const nanH = this._bars(pv, this.uCellH.div(float(2)), float(0.006)) // nan ngang mảnh ~12mm
+    const trucV = this._bars(pu, this.uTruc as unknown as TSLNode, float(0.013)) // trục dọc dày ~26mm
+    const nanV = this._bars(pu, this.uNan as unknown as TSLNode, float(0.006)) // nan dọc mảnh ~12mm
+    const nanH = this._bars(pv, this.uNan as unknown as TSLNode, float(0.006)) // nan ngang mảnh ~12mm
     return max(max(trucV, nanV), nanH) as TSLNode
   }
 
@@ -175,7 +179,7 @@ export class ShojiScreen {
       float(0),
       float(0)
     ).sub(float(0.5))
-    return this.uWood.add(this.uWood.mul(grain.mul(float(0.4)))) as TSLNode // ±20% sáng theo vân
+    return this.uWood.add(this.uWood.mul(grain.mul(this.uGrain))) as TSLNode // biên độ vân = uGrain (độ nhám)
   }
 
   private _buildColorNode(): TSLNode {
