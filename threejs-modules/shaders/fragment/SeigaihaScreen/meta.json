@@ -1,0 +1,10 @@
+{
+  "name": "SeigaihaScreen",
+  "category": "shaders",
+  "version": "1.0.0",
+  "description": "Tường tranh Nhật (fusuma) — khung gỗ chia ô + nền vàng washi + sóng seigaiha (青海波) procedural, triplanar lit",
+  "dependencies": ["three"],
+  "tags": ["wall", "japanese", "seigaiha", "fusuma", "procedural", "triplanar"],
+  "three-version": ">=0.174",
+  "status": "stable"
+}

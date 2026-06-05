@@ -34,6 +34,7 @@ import { MeshStandardNodeMaterial, type NodeMaterial } from 'three/webgpu'
 import { BrickWall } from '../shaders/fragment/BrickWall'
 import { ConcretePanel } from '../shaders/fragment/ConcretePanel'
 import { MetalPanel } from '../shaders/fragment/MetalPanel'
+import { SeigaihaScreen } from '../shaders/fragment/SeigaihaScreen'
 import { WoodPlank } from '../shaders/fragment/WoodPlank'
 import { WALL_COLORS } from './tokens'
 
@@ -46,6 +47,7 @@ export type WallMaterial =
   | 'concrete'
   | 'wood'
   | 'metal'
+  | 'jp-screen' // tường tranh Nhật (fusuma seigaiha) — procedural surface shader lit
   | 'brick-tex'
   | 'brick-3d'
   | 'wood-3d'
@@ -117,6 +119,8 @@ function buildSurfaceShader(
       return new WoodPlank({ woodColor: color, scale: 1 / s, plankH: 0.14 * s })
     case 'metal':
       return new MetalPanel({ metalColor: color, scale: 1 / s })
+    case 'jp-screen':
+      return new SeigaihaScreen({ paperColor: color, scale: 1 / s }) // màu tường = nền washi/vàng
   }
 }
 
