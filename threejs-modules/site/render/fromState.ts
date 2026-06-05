@@ -11,6 +11,7 @@
  */
 
 import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
@@ -21,6 +22,7 @@ import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades
 import { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { PhotoGround, type PhotoGroundMaps } from '../../shaders/ground/PhotoGround'
+import { TexturedSurface, type TexturedSurfaceMaps } from '../../shaders/surface/TexturedSurface'
 import {
   GROUND_PRESETS,
   renderPuddles,
@@ -58,6 +60,19 @@ export interface SiteRenderOpts {
   // module độc lập: lõi KHÔNG biết URL). Thiếu → 'grass-tex' fallback màu phẳng preset. + tileSizeMeters (m).
   groundTextures?: PhotoGroundMaps
   groundTileMeters?: number
+  // Texture set cho MẶT tường rào (fence.type='wall' + fence.wallTex='cinder'/'stone') — TexturedSurface
+  // (triplanar: tường DỌC nên cần). Caller LOAD theo manifest. Thiếu → tường màu phẳng. + tileSizeMeters (m).
+  fenceWallTextures?: TexturedSurfaceMaps
+  fenceWallTileMeters?: number
+  // Material tường rào ĐÃ TẠO SẴN do caller CACHE 1 lần + sở hữu (TexturedSurface, KHÔNG recompile mỗi rebuild
+  // — fence dựng lại mỗi frame kéo cổng/slider). Ưu tiên hơn fenceWallTextures. Lõi KHÔNG dispose (caller lo).
+  fenceWallMat?: THREE.Material
+  // Bỏ qua dựng RÀO (caller TỰ quản rào trong group bền + dirty-check riêng — né rebuild rào/nước-RTT mỗi
+  // frame kéo slider rào). true → renderSiteState KHÔNG dựng rào; caller gọi buildSiteFence riêng. Default false.
+  skipFence?: boolean
+  // LOD rào lúc KÉO: stone (12k verts đỉnh-gợn) → dùng box mỏng rẻ (material vẫn cached, triplanar lo texture)
+  // → kéo cổng/slider mượt; buông (false) → stone thật. Default false.
+  fenceLodBox?: boolean
 }
 
 // Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0). Trả handle (grass) cho live-tune.
@@ -77,7 +92,7 @@ export function renderSiteState(
   // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
   const waters = pools.map((w) => buildWater(w, site, ctx)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
-  if (site.fence.enabled) buildFence(site, ctx)
+  if (site.fence.enabled && !opts.skipFence) buildSiteFence(site, ctx, opts)
   return { grass, waters }
 }
 
@@ -511,21 +526,241 @@ function box(w: number, h: number, d: number, x: number, y: number, z: number): 
   return g
 }
 
-// Tường rào: 4 cạnh low-wall liền. tk = bề dày. Đứng trên mặt nền (y bắt đầu từ top).
+// CỔNG ra vào: khoét gap 1 cạnh + 2 cột. side 0=+Z 1=−Z 2=+X 3=−X; posAlong (m, dọc cạnh từ tâm); halfGap (m).
+interface GateSpec {
+  side: number
+  posAlong: number
+  halfGap: number
+  postH: number // m — chiều cao 2 cột cổng (độc lập chiều cao tường)
+}
+
+// Khoét [gc−gh, gc+gh] khỏi span [lo,hi] → 1–2 đoạn còn lại. Gap ngoài span → giữ nguyên.
+function gapSplit(lo: number, hi: number, gc: number, gh: number): [number, number][] {
+  const a = gc - gh
+  const b = gc + gh
+  if (b <= lo || a >= hi) return [[lo, hi]]
+  const segs: [number, number][] = []
+  if (a > lo) segs.push([lo, a])
+  if (b < hi) segs.push([b, hi])
+  return segs
+}
+
+// Toạ độ XZ (m) 2 cột cổng = 2 mép gap trên cạnh `side`.
+function gatePostXZ(gate: GateSpec, halfW: number, halfD: number): [number, number][] {
+  const a = gate.posAlong - gate.halfGap
+  const b = gate.posAlong + gate.halfGap
+  if (gate.side === 0)
+    return [
+      [a, halfD],
+      [b, halfD],
+    ]
+  if (gate.side === 1)
+    return [
+      [a, -halfD],
+      [b, -halfD],
+    ]
+  if (gate.side === 2)
+    return [
+      [halfW, a],
+      [halfW, b],
+    ]
+  return [
+    [-halfW, a],
+    [-halfW, b],
+  ]
+}
+
+// 4 cạnh tường rào dạng [side, axis, fixedCoord, lo, hi]. N/S full (±(halfW+r)) phủ góc; E/W short (±(halfD−r)).
+function wallEdgeSpecs(
+  halfW: number,
+  halfD: number,
+  r: number
+): [number, 'x' | 'z', number, number, number][] {
+  return [
+    [0, 'x', halfD, -(halfW + r), halfW + r],
+    [1, 'x', -halfD, -(halfW + r), halfW + r],
+    [2, 'z', halfW, -(halfD - r), halfD - r],
+    [3, 'z', -halfW, -(halfD - r), halfD - r],
+  ]
+}
+
+// Tường rào: 4 cạnh low-wall liền. tk = bề dày. Đứng trên mặt nền (y bắt đầu từ top). gate → khoét cạnh + 2 cột box.
 function wallFenceGeos(
   halfW: number,
   halfD: number,
   h: number,
   top: number,
-  tk: number
+  tk: number,
+  gate?: GateSpec
 ): THREE.BufferGeometry[] {
   const cy = top + h / 2
-  return [
-    box(halfW * 2 + tk, h, tk, 0, cy, halfD),
-    box(halfW * 2 + tk, h, tk, 0, cy, -halfD),
-    box(tk, h, halfD * 2 - tk, halfW, cy, 0),
-    box(tk, h, halfD * 2 - tk, -halfW, cy, 0),
-  ]
+  const r = tk / 2
+  const out: THREE.BufferGeometry[] = []
+  for (const [side, axis, fixed, lo, hi] of wallEdgeSpecs(halfW, halfD, r)) {
+    const spans =
+      gate && gate.side === side ? gapSplit(lo, hi, gate.posAlong, gate.halfGap) : [[lo, hi]]
+    for (const [s0, s1] of spans) {
+      const len = s1 - s0
+      if (len <= 0.02) continue
+      const mid = (s0 + s1) / 2
+      out.push(axis === 'x' ? box(len, h, tk, mid, cy, fixed) : box(tk, h, len, fixed, cy, mid))
+    }
+  }
+  if (gate) {
+    const s = tk * 1.18
+    for (const [px, pz] of gatePostXZ(gate, halfW, halfD)) {
+      out.push(box(s, gate.postH, s, px, top + gate.postH / 2, pz)) // cao riêng theo gatePostH
+    }
+  }
+  return out
+}
+
+// Tường rào ĐÁ (chỉ wallTex='stone'): mỗi cạnh = profile "chữ-nhật-đỉnh-tròn" extrude dọc, ĐỈNH gợn cao-thấp
+// → cảm giác đá xếp dày + đỉnh bo tròn (đặc tả user). Dày hơn tường thường. Triplanar (TexturedSurface) lo
+// texture nên KHÔNG cần uv. + CỘT GÓC ĐÁ (quoin) ở 4 góc: 2 coping tròn tách nhau ở góc → hở apex; cột góc
+// chunky (×1.18 tk, cao tới đỉnh coping) LẤP góc đó. Trả 4 cạnh + 4 góc (merge ở buildFence).
+function stoneWallFenceGeos(
+  halfW: number,
+  halfD: number,
+  h: number,
+  top: number,
+  tk: number,
+  gate?: GateSpec
+): THREE.BufferGeometry[] {
+  const r = tk / 2
+  const geos: THREE.BufferGeometry[] = []
+  const seeds = [11, 23, 37, 53] // seed gợn-đỉnh deterministic mỗi cạnh
+  wallEdgeSpecs(halfW, halfD, r).forEach(([side, axis, fixed, lo, hi], ei) => {
+    const spans =
+      gate && gate.side === side ? gapSplit(lo, hi, gate.posAlong, gate.halfGap) : [[lo, hi]]
+    spans.forEach(([s0, s1], si) => {
+      const len = s1 - s0
+      if (len <= 0.08) return
+      const mid = (s0 + s1) / 2
+      const seed = seeds[ei] + si * 7
+      geos.push(
+        axis === 'x'
+          ? stoneWallEdge(mid, fixed, 'x', len, tk, top, h, seed)
+          : stoneWallEdge(fixed, mid, 'z', len, tk, top, h, seed)
+      )
+    })
+  })
+  // 4 cột góc (quoin, cao = tường+5cm) lấp notch góc.
+  for (const [px, pz] of [
+    [halfW, halfD],
+    [-halfW, halfD],
+    [halfW, -halfD],
+    [-halfW, -halfD],
+  ] as const) {
+    geos.push(stoneCornerPost(px, pz, top, h + 0.05, tk))
+  }
+  // 2 cột cổng (cùng dạng quoin nhưng cao RIÊNG = gate.postH — trụ cổng cao hơn).
+  if (gate) {
+    for (const [px, pz] of gatePostXZ(gate, halfW, halfD)) {
+      geos.push(stoneCornerPost(px, pz, top, gate.postH, tk))
+    }
+  }
+  return geos
+}
+
+// Cột góc/cổng đá (quoin). Vuông ×1.18 bề dày tường (faces NHÔ ra ngoài mặt tường → trùm mối nối, KHÔNG
+// coplanar = né z-fight). ph = TỔNG chiều cao cột (caller truyền: góc = tường+5cm; cổng = gatePostH riêng).
+// RoundedBox bo 2.5cm → 4 GÓC TRÊN cột tròn (đừng sắc, khớp đỉnh coping). Có uv → merge khớp cạnh. Triplanar lo texture.
+function stoneCornerPost(
+  px: number,
+  pz: number,
+  baseY: number,
+  ph: number,
+  tk: number
+): THREE.BufferGeometry {
+  const s = tk * 1.18
+  const g = new RoundedBoxGeometry(s, ph, s, 3, 0.025)
+  g.translate(px, baseY + ph / 2, pz)
+  return g
+}
+
+// 1 cạnh tường đá: profile (lat×y) = chữ nhật 2 mặt + cung tròn đỉnh (bán kính r=tk/2), extrude theo trục
+// edge với M trạm. ĐỈNH y gợn theo tổng-2-sin (deterministic theo seed → KHÔNG nhấp nháy mỗi rebuild;
+// rebuild ra y HỆT). Winding (a,b,d,b,c,d): mặt ngoài +lat, mặt trong −lat → pháp tuyến đúng (FrontSide).
+// computeVertexNormals làm mượt cung → đỉnh tròn ăn sáng. End-cap fan 2 đầu (ẩn ở góc, tránh thủng nếu lộ).
+function stoneWallEdge(
+  cx: number,
+  cz: number,
+  axis: 'x' | 'z',
+  length: number,
+  tk: number,
+  baseY: number,
+  h: number,
+  seed: number
+): THREE.BufferGeometry {
+  const r = tk / 2
+  const A = 4 // số đoạn cung đỉnh tròn (mượt vừa, rẻ)
+  const M = Math.max(8, Math.round(length / 0.4)) // trạm dọc cạnh (~1/0.4m)
+  const jit = 0.04 // m — biên gợn cao-thấp đỉnh
+  const K = A + 3 // profile: outer-bottom + (A+1) cung + inner-bottom
+  // ĐỈNH gợn: tổng 2 sin lệch pha theo seed → nhấp nhô mượt, lặp lại y hệt mỗi build.
+  const topYAt = (t: number): number =>
+    baseY + h + jit * (0.6 * Math.sin(2.3 * t + seed) + 0.4 * Math.sin(5.1 * t + seed * 1.7))
+  const pos: number[] = []
+  const uvs: number[] = [] // triplanar BỎ QUA uv, nhưng pipeline WebGPU (MeshStandardNodeMaterial) CẦN attr này
+  for (let i = 0; i <= M; i++) {
+    const f = i / M
+    const along = -length / 2 + f * length
+    const topY = topYAt(f * length)
+    for (let k = 0; k < K; k++) {
+      let lat: number
+      let y: number
+      if (k === 0) {
+        lat = r // outer-bottom
+        y = baseY
+      } else if (k === K - 1) {
+        lat = -r // inner-bottom
+        y = baseY
+      } else {
+        const a = (Math.PI * (k - 1)) / A // cung 0..π: outer-top → đỉnh → inner-top
+        lat = r * Math.cos(a)
+        y = topY - r + r * Math.sin(a)
+      }
+      const x = axis === 'x' ? cx + along : cx + lat
+      const z = axis === 'x' ? cz + lat : cz + along
+      pos.push(x, y, z)
+      uvs.push(f, k / (K - 1)) // placeholder (không dùng — triplanar world-space)
+    }
+  }
+  const idx: number[] = []
+  const vid = (i: number, k: number): number => i * K + k
+  // Winding: lat→z (trục X) thuận tay với (a,b,d); nhưng lat→x (trục Z) ĐẢO handedness → phải LẬT winding,
+  // nếu không mặt ngoài 2 cạnh vuông góc quay pháp tuyến vào trong → back-face cull → "mất 1 mặt".
+  const flip = axis === 'z'
+  for (let i = 0; i < M; i++) {
+    for (let k = 0; k < K - 1; k++) {
+      const a = vid(i, k)
+      const b = vid(i + 1, k)
+      const c = vid(i + 1, k + 1)
+      const d = vid(i, k + 1)
+      if (flip) {
+        idx.push(a, d, b, b, d, c)
+      } else {
+        idx.push(a, b, d, b, c, d)
+      }
+    }
+  }
+  for (const i of [0, M]) {
+    for (let k = 1; k < K - 1; k++) {
+      const a = vid(i, 0)
+      const out = i === 0 // 2 đầu pháp tuyến ngược nhau; lật thêm theo `flip` cho khớp mặt bên
+      if (out !== flip) idx.push(a, vid(i, k + 1), vid(i, k))
+      else idx.push(a, vid(i, k), vid(i, k + 1))
+    }
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  g.setIndex(idx)
+  g.computeVertexNormals() // smooth (đỉnh cung tròn ăn sáng) — TRƯỚC toNonIndexed để giữ normal đã blend
+  // NON-INDEXED: cột góc (RoundedBoxGeometry) là non-indexed → trộn indexed/non-indexed = mergeGeometries NULL
+  // (mất hình, KI-004). Đồng bộ về non-indexed. computeVertexNormals chạy TRƯỚC nên normal mượt bake sẵn.
+  return g.toNonIndexed()
 }
 
 // 1 cạnh rào gỗ: cọc cách ~1.8m + 2 thanh ngang (box dài xoay theo cạnh). A→B trong XZ.
@@ -575,7 +810,10 @@ function woodFenceGeos(
 }
 
 // Hàng rào quanh biên lô (lùi inset), merge 1 mesh để giữ draw call thấp (budget rule #2).
-function buildFence(site: SiteState, ctx: SiteRenderCtx): void {
+// Tường rào (type='wall') + wallTex='cinder'/'stone' + caller bơm texture → MẶT = TexturedSurface (triplanar,
+// đúng mặt DỌC). Thiếu texture (hoặc 'plain') → màu phẳng. Gỗ → màu nâu phẳng. push ctx.shaders khi TexturedSurface.
+// EXPORT: caller (editor) dựng rào vào GROUP RIÊNG (dirty-check) để né rebuild rào/nước mỗi frame kéo slider rào.
+export function buildSiteFence(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
   const inset = site.fence.inset / 1000
   const h = site.fence.height / 1000
   const top = site.groundThick / 1000
@@ -583,19 +821,54 @@ function buildFence(site: SiteState, ctx: SiteRenderCtx): void {
   const halfD = site.lotDepth / 2000 - inset
   if (halfW <= 0 || halfD <= 0) return
   const isWall = site.fence.type === 'wall'
-  const geos = isWall
-    ? wallFenceGeos(halfW, halfD, h, top, 0.12)
-    : woodFenceGeos(halfW, halfD, h, top)
+  // CỔNG (chỉ type='wall'): khoét gap 1 cạnh + 2 cột. Kẹp halfGap/posAlong để gap luôn nằm trong cạnh (chừa
+  // ≥15cm mỗi đầu). spanHalf = halfW (cạnh trước/sau) | halfD (cạnh trái/phải).
+  let gate: GateSpec | undefined
+  if (isWall && site.fence.gate) {
+    const side = site.fence.gateSide ?? 0
+    const spanHalf = side <= 1 ? halfW : halfD
+    const halfGap = Math.min((site.fence.gateWidth ?? 1400) / 2000, spanHalf - 0.15)
+    if (halfGap > 0.1) {
+      const lim = spanHalf - halfGap
+      const posAlong = Math.max(-lim, Math.min(lim, (site.fence.gatePos ?? 0) / 1000))
+      gate = { side, posAlong, halfGap, postH: (site.fence.gatePostH ?? 1600) / 1000 }
+    }
+  }
+  // Đá (wallTex='stone') → geometry đỉnh-tròn-gợn + dày hơn (0.18), THEO LỰA CHỌN texture (không đợi load
+  // xong: đang load vẫn ra khối đá xám tạm). Cinder/plain → box phẳng mỏng (0.12). Gỗ → cọc + thanh ngang.
+  // fenceLodBox (đang kéo): stone tạm dùng box mỏng (rẻ) — material stone cached vẫn áp (triplanar lo).
+  const isStone = isWall && (site.fence.wallTex ?? 'plain') === 'stone' && !opts.fenceLodBox
+  const geos = !isWall
+    ? woodFenceGeos(halfW, halfD, h, top)
+    : isStone
+      ? stoneWallFenceGeos(halfW, halfD, h, top, 0.18, gate)
+      : wallFenceGeos(halfW, halfD, h, top, 0.12, gate)
   const merged = mergeGeometries(geos, false)
   for (const g of geos) g.dispose()
   if (!merged) return
-  const mat = new THREE.MeshStandardMaterial(
-    isWall ? { color: 0x9a9690, roughness: 0.95 } : { color: 0x8a6a45, roughness: 0.85 }
-  )
+  // Vật liệu MẶT tường: (1) fenceWallMat CACHED (editor — KHÔNG push shaders/mats, KHÔNG recompile mỗi rebuild
+  // → trị tụt fps kéo cổng); (2) fenceWallTextures → tạo TexturedSurface (headless, push shaders); (3) màu phẳng.
+  const wantTex = isWall && (site.fence.wallTex ?? 'plain') !== 'plain'
+  let mat: THREE.Material
+  if (wantTex && opts.fenceWallMat) {
+    mat = opts.fenceWallMat // cached — caller sở hữu dispose
+  } else if (wantTex && opts.fenceWallTextures) {
+    const surf = new TexturedSurface({
+      maps: opts.fenceWallTextures,
+      tileSizeMeters: opts.fenceWallTileMeters ?? 2,
+    })
+    mat = surf.getMaterial()
+    ctx.shaders.push(surf)
+  } else {
+    const flat = new THREE.MeshStandardMaterial(
+      isWall ? { color: 0x9a9690, roughness: 0.95 } : { color: 0x8a6a45, roughness: 0.85 }
+    )
+    ctx.mats.push(flat)
+    mat = flat
+  }
   const mesh = new THREE.Mesh(merged, mat)
   mesh.castShadow = true
   mesh.receiveShadow = true
   ctx.geos.push(merged)
-  ctx.mats.push(mat)
   ctx.group.add(mesh)
 }

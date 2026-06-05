@@ -21,6 +21,15 @@ export interface FenceConfig {
   type: 'wood' | 'wall' // gỗ (cọc + thanh ngang) | tường rào xây (low wall liền)
   height: number // mm
   inset: number // mm — lùi vào từ mép lô (setback)
+  // Vật liệu MẶT tường rào (chỉ áp khi type='wall'): 'plain' = màu phẳng xám; 'cinder'/'stone' = texture ảnh
+  // PBR triplanar (caller bơm theo manifest assets/textures). Optional → backward-compat (file cũ = 'plain').
+  wallTex?: 'plain' | 'cinder' | 'stone'
+  // CỔNG ra vào (chỉ type='wall'): chừa khoảng trống 1 cạnh + 2 cột đá 2 bên. Optional → backward-compat.
+  gate?: boolean
+  gateSide?: number // cạnh đặt cổng: 0=trước(+Z) 1=sau(−Z) 2=phải(+X) 3=trái(−X)
+  gateWidth?: number // mm — bề rộng khoảng trống cổng
+  gatePos?: number // mm — dời tâm cổng dọc cạnh (0 = giữa cạnh)
+  gatePostH?: number // mm — chiều cao 2 cột cổng (độc lập chiều cao tường — trụ cổng thường cao hơn)
 }
 
 // Cỏ 3D thật (tier B — GrassBlades instanced) = LỚP THỰC VẬT độc lập surface: render khi enabled, mọc trên
@@ -245,6 +254,12 @@ function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): Fenc
     type: r.type === 'wall' ? 'wall' : 'wood',
     height: num(r.height, d.height),
     inset: num(r.inset, d.inset),
+    wallTex: r.wallTex === 'cinder' || r.wallTex === 'stone' ? r.wallTex : 'plain',
+    gate: typeof r.gate === 'boolean' ? r.gate : false,
+    gateSide: r.gateSide === 1 || r.gateSide === 2 || r.gateSide === 3 ? r.gateSide : 0,
+    gateWidth: clamp(num(r.gateWidth, 1400), 600, 6000),
+    gatePos: num(r.gatePos, 0),
+    gatePostH: clamp(num(r.gatePostH, 1600), 600, 3500),
   }
 }
 
