@@ -50,6 +50,7 @@ export type WallMaterial =
   | 'metal'
   | 'jp-screen' // tường tranh Nhật (fusuma seigaiha) — procedural surface shader lit
   | 'jp-shoji' // tường shoji Nhật (lưới kumiko + giấy washi) — procedural surface shader lit
+  | 'jp-shoji-glass' // shoji nhưng ô = KÍNH (roughness thấp, bóng) thay giấy
   | 'brick-tex'
   | 'brick-3d'
   | 'wood-3d'
@@ -125,6 +126,8 @@ function buildSurfaceShader(
       return new SeigaihaScreen({ paperColor: color, scale: 1 / s }) // màu tường = nền washi/vàng
     case 'jp-shoji':
       return new ShojiScreen({ paperColor: color, scale: 1 / s }) // màu tường = giấy washi
+    case 'jp-shoji-glass':
+      return new ShojiScreen({ paperColor: color, scale: 1 / s, glass: true }) // ô kính (bóng)
   }
 }
 

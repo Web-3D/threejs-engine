@@ -12,7 +12,7 @@
 import * as THREE from 'three'
 import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
-import { float, max, min, mix, normalWorld, positionWorld, smoothstep, uniform, vec2, vec3 } from 'three/tsl'
+import { float, max, min, mix, normalWorld, positionWorld, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl'
 import { NodeMaterial } from 'three/webgpu'
 
 type TSLNode = ShaderNodeObject<Node>
@@ -31,6 +31,10 @@ export interface ShojiScreenOptions {
   /** Bề rộng tấm shoji chia khung (m). Default: 0.9 / 1.8 */
   panelW?: number
   panelH?: number
+  /** Ô = KÍNH thay giấy: roughness thấp (bóng/phản chiếu env) qua getRoughnessNode. Default: false */
+  glass?: boolean
+  /** Koshita (腰板): tỉ lệ phần DƯỚI tường làm GỖ ĐẶC (no lattice) — uv.y < koshita. 0 = tắt. Default: 0.33 */
+  koshita?: number
 }
 
 export class ShojiScreen {
@@ -44,15 +48,19 @@ export class ShojiScreen {
   private readonly uCellH: ReturnType<typeof uniform>
   private readonly uPanelW: ReturnType<typeof uniform>
   private readonly uPanelH: ReturnType<typeof uniform>
+  private readonly uKoshita: ReturnType<typeof uniform>
+  private readonly _glass: boolean
 
   constructor(opts: ShojiScreenOptions = {}) {
+    this._glass = opts.glass ?? false
     this.uScale = uniform(opts.scale ?? 1)
     this.uPaper = uniform(new THREE.Color(opts.paperColor ?? 0xf3ecd6))
-    this.uWood = uniform(new THREE.Color(opts.woodColor ?? 0x4a3826))
+    this.uWood = uniform(new THREE.Color(opts.woodColor ?? 0x7a4a30)) // gỗ ấm reddish (khớp ảnh shoji thật)
     this.uCellW = uniform(opts.cellW ?? 0.11)
     this.uCellH = uniform(opts.cellH ?? 0.14)
     this.uPanelW = uniform(opts.panelW ?? 0.9)
     this.uPanelH = uniform(opts.panelH ?? 1.8)
+    this.uKoshita = uniform(opts.koshita ?? 0.33)
 
     const mat = new NodeMaterial()
     mat.colorNode = this._buildColorNode()
@@ -73,6 +81,11 @@ export class ShojiScreen {
   getMaterial(): NodeMaterial {
     if (!this.material) throw new Error('ShojiScreen: đã dispose')
     return this.material
+  }
+
+  /** Roughness: KÍNH (glass) → 0.16 (bóng, phản chiếu env); GIẤY → 0.9 (matte washi). */
+  getRoughnessNode(): TSLNode {
+    return float(this._glass ? 0.16 : 0.9) as TSLNode
   }
 
   dispose(): void {
@@ -109,6 +122,9 @@ export class ShojiScreen {
     const colXZ = this._face(positionWorld.x.mul(s), positionWorld.z.mul(s)) // sàn/mái
     const sharp = normalWorld.abs().pow(vec3(8))
     const w = sharp.div(sharp.dot(vec3(1)).max(float(0.001)))
-    return colZY.mul(w.x).add(colXZ.mul(w.y)).add(colXY.mul(w.z)) as TSLNode
+    const blended = colZY.mul(w.x).add(colXZ.mul(w.y)).add(colXY.mul(w.z))
+    // Koshita: phần DƯỚI tường (uv.y < uKoshita) = GỖ ĐẶC (no lattice). uv.y per-wall (BoxGeometry, 0=đáy→1=đỉnh).
+    const ks = smoothstep(this.uKoshita, this.uKoshita.add(float(0.012)), uv().y)
+    return mix(this.uWood, blended, ks) as TSLNode
   }
 }
