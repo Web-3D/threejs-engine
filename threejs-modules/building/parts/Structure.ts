@@ -409,7 +409,7 @@ export interface PositionedStairsOpts {
   worldZ: number
   rotY: number // deg — rotation của shape
   yBase: number // m — cao độ sàn (đáy bậc)
-  style?: 'solid' | 'wood-plank' | 'wood-float' // #8: đặc | ván gỗ + đà bên | ván gỗ nổi
+  style?: 'solid' | 'wood-plank' | 'wood-float' | 'wood-center' | 'glass-metal' // #8: đặc | ván gỗ đà-bên | gỗ nổi | gỗ đà-GIỮA | kính + đà kim-loại GIỮA
 }
 
 // #8 Bậc ĐẶC (bê tông): mỗi bậc box từ SÀN lên mặt bậc → khối liền. (kiểu mặc định cũ)
@@ -436,44 +436,74 @@ function solidStepGeos(
   return geos
 }
 
-// #8 Bậc VÁN GỖ MỎNG xếp dần: mỗi bậc 1 tấm ván ~40mm ở đúng cao độ bậc (hở dưới = open riser). withStringers
-// → +2 đà nghiêng 2 bên đỡ ván (wood-plank); không → ván nổi (wood-float).
-function woodPlankGeos(
+// #8 Bậc VÁN MỎNG xếp dần (gỗ/kính): mỗi bậc 1 tấm ~40mm ở cao độ bậc (hở dưới = open riser).
+// stringerPos: 'none' (ván nổi) | 'side' (2 đà 2 BÊN) | 'center' (2 đà sát TÂM cách 1 khe nhỏ ~100mm — nghệ thuật).
+// treadMat (gỗ/kính) + stringerMat (gỗ/kim loại) RIÊNG → kiểu kính+kim-loại.
+function plankStairGeos(
   inner: THREE.Group,
-  mat: THREE.Material,
+  treadMat: THREE.Material,
+  stringerMat: THREE.Material,
   opts: PositionedStairsOpts,
-  n: number,
-  riser: number,
-  tread: number,
-  withStringers: boolean
+  rt: { n: number; riser: number; tread: number },
+  stringerPos: 'none' | 'side' | 'center'
 ): THREE.BufferGeometry[] {
   const geos: THREE.BufferGeometry[] = []
   const plankT = 0.04 // ván dày 40mm
-  for (let i = 0; i < n; i++) {
-    const ax = -opts.runL / 2 + (i + 0.5) * tread
-    const geo = new THREE.BoxGeometry(tread, plankT, opts.width)
+  for (let i = 0; i < rt.n; i++) {
+    const ax = -opts.runL / 2 + (i + 0.5) * rt.tread
+    const geo = new THREE.BoxGeometry(rt.tread, plankT, opts.width)
     geos.push(geo)
-    const m = new THREE.Mesh(geo, mat)
-    m.position.set(ax, (i + 1) * riser - plankT / 2, 0) // mặt ván tại cao độ bậc
+    const m = new THREE.Mesh(geo, treadMat)
+    m.position.set(ax, (i + 1) * rt.riser - plankT / 2, 0) // mặt ván tại cao độ bậc
     m.castShadow = true
     m.receiveShadow = true
     inner.add(m)
   }
-  if (!withStringers) return geos
+  if (stringerPos === 'none') return geos
   const len = Math.hypot(opts.runL, opts.totalH) // đà chạy chéo sàn→đỉnh
   const ang = Math.atan2(opts.totalH, opts.runL)
   const strT = 0.04
+  const zpos = stringerPos === 'side' ? opts.width / 2 - strT / 2 : 0.07 // center: 2 đà cách tâm 70mm (khe ~100mm)
   for (const sz of [-1, 1]) {
     const geo = new THREE.BoxGeometry(len, 0.14, strT)
     geo.rotateZ(ang)
     geos.push(geo)
-    const m = new THREE.Mesh(geo, mat)
-    m.position.set(0, opts.totalH / 2, sz * (opts.width / 2 - strT / 2))
+    const m = new THREE.Mesh(geo, stringerMat)
+    m.position.set(0, opts.totalH / 2, sz * zpos)
     m.castShadow = true
     m.receiveShadow = true
     inner.add(m)
   }
   return geos
+}
+
+// Vật liệu bậc: gỗ (toon nâu) · kính (trong mờ xanh) · kim loại (metalness cao).
+function stairWoodMat(): THREE.MeshToonMaterial {
+  return new THREE.MeshToonMaterial({
+    color: 0x9b6b43,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  })
+}
+function stairGlassMat(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: 0xbfe0ee,
+    transparent: true,
+    opacity: 0.34,
+    roughness: 0.08,
+    metalness: 0,
+  })
+}
+function stairMetalMat(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: 0x8a8f94, metalness: 0.9, roughness: 0.35 })
+}
+
+// Map style → vị trí đà: nổi (none) | 2 bên (side) | 2 giữa (center, gồm wood-center + glass-metal).
+function stringerPosOf(style: string): 'none' | 'side' | 'center' {
+  if (style === 'wood-float') return 'none'
+  if (style === 'wood-plank') return 'side'
+  return 'center' // wood-center, glass-metal
 }
 
 export function makePositionedStairs(opts: PositionedStairsOpts): PartResult {
@@ -486,20 +516,24 @@ export function makePositionedStairs(opts: PositionedStairsOpts): PartResult {
   outer.add(inner)
 
   const style = opts.style ?? 'solid'
-  const mat = new THREE.MeshToonMaterial({
-    color: style === 'solid' ? COL_STAIRS : 0x9b6b43, // gỗ nâu cho 2 kiểu ván
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
-  })
   const n = Math.max(2, Math.round(opts.steps))
-  const riser = opts.totalH / n
-  const tread = opts.runL / n
-  const geos =
-    style === 'solid'
-      ? solidStepGeos(inner, mat, opts, n, riser, tread)
-      : woodPlankGeos(inner, mat, opts, n, riser, tread, style === 'wood-plank')
-  return { geos, mats: [mat], meshes: [outer] }
+  const rt = { n, riser: opts.totalH / n, tread: opts.runL / n }
+
+  if (style === 'solid') {
+    const mat = new THREE.MeshToonMaterial({
+      color: COL_STAIRS,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    })
+    return { geos: solidStepGeos(inner, mat, opts, n, rt.riser, rt.tread), mats: [mat], meshes: [outer] }
+  }
+  // ván: mặt = gỗ/kính, đà = gỗ/kim loại theo style. Gỗ dùng CHUNG 1 material cho mặt + đà.
+  const treadMat = style === 'glass-metal' ? stairGlassMat() : stairWoodMat()
+  const stringerMat = style === 'glass-metal' ? stairMetalMat() : treadMat
+  const geos = plankStairGeos(inner, treadMat, stringerMat, opts, rt, stringerPosOf(style))
+  const mats = stringerMat === treadMat ? [treadMat] : [treadMat, stringerMat]
+  return { geos, mats, meshes: [outer] }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────

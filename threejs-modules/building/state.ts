@@ -81,7 +81,7 @@ export interface StairState {
   width: number // mm — bề rộng cầu thang (vuông góc hướng leo)
   steps: number // số bậc
   rotDeg: number // độ — xoay cầu thang quanh Y (0–360), cộng thêm rotation của shape
-  style?: 'solid' | 'wood-plank' | 'wood-float' // kiểu bậc: đặc bê tông (mặc định) | ván gỗ + 2 đà bên | ván gỗ nổi. Optional → backward-compat
+  style?: 'solid' | 'wood-plank' | 'wood-float' | 'wood-center' | 'glass-metal' // bậc: đặc bê tông | ván gỗ+đà bên | ván gỗ nổi | ván gỗ + 2 đà GIỮA (nghệ) | mặt kính + 2 đà KIM LOẠI giữa. Optional → backward-compat
 }
 
 // Ban công: sàn vươn ra mặt ngoài 1 tường + lan can 3 phía. Gắn vào segment wallIdx.
