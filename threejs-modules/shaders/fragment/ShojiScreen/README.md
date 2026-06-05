@@ -4,7 +4,7 @@ Tường **shoji (障子)** Nhật procedural — TSL `NodeMaterial`, lit, world
 
 Kết cấu (theo shoji thật):
 1. **Khung ngoài** (per-wall, uv) — cạnh TRÊN + 2 cạnh BÊN (đáy = koshita).
-2. **Grid kumiko** (world triplanar) — bar CHÍNH dày 1.0m (cả dọc+ngang) + bar mảnh **CHỈ DỌC** ~20cm trong mỗi ô (tate-shige).
+2. **Grid kumiko** (world triplanar) — **trục gỗ** dọc 25cm (dày) + **nan gỗ** 12.5cm (mảnh, cả dọc+ngang → ô vuông) + 1 **trục gỗ ngang** trên top.
 3. **Koshita** (per-wall, uv) — đáy `koshita` (1/3) = GỖ ĐẶC, có **vân gỗ dọc** (triNoise).
 4. **Nền giấy washi** (`paperColor`) ở các ô; gỗ MAT cao (roughness 0.97) né nhựa.
 
@@ -14,8 +14,8 @@ Kết cấu (theo shoji thật):
 
 | Từ | Nghĩa | Code |
 | --- | --- | --- |
-| **trục gỗ** | Cạnh gỗ DỌC ~20cm (chia tường thành cột) | `_gridLattice` → `subV` (`_bars(pu, cellW/5, 0.009)`) — spacing `cellW/5`, dày `0.009` |
-| **nan gỗ** | Đường gỗ NHỎ chia ô giấy thành VUÔNG | (chưa có — sẽ là lớp đường nhỏ cả ngang, chia ô vuông giữa các trục gỗ) |
+| **trục gỗ** | Cạnh gỗ DỌC 25cm (dày) + 1 thanh NGANG trên top | `_gridLattice` `trucV` (`_bars(pu, cellW, 0.013)`) + `_woodness` `trucTop` (uv ~0.92) |
+| **nan gỗ** | Đường gỗ NHỎ 12.5cm (cả dọc+ngang) chia ô VUÔNG | `_gridLattice` `nanV`/`nanH` (`_bars(_, cellW/2, 0.006)`) |
 | khung | Cạnh ngoài (trên + 2 bên) | `_woodness` frame (uv) |
 | koshita (腰板) | Gỗ đặc đáy 1/3 | `_woodness` koshita (uv.y < `koshita`) |
 

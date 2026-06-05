@@ -72,8 +72,8 @@ export class ShojiScreen {
     this.uScale = uniform(opts.scale ?? 1)
     this.uPaper = uniform(new THREE.Color(opts.paperColor ?? 0xf3ecd6))
     this.uWood = uniform(new THREE.Color(opts.woodColor ?? 0x7a4a30)) // gỗ ấm reddish (khớp ảnh shoji thật)
-    this.uCellW = uniform(opts.cellW ?? 1.0) // grid CHÍNH 100cm (H+V); fine = dọc 20cm bên trong
-    this.uCellH = uniform(opts.cellH ?? 1.0)
+    this.uCellW = uniform(opts.cellW ?? 0.25) // trục gỗ dọc 25cm; nan gỗ = trục/2 (12.5cm) cả dọc+ngang
+    this.uCellH = uniform(opts.cellH ?? 0.25)
     this.uKoshita = uniform(opts.koshita ?? 0.33)
 
     const mat = new NodeMaterial()
@@ -128,15 +128,13 @@ export class ShojiScreen {
     return smoothstep(hw.add(float(0.004)), hw, d) as TSLNode
   }
 
-  // Mask LƯỚI kumiko 1 mặt phẳng [0..1] = grid CHÍNH 1.0m (bar dày, cả DỌC+NGANG) + grid NHỎ chỉ DỌC ~20cm
-  // (bar mảnh, cell/5) — bỏ ngang nhỏ theo yêu cầu (tate-shige). uCellW/H = uniform → cast TSLNode khi truyền.
+  // Mask LƯỚI kumiko 1 mặt phẳng [0..1]: TRỤC GỖ dọc (uCellW=25cm, DÀY) + NAN GỖ (uCellW/2=12.5cm, MẢNH,
+  // cả dọc+ngang → ô vuông). uCellW/H uniform → cast TSLNode khi truyền vào _bars. (trục ngang-top ở _woodness.)
   private _gridLattice(pu: TSLNode, pv: TSLNode): TSLNode {
-    const main = max(
-      this._bars(pu, this.uCellW as unknown as TSLNode, float(0.022)), // bar chính dày ~44mm
-      this._bars(pv, this.uCellH as unknown as TSLNode, float(0.022))
-    )
-    const subV = this._bars(pu, this.uCellW.div(float(5)), float(0.009)) // CHỈ dọc ~20cm, mảnh ~18mm
-    return max(main, subV) as TSLNode
+    const trucV = this._bars(pu, this.uCellW as unknown as TSLNode, float(0.013)) // trục dọc dày ~26mm
+    const nanV = this._bars(pu, this.uCellW.div(float(2)), float(0.006)) // nan dọc mảnh ~12mm
+    const nanH = this._bars(pv, this.uCellH.div(float(2)), float(0.006)) // nan ngang mảnh ~12mm
+    return max(max(trucV, nanV), nanH) as TSLNode
   }
 
   // Triplanar blend 1 hàm-mặt qua 3 mặt chiếu world (|normal|^8) — giống SeigaihaScreen.
@@ -162,9 +160,11 @@ export class ShojiScreen {
     const right = smoothstep(float(1).sub(fw), float(1), uvN.x)
     const top = smoothstep(float(1).sub(fw), float(1), uvN.y)
     const frame = max(max(left, right), top)
+    // TRỤC GỖ NGANG trên top: 1 thanh dày ngay dưới khung (band uv.y quanh 0.92).
+    const trucTop = smoothstep(float(0.025), float(0.02), uvN.y.sub(float(0.92)).abs())
     // Koshita: đáy (uv.y < uKoshita) = gỗ đặc.
     const koshita = float(1).sub(smoothstep(this.uKoshita, this.uKoshita.add(float(0.012)), uvN.y))
-    this._woodnessNode = max(max(grid, frame), koshita) as TSLNode
+    this._woodnessNode = max(max(max(grid, frame), trucTop), koshita) as TSLNode
     return this._woodnessNode
   }
 
