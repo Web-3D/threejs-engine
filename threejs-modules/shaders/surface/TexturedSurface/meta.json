@@ -1,0 +1,10 @@
+{
+  "name": "TexturedSurface",
+  "version": "1.0.0",
+  "category": "shaders",
+  "description": "Surface PBR triplanar (world-space) từ texture ảnh — đúng MỌI hướng (sàn/tường/đáy hồ/mái nghiêng), no UV",
+  "status": "stable",
+  "dependencies": ["three"],
+  "tags": ["surface", "pbr", "texture", "triplanar", "world-space", "any-orientation", "node-material"],
+  "three-version": ">=0.174"
+}

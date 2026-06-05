@@ -55,6 +55,7 @@
 | `AsphaltGround`      | Procedural asphalt/tar road — world-space XZ, no UV, worn patches + aggregate + LOD | asphalt, tar, road, ground, world-space, no-uv | ✅ in-use |
 | `GrassGround`        | Procedural bãi cỏ/lawn — world-space XZ, no UV, patch tươi/khô + clump + blade speckle + LOD | grass, lawn, cỏ, ground, world-space, no-uv | ✅ in-use |
 | `PhotoGround`        | Ground PBR từ texture ẢNH (scan) — map/normal/rough/ao, lát world-XZ ÷ tileSizeMeters (độc lập geometry UV); caller bơm texture | ground, pbr, texture, world-space, tiling | ✅ in-use |
+| `TexturedSurface`    | Surface PBR **triplanar** (world-space) — đúng MỌI hướng (sàn/tường/đáy hồ/mái nghiêng), normal whiteout, no UV; "unified" cho slab/fence/roof | surface, pbr, texture, triplanar, any-orientation | ✅ in-use |
 
 ---
 
