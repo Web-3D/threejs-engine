@@ -99,6 +99,7 @@ export interface StructureState {
   showFoundation: boolean
   foundH: number // mm — height above ground (lifts building up when shown)
   foundOh: RoofOverhang // m — móng nhô riêng 4 hướng N/E/S/W tính TỪ mặt ngoài tường (min 0, max 2)
+  foundType?: 'concrete' | 'wood-deck' // kiểu móng: bê tông khối (mặc định) | sàn gỗ Nhật (mặt gỗ ngang + 4 cột vuông góc). Optional → backward-compat
   showSlab: boolean
   slabThick: number // mm — floor slab thickness
   slabMaterial?: WallMaterial // vật liệu sàn: 'none' = bê tông xám; 'wood' = ván gỗ procedural (demo). Optional → backward-compat
@@ -200,6 +201,7 @@ export function mkStructure(): StructureState {
     showFoundation: false,
     foundH: 500,
     foundOh: { n: 0, e: 0, s: 0, w: 0 }, // mặc định KHÍT footprint tường (không nhô) → ghép khối shape liền mép
+    foundType: 'concrete', // bê tông khối; đổi 'wood-deck' (sàn gỗ Nhật) ở GUI Foundation ▸ Type
 
     showSlab: false,
     slabThick: 150,

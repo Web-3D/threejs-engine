@@ -14,6 +14,7 @@
  */
 
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 import type { PartResult } from '../tokens'
 
@@ -136,6 +137,7 @@ export interface PositionedFoundationOpts {
   worldZ: number
   rotY: number // degrees
   openings?: SlabOpening[] // lỗ khoét móng — shape LỒNG (#3): khoét móng shape lớn để nhét shape nhỏ (né z-fight)
+  foundType?: 'concrete' | 'wood-deck' // #6: bê tông khối (mặc định) | sàn gỗ Nhật (mặt gỗ ngang + 4 cột vuông góc)
 }
 
 export interface SlabOpening {
@@ -178,6 +180,43 @@ function boxFoundationGeo(fw: number, h: number, fd: number, cx: number, cz: num
   return geo
 }
 
+// #6 Móng sàn gỗ Nhật (engawa/高床式): MẶT GỖ NGANG (deck) ở đỉnh + 4 CỘT VUÔNG ở 4 góc (thay 4 vách bê
+// tông). deck dày ~120mm đỡ tường; cột vuông 120mm chống từ đất lên đáy deck. Merge 1 mesh gỗ nâu (toon).
+function makeWoodDeckFoundation(
+  fw: number,
+  fd: number,
+  cx: number,
+  cz: number,
+  opts: PositionedFoundationOpts
+): PartResult {
+  const h = opts.h
+  const deckThick = Math.min(0.12, h * 0.5) // ván deck ~120mm (hoặc nửa chiều cao nếu móng thấp)
+  const postSize = 0.12 // cột vuông 120mm
+  const postH = Math.max(0.05, h - deckThick)
+  const boxes: THREE.BufferGeometry[] = []
+  const deck = new THREE.BoxGeometry(fw, deckThick, fd) // mặt gỗ ngang ở đỉnh
+  deck.translate(cx, h / 2 - deckThick / 2, cz)
+  boxes.push(deck)
+  const px = Math.max(0, fw / 2 - postSize / 2) // cột lùi vào nửa cạnh → nằm trong mép deck
+  const pz = Math.max(0, fd / 2 - postSize / 2)
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const post = new THREE.BoxGeometry(postSize, postH, postSize)
+      post.translate(cx + sx * px, -h / 2 + postH / 2, cz + sz * pz)
+      boxes.push(post)
+    }
+  }
+  const geo = mergeGeometries(boxes, false) ?? new THREE.BufferGeometry()
+  for (const b of boxes) b.dispose()
+  const mat = new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ nâu (demo)
+  const m = new THREE.Mesh(geo, mat)
+  m.rotation.y = (opts.rotY * Math.PI) / 180
+  m.position.set(opts.worldX, h / 2, opts.worldZ)
+  m.castShadow = true
+  m.receiveShadow = true
+  return { geos: [geo], mats: [mat], meshes: [m] }
+}
+
 export function makePositionedFoundation(opts: PositionedFoundationOpts): PartResult {
   const { oh } = opts
   // base mỗi cạnh = bbox/2 + wallDepth/2 (mặt ngoài tường) → tổng base 2 cạnh = wallDepth.
@@ -186,6 +225,7 @@ export function makePositionedFoundation(opts: PositionedFoundationOpts): PartRe
   const fd = opts.bboxD + opts.wallDepth + oh.n + oh.s
   const cx = (oh.e - oh.w) / 2 // đông nhô nhiều → lệch +X (local, trước rotY)
   const cz = (oh.n - oh.s) / 2 // bắc nhô nhiều → lệch +Z
+  if (opts.foundType === 'wood-deck') return makeWoodDeckFoundation(fw, fd, cx, cz, opts) // #6 sàn gỗ Nhật
   // Có lỗ (shape lồng) → ExtrudeGeometry khoét (overhang bake vào outer rect qua ocx/ocz, lỗ giữ local thật);
   // không → BoxGeometry + translate như cũ. Lỗ vẫn khớp shape nhỏ bất kể overhang.
   const geo = opts.openings?.length

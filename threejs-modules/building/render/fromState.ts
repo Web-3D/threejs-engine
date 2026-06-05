@@ -281,6 +281,7 @@ class StateRenderer {
         worldZ: inst.posZ / 1000,
         rotY: inst.rotY,
         openings: this.nestedOpenings(inst, (s) => s.showFoundation), // #3: khoét chỗ shape nhỏ lồng (cũng có móng)
+        foundType: inst.structure.foundType, // #6: 'wood-deck' = sàn gỗ Nhật (deck + 4 cột)
       }),
       inst,
       'found'
