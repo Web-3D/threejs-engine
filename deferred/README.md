@@ -56,6 +56,8 @@ deferred/
 | [procedural-generation-techniques.md](systems/procedural-generation-techniques.md) | Bản đồ "họ" sinh hình thủ tục: phân hoạch (Voronoi/BSP/Poisson) · noise tế bào · **shape grammar/CGA · L-system · WFC** — cái nào hợp nhà vuông | Làm build-editor, city/neighborhood, hoặc bố trí phòng (chọn đúng công cụ thay vì mặc định Voronoi) |
 | [garden-ground-patches.md](systems/garden-ground-patches.md) | Mảng nền sân (bê tông/cát/sỏi/**nước**) tự exclude cỏ — cắt ~1000 tris/m² cỏ + bố cục sân thật; nước = shader (reflection = pass riêng, không vào budget tri) | Soạn sân vườn trong ArchPlanLab, hoặc cần cắt budget cỏ cho city/nhiều lô |
 | [playbook-tier-ladder.md](systems/playbook-tier-ladder.md) | Thang tier A/B/C/D dùng chung cho playbooks (tổng quát hoá `material-roadmap`) + check `tier` hợp lệ | ≥4–5 playbook lệch nghĩa tier, hoặc plan mảng mới cần so tier |
+| [interior-decor-objects.md](systems/interior-decor-objects.md) | **DECIDED 2026-06-05** — hệ decor nội thất object (kệ/tranh/hốc/đèn) mặt TRONG tường (mirror Balcony); KHÁC DecorPanel relief mặt ngoài | NgQuan yêu cầu build (kiến trúc = object system) — MVP slice 'shelf' trước |
+| [shape-group-system.md](systems/shape-group-system.md) | **WANTED 2026-06-05** — gộp nhóm nhiều khối shape + kéo cả nhóm 1 lần (selection + multi-move, snap bbox union) | NgQuan yêu cầu build; chốt group bền vs ad-hoc khi bắt tay |
 
 ---
 
