@@ -99,6 +99,10 @@ export interface BalconyState {
   y: number // mm — cao độ sàn ban công tính từ chân tầng này (0 = sàn tầng)
   railH: number // mm — chiều cao lan can
   slabT: number // mm — dày sàn ban công
+  // Kiểu lan can: 'solid' = 3 vách bê tông đặc (mặc định cũ); 'metal-bar' = khung kim loại tròn + thanh dọc
+  // (balusters); 'glass-frame' = khung kim loại tròn + 3 mặt KÍNH trong phản chiếu (IBL); 'wood-bar' = khung
+  // GỖ thanh VUÔNG bo cạnh + thanh dọc thưa gấp đôi. Optional → backward-compat.
+  railStyle?: 'solid' | 'metal-bar' | 'glass-frame' | 'wood-bar'
 }
 
 export interface StructureState {
@@ -109,7 +113,7 @@ export interface StructureState {
   deckPostSpacing?: number // mm — khoảng cách cột deck sàn gỗ (wood-deck): nhỏ = dày. Optional, default 1500
   showSlab: boolean
   slabThick: number // mm — floor slab thickness
-  slabMaterial?: WallMaterial // vật liệu sàn: 'none' = bê tông xám; 'wood' = ván gỗ procedural (demo). Optional → backward-compat
+  slabMaterial?: WallMaterial | 'walnut-tex' // vật liệu sàn: 'none' = bê tông xám; 'wood' = ván gỗ procedural (demo); 'walnut-tex' = texture ảnh PBR (PhotoGround, caller bơm material). Optional → backward-compat
   columns: ColumnState[]
   // Cầu thang: footprint chiếu thẳng lên Y → khoét lỗ slab tầng trên (cầu thang đi xuống)
   stairs: StairState
@@ -200,7 +204,16 @@ export function mkColumn(): ColumnState {
 }
 
 export function mkBalcony(): BalconyState {
-  return { wallIdx: 0, x: 1000, width: 2500, depth: 1200, y: 0, railH: 1000, slabT: 120 }
+  return {
+    wallIdx: 0,
+    x: 1000,
+    width: 2500,
+    depth: 1200,
+    y: 0,
+    railH: 1000,
+    slabT: 120,
+    railStyle: 'solid',
+  }
 }
 
 export function mkStructure(): StructureState {
@@ -215,7 +228,16 @@ export function mkStructure(): StructureState {
     slabThick: 150,
     slabMaterial: 'none', // bê tông xám mặc định; đổi 'wood' (demo ván gỗ) ở GUI Slab ▸ Material
     columns: [],
-    stairs: { show: false, x: 0, z: 0, runL: 3000, width: 1000, steps: 12, rotDeg: 0, style: 'solid' },
+    stairs: {
+      show: false,
+      x: 0,
+      z: 0,
+      runL: 3000,
+      width: 1000,
+      steps: 12,
+      rotDeg: 0,
+      style: 'solid',
+    },
     balconies: [],
   }
 }

@@ -76,6 +76,9 @@ export interface BuildRenderCtx {
   brick3d: InstancedBrickWall[]
   wood: WoodSidingWall[]
   strip: WoodSidingStrip[]
+  // Material sàn texture ('walnut-tex') do CALLER tạo+sở hữu (PhotoGround, cache 1 lần → KHÔNG recompile mỗi
+  // build/frame kéo) + dispose. Lõi KHÔNG load URL. Thiếu (chưa load xong) → slab rơi về bê tông tạm.
+  slabTexMat?: THREE.Material
 }
 
 // SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
@@ -338,6 +341,9 @@ class StateRenderer {
   private slabMaterial(inst: ShapeInstance): THREE.Material | undefined {
     const sm = inst.structure.slabMaterial ?? 'none'
     if (sm === 'none') return undefined
+    // 'walnut-tex' = material texture ảnh do caller bơm (PhotoGround cache, KHÔNG qua wallCache → KHÔNG push
+    // ctx.mats: caller dispose). Chưa load xong (undefined) → rơi về bê tông tạm; load xong caller re-render.
+    if (sm === 'walnut-tex') return this.ctx.slabTexMat
     const color = 0x9b6b43 // nâu gỗ demo
     const scale = 1
     const key = this.ctx.wallCache.matKey(sm, color, scale, DEFAULT_BRICK)
@@ -364,6 +370,9 @@ class StateRenderer {
           y: wallBase + b.y / 1000,
           slabT: b.slabT / 1000,
           railH: b.railH / 1000,
+          // LOD lúc kéo (plainWalls): ép 'solid' (3 box rẻ) — metal/wood/glass = nhiều cylinder/sphere/
+          // RoundedBox + material, dựng lại 60×/s khi kéo = tụt fps. Buông tay → style thật lại (KI-009).
+          railStyle: this.plainWalls ? 'solid' : b.railStyle,
         }),
         inst,
         `bal:${i}`
