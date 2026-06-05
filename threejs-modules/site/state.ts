@@ -81,16 +81,19 @@ export interface WaterConfig {
   refract: number // hệ số méo ảnh khúc-xạ (×distortion) — độ gợn ảnh đáy nhìn-xuyên-nước (uniform live)
   rippleScale: number // tần số gợn sóng (1/m) — thấp = sóng TO/thưa (uniform live, "Wave size")
   depthY: number // mm — độ sâu lòng hồ (đáy dưới mặt nền) → basin + nền khoét lỗ
-  bottomColor: number // màu đáy hồ (đục) — hiện tô CẢ tường (basin 1 material; tách khi làm material thật)
+  bottomColor: number // màu nền hồ (floor+wall) — tô khi material='none'; LÀ ô CHÍNH của caro khi 'tile'
+  tileColor2: number // caro 'tile': màu ô XEN KẼ (ô kia = bottomColor). Baked vào shader → đổi = rebuild
+  groutColor: number // caro 'tile': màu mạch vữa giữa các ô. Baked → đổi = rebuild
   tint: number // [0..1] — ám màu nước lên ảnh khúc xạ (absorption giả; cao = đục, đáy mờ) (uniform live)
   edgeWidth: number // mm — bề rộng dải coping/mép viền quanh hồ (0 = tắt). Render rect-frame ở mặt nền.
-  floorMaterial: WaterMaterialKey // chất liệu đáy — placeholder ('none'); render thật sau
-  wallMaterial: WaterMaterialKey // chất liệu tường — placeholder ('none'); render thật sau
-  edgeMaterial: WaterMaterialKey // chất liệu dải coping — placeholder ('none'); render thật sau
+  floorMaterial: WaterMaterialKey // chất liệu đáy hồ: 'none' (màu bottomColor) | 'tile' (caro hồ bơi)
+  wallMaterial: WaterMaterialKey // chất liệu tường hồ: 'none' | 'tile' (caro) — ĐỘC LẬP với floor
+  edgeMaterial: WaterMaterialKey // chất liệu dải coping — hiện chỉ 'none' (chưa lát caro coping)
 }
 
-// Chất liệu bề mặt hồ (đáy/tường/coping) — PLACEHOLDER: chỉ 'none' hiện tại, thêm tile/stone/concrete… sau.
-export type WaterMaterialKey = 'none'
+// Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural
+// checker + grout, UV baked vào geometry, áp floor/wall riêng). Thêm stone/concrete… sau. edgeMaterial: chỉ 'none'.
+export type WaterMaterialKey = 'none' | 'tile'
 
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
@@ -184,17 +187,19 @@ export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
     offsetX: 0, // giữa theo X (editor stagger khi thêm nhiều)
     offsetZ: 5000, // +5m về trước nhà (footprint z≤3m; hồ z 3.5..6.5 trong lô z≤7.2m) — "cạnh building"
     color: 0x254a59, // xanh nước biển trầm
-    reflectivity: 0.35, // rf0 nhìn thẳng (grazing tự lên gần 1 qua fresnel) — Mirror 35%
-    flow: 0.1, // sóng cuộn chậm — Wave spd 10% (mặc định tinh chỉnh của user)
+    reflectivity: 0.3, // rf0 nhìn thẳng (grazing tự lên gần 1 qua fresnel) — Mirror 30% (user-tuned)
+    flow: 0.1, // sóng cuộn chậm — Wave spd 10% (user-tuned)
     distortion: 0.05, // rung gương nhẹ — Ripple 5% (mặt hồ phẳng, gợn rất nhẹ)
-    detail: 0.4, // độ nhiễu octave-2 vừa — Turbulence 40%
-    refract: 1, // méo khúc-xạ = như gương — Refraction 100%
-    rippleScale: 4, // sóng nhỏ/dày vừa — Wave size (thấp = to)
+    detail: 1.5, // nhiễu octave-2 TỐI ĐA — Turbulence 150% (sóng xáo trộn, hết "đều") (user-tuned)
+    refract: 1.6, // méo khúc-xạ mạnh — Refraction 160% (caro đáy gợn rõ) (user-tuned)
+    rippleScale: 1, // sóng TO/thưa — Wave size 12 (13−rippleScale; thấp = to) (user-tuned)
     depthY: kind === 'puddle' ? 200 : 600, // puddle 20cm nông; pool/pond 60cm
     bottomColor: kind === 'pool' ? 0xa8ceff : 0x3a3329, // pool: gạch xanh nhạt #a8ceff; pond/puddle: bùn đục
-    tint: 0.05, // ám màu nước rất nhẹ — Murk 5% (nước trong, thấy rõ đáy)
+    tileColor2: 0xd9e8ff, // caro ô xen kẽ (sáng hơn) — khớp look dẫn-xuất cũ của #a8ceff
+    groutColor: 0x7590b3, // caro mạch vữa (xanh trầm)
+    tint: 0.1, // ám màu nước nhẹ — Murk 10% (nước khá trong, vẫn thấy đáy) (user-tuned)
     edgeWidth: 500, // 500mm dải coping mặc định quanh hồ
-    floorMaterial: 'none', // placeholder — material thật sau
+    floorMaterial: 'none', // 'tile' = caro hồ bơi (đổi ở GUI Bottom → Floor/Wall mat)
     wallMaterial: 'none',
     edgeMaterial: 'none',
   }
@@ -298,9 +303,9 @@ function parseKind(v: unknown, fallback: WaterKind): WaterKind {
   return v === 'pool' || v === 'pond' || v === 'puddle' ? v : fallback
 }
 
-// Material placeholder: chỉ 'none' hợp lệ hiện tại; giá trị lạ → 'none' (forward-compat khi thêm material).
+// Material hồ: 'none' | 'tile' (caro). Giá trị lạ → 'none' (forward-compat khi thêm stone/concrete…).
 function parseMat(v: unknown): WaterMaterialKey {
-  return v === 'none' ? v : 'none'
+  return v === 'tile' ? 'tile' : 'none'
 }
 
 function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): WaterConfig {
@@ -323,6 +328,8 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     rippleScale: clamp(num(r.rippleScale, d.rippleScale), 0.5, 20),
     depthY: clamp(num(r.depthY, d.depthY), 50, 3000),
     bottomColor: parseColor(r.bottomColor, d.bottomColor),
+    tileColor2: parseColor(r.tileColor2, d.tileColor2),
+    groutColor: parseColor(r.groutColor, d.groutColor),
     tint: clamp(num(r.tint, d.tint), 0, 1),
     edgeWidth: clamp(num(r.edgeWidth, d.edgeWidth), 0, 2000),
     floorMaterial: parseMat(r.floorMaterial),

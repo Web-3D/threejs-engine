@@ -12,7 +12,7 @@ issues:
   - KI-006
   - KI-007
   - KI-008
-updated: 2026-06-04
+updated: 2026-06-05
 ---
 
 # Playbook — Hồ nước
@@ -36,8 +36,11 @@ xuống thấy đáy gợn sóng). KHÔNG có lớp nào (nền/lưới) cắt s
   glint = `reflect(-sunDir, n)` mũ shininess. `setTime`/`setSun` mỗi frame.
 
 **(B) Đáy = basin** (dựng ở `site/render/fromState`, KHÔNG trong component — component chỉ lo MẶT nước):
-- vách = quad mỗi cạnh polygon (**yTop=RIM** → yBot), sàn = `ShapeGeometry` ở yBot, **merge 1 mesh**, material
-  đục `DoubleSide`. ⚠ `mergeGeometries` đòi đồng nhất index → `floor.toNonIndexed()` trước merge (xem KI-004).
+- **2 mesh RIÊNG** (bỏ merge): sàn = `basinFloorGeometry` (`ShapeGeometry` @yBot, uv = world XZ), vách =
+  `basinWallsGeometry` (quad mỗi cạnh polygon **yTop=RIM** → yBot, uv = chu-vi×cao). Tách để floor/wall mang
+  **material độc lập** (`floorMaterial`/`wallMaterial`). Đục `DoubleSide`: **'none'** = `MeshStandardMaterial`
+  màu `bottomColor`; **'tile'** = caro hồ bơi (`MeshStandardNodeMaterial`, override `colorNode` = checker 2 màu
+  + grout, ô 0.2m, 3 màu user chọn, GIỮ PBR/bóng). Bỏ `mergeGeometries` → thoát rủi ro mixed-index null (KI-004 hết gốc).
 - Vách chạy từ **mặt nền (rim)** xuống → liền coping↔tường, KHÔNG lộ mặt-cắt slab (đường xanh cỏ). Nền lô khi
   có hồ dựng **PHẲNG** (ShapeGeometry, không khối dày) nên không còn cut-face để hở — xem (C)+§3.
 - Vẽ basin (opaque) **TRƯỚC** nước (transparent) → `viewportSharedTexture` của nước bắt được đáy.
@@ -101,6 +104,8 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 - `2026-06-04..05` — **phản chiếu sống lại + đúng góc:** renderer `antialias:false` (MSAA ✗ reflector RTT — `KI-007`, gốc mất gương + flood WebGPU). FXAA post **thử rồi BỎ** (reflector ✗ PostProcessing-pass cũng xung khắc WebGPU, three chưa vá) → hiện **không post-AA** (răng cưa, pixelRatio 2x đỡ). Gương đứng-hình-vĩnh-viễn sau khi camera chui dưới nước = **bug three `_inReflector`** (`KI-008`): giữ `forceUpdate` né bug + shader `fres·smoothstep(0,0.04, eye.y)` tắt gương "từ dưới lên" SAI (dùng `eye.y` normal PHẲNG, KHÔNG normal sóng — kẻo mất gương theo azimuth). Phải vá flood `TSL.NormalNode` (contactQuad cỏ) TRƯỚC mới lộ các lỗi GPU này.
 - `2026-06-05` — **sóng FBM 2-octave** (octave lớn 0.6× + chi tiết 2.2× cuộn ngược → bớt đều/nhuyễn) + **fade top-down theo HƯỚNG-camera** (`uViewDirY`, không eye.y — pool lệch tâm) chống gương-đơ near-vertical. **+3 slider Surface:** Turbulence (`detail`=octave-2 amp), Refraction (`refract`=méo ảnh đáy, ×distortion riêng), Wave size (`rippleScale`, kéo phải=to). **Default pool tinh chỉnh:** Wave spd 10 / Ripple 5 / Murk 5 + **Floor color `#a8ceff`** (gạch xanh; pond/puddle giữ bùn). State +`detail`/`refract` (migrate tolerant). **Giới hạn:** 2+ reflector → 1 hồ đơ (xem §4, `_inReflector` module three).
 - `2026-06-05` — bỏ FXAA hook ở `BaseWorld` (revert); fix **phím tắt Z/X mất** (vỏ archplan): listener đăng ký TRƯỚC `_buildScene` + click 3D blur input GUI (`_blurActiveInput`) — keydown `e.target instanceof HTMLInputElement` chặn khi ô số slider giữ focus.
+- `2026-06-05` — **caro hồ bơi (tile material)**: basin **TÁCH 2 mesh** (floor+wall) thay merge → `floorMaterial`/`wallMaterial` ĐỘC LẬP, dropdown **None | Caro (tile)** (Edge giữ None). Caro = `MeshStandardNodeMaterial` `colorNode` procedural: ô vuông 2 màu xen kẽ (`floor(uv).x+y mod 2`) + mạch vữa grout, **UV baked** (floor world-XZ, wall chu-vi×cao), ô 0.2m, **3 màu user chọn** (Floor color=ô chính, Tile 2, Grout). Khúc xạ nước làm caro gợn → rõ "đáy hồ bơi". Bỏ `mergeGeometries` basin → **KI-004 hết nguồn gốc** (cho basin; `buildFence` còn merge).
+- `2026-06-05` — **default surface params** chốt theo user-tune (ảnh): Mirror 30 / Wave spd 10 / Ripple 5 / **Turbulence 150** / **Refraction 160** / Murk 10 / **Wave size 12** (`rippleScale` 1). State +`tileColor2`/`groutColor` (parse tolerant). Default chỉ áp hồ MỚI/reset — design đang lưu giữ giá trị riêng.
 
 ## 6. Liên hệ
 

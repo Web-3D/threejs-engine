@@ -12,6 +12,10 @@
 
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import type Node from 'three/src/nodes/core/Node.js'
+import type { ShaderNodeObject } from 'three/tsl'
+import { float, floor, fract, min, mix, smoothstep, uv, vec3 } from 'three/tsl'
+import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
 import { WaterSurface } from '../../components/WaterSurface'
@@ -22,6 +26,7 @@ import {
   renderWaters,
   type SiteState,
   type WaterConfig,
+  type WaterMaterialKey,
 } from '../state'
 
 // Resource caller sở hữu — renderer build vào đây, KHÔNG dispose (giống building BuildRenderCtx).
@@ -243,56 +248,109 @@ function buildPoolEdge(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): voi
   ctx.group.add(mesh)
 }
 
-// Đáy 1 hồ = vách (quad mỗi cạnh, RIM → floor) + sàn (ShapeGeometry). Material đục, DoubleSide (né winding).
-// Vách chạy từ MẶT NỀN (rim) thẳng xuống đáy → liền "thành hồ" (coping) ↔ "tường hồ", KHÔNG lộ mặt-cắt
-// slab nền (đường xanh cỏ). Nền lô khi có hồ dựng PHẲNG (buildGround) nên không còn cut-face để hở.
+// Đáy 1 hồ = SÀN (ShapeGeometry @yBot) + VÁCH (quad mỗi cạnh RIM→floor) — 2 MESH RIÊNG để floor/wall mang
+// material ĐỘC LẬP (floorMaterial/wallMaterial). 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi.
+// Vách chạy từ MẶT NỀN (rim) xuống đáy → liền "thành hồ", KHÔNG lộ mặt-cắt slab (nền dựng PHẲNG khi có hồ).
+// KHÔNG merge (trước gộp 1 mesh để tiết draw call; nay tách → thoát luôn rủi ro mergeGeometries mixed-index, KI-004).
 function buildBasin(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): void {
   const rimY = site.groundThick / 1000 // mặt nền = đỉnh vách
   const yBot = rimY - w.depthY / 1000 // floor dưới rim depthY
-  const geo = basinGeometry(pondWorldXZ(w), rimY, yBot)
-  const mat = new THREE.MeshStandardMaterial({
+  const pts = pondWorldXZ(w)
+  // 'tile' = NodeMaterial (compile shader): share 1 instance khi wall≡floor → né compile 2 lần (hồ bơi
+  // thường floor=wall=tile). Caller push ctx.mats (không push 2 lần khi share).
+  const floorMat = basinMaterial(w.floorMaterial, w)
+  const wallMat = w.wallMaterial === w.floorMaterial ? floorMat : basinMaterial(w.wallMaterial, w)
+  ctx.mats.push(floorMat)
+  if (wallMat !== floorMat) ctx.mats.push(wallMat)
+  addBasinMesh(basinFloorGeometry(pts, yBot), floorMat, ctx)
+  addBasinMesh(basinWallsGeometry(pts, rimY, yBot), wallMat, ctx)
+}
+
+// 1 mesh basin (floor hoặc walls): nhận bóng, track geo (material đã push ở caller — có thể share).
+function addBasinMesh(geo: THREE.BufferGeometry, mat: THREE.Material, ctx: SiteRenderCtx): void {
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.receiveShadow = true
+  ctx.geos.push(geo)
+  ctx.group.add(mesh)
+}
+
+// Material 1 mặt basin theo key. 'none' = MeshStandardMaterial màu phẳng (bottomColor); 'tile' = caro hồ bơi
+// (MeshStandardNodeMaterial — GIỮ PBR + nhận bóng, chỉ override colorNode). Caller push ctx.mats.
+function basinMaterial(key: WaterMaterialKey, w: WaterConfig): THREE.Material {
+  if (key === 'tile') {
+    const mat = new MeshStandardNodeMaterial()
+    mat.colorNode = poolTileColorNode(
+      new THREE.Color(w.bottomColor),
+      new THREE.Color(w.tileColor2),
+      new THREE.Color(w.groutColor)
+    )
+    mat.roughness = 0.6 // gạch men hơi bóng (thấp hơn nền 0.95) → bắt sáng nhẹ
+    mat.metalness = 0
+    mat.side = THREE.DoubleSide
+    return mat
+  }
+  return new THREE.MeshStandardMaterial({
     color: w.bottomColor,
     roughness: 0.95,
     side: THREE.DoubleSide,
   })
-  const mesh = new THREE.Mesh(geo, mat)
-  mesh.receiveShadow = true
-  ctx.geos.push(geo)
-  ctx.mats.push(mat)
-  ctx.group.add(mesh)
 }
 
-// Geometry basin: vách (pts world XZ, yTop→yBot) + sàn (ShapeGeometry ở yBot). Merge 1 mesh.
-function basinGeometry(
+// colorNode caro hồ bơi: ô vuông 2 màu xen kẽ (checker) + mạch vữa (grout) — đọc uv (mét) baked vào
+// geometry (floor: world XZ; wall: chu-vi×cao). Ô 0.2m. 3 màu DO USER CHỌN: a=ô chính (bottomColor),
+// b=ô xen kẽ (tileColor2), g=mạch (groutColor). Khúc xạ nước làm caro gợn → thấy rõ "đáy hồ bơi".
+function poolTileColorNode(a: THREE.Color, b: THREE.Color, g: THREE.Color): ShaderNodeObject<Node> {
+  const cA = vec3(a.r, a.g, a.b)
+  const cB = vec3(b.r, b.g, b.b)
+  const cG = vec3(g.r, g.g, g.b)
+  const p = uv().mul(float(1 / 0.2)) // tile-space (5 ô/m)
+  const cell = floor(p)
+  const parity = cell.x.add(cell.y).mod(float(2)) // 0/1 xen kẽ
+  const tile = mix(cA, cB, parity)
+  const f = fract(p)
+  const d = min(min(f.x, float(1).sub(f.x)), min(f.y, float(1).sub(f.y))) // khoảng tới mạch gần nhất
+  const line = smoothstep(float(0), float(0.04), d) // 0 ở mạch → grout; 1 trong ô → tile
+  return mix(cG, tile, line) as ShaderNodeObject<Node>
+}
+
+// Geometry SÀN hồ = ShapeGeometry @yBot, GIỮ uv = (worldX, −worldZ) mét (ShapeGeometry sinh uv = toạ độ
+// shape) → caro lát theo world XZ. rotateX không đụng uv. Mesh riêng (không merge) nên giữ index thoải mái.
+function basinFloorGeometry(pts: { x: number; z: number }[], yBot: number): THREE.BufferGeometry {
+  const s = new THREE.Shape()
+  pts.forEach((q, i) => (i === 0 ? s.moveTo(q.x, -q.z) : s.lineTo(q.x, -q.z))) // XY: x=worldX, y=−worldZ
+  s.closePath()
+  const g = new THREE.ShapeGeometry(s)
+  g.rotateX(-Math.PI / 2)
+  g.translate(0, yBot, 0)
+  return g
+}
+
+// Geometry VÁCH hồ = quad mỗi cạnh (yTop→yBot). uv = (chu-vi tích luỹ, cao Y) mét → caro lát dọc tường,
+// ô cùng cỡ với sàn (cùng đơn vị mét). Non-indexed (raw position) — không merge nên không cần đồng nhất.
+function basinWallsGeometry(
   pts: { x: number; z: number }[],
   yTop: number,
   yBot: number
 ): THREE.BufferGeometry {
   const pos: number[] = []
+  const uvs: number[] = []
+  let perim = 0
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i]
     const b = pts[(i + 1) % pts.length]
+    const ua = perim
+    const ub = perim + Math.hypot(b.x - a.x, b.z - a.z)
     pos.push(a.x, yTop, a.z, b.x, yTop, b.z, b.x, yBot, b.z) // quad cạnh → 2 tris
+    uvs.push(ua, yTop, ub, yTop, ub, yBot)
     pos.push(a.x, yTop, a.z, b.x, yBot, b.z, a.x, yBot, a.z)
+    uvs.push(ua, yTop, ub, yBot, ua, yBot)
+    perim = ub
   }
-  const walls = new THREE.BufferGeometry()
-  walls.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  walls.computeVertexNormals()
-  const s = new THREE.Shape()
-  pts.forEach((q, i) => (i === 0 ? s.moveTo(q.x, -q.z) : s.lineTo(q.x, -q.z))) // XY: x=worldX, y=−worldZ
-  s.closePath()
-  const floorIdx = new THREE.ShapeGeometry(s)
-  floorIdx.rotateX(-Math.PI / 2)
-  floorIdx.translate(0, yBot, 0)
-  floorIdx.deleteAttribute('uv') // khớp attribute với walls (position+normal) để merge
-  // walls = NON-indexed (raw position), ShapeGeometry = INDEXED → mergeGeometries trộn 2 loại = NULL
-  // (mất sàn đáy!). Ép floor về non-indexed cho đồng nhất trước khi merge.
-  const floor = floorIdx.toNonIndexed()
-  floorIdx.dispose()
-  const merged = mergeGeometries([walls, floor], false)
-  walls.dispose()
-  floor.dispose()
-  return merged ?? new THREE.BufferGeometry()
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  g.computeVertexNormals()
+  return g
 }
 
 // Cỏ 3D nhú lên (tier B — GrassBlades) = LỚP THỰC VẬT ĐỘC LẬP, KHÔNG dính loại surface: mọc trên nền BẤT KỲ

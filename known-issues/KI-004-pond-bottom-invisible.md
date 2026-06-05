@@ -57,6 +57,10 @@ trên: tấm nền che hết phần dưới y=0. Nhìn từ dưới: tấm nền
   `LineSegments` tự dựng (`_buildGridGeo`), mỗi đường //trục CẮT đoạn nằm trong bbox hồ → hết sọc đè
   lòng hồ. Rebuild theo bbox hồ ở `_rebuildGrid` (gọi cùng `_rebuildEditorGround`).
 
+> **Cập nhật 2026-06-05:** basin nay **TÁCH 2 mesh** (floor+wall — mỗi mặt 1 material cho caro tile) →
+> **bỏ `mergeGeometries`** hẳn (`basinGeometry` xoá, thay `basinFloorGeometry`+`basinWallsGeometry`). Nguyên
+> nhân (a) mixed-index null **hết nguồn gốc cho basin**. Bài học §5 vẫn áp nơi khác còn merge (vd `buildFence`).
+
 ## 5. Phòng tái phạm
 
 - **mergeGeometries:** trước khi merge, BẢO ĐẢM mọi input đồng nhất index. Trộn raw-position (non-indexed)
