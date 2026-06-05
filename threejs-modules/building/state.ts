@@ -116,9 +116,18 @@ export interface StructureState {
   beamHeight?: number // mm — bề CAO tiết diện 16 xà (stone-pillar); render kẹp ≤ khoảng hở dưới deck. Optional, default 120
   strutSegments?: number // số ĐỐT mỗi thanh chống xiên (stone-pillar): nhiều = cong mượt. Optional, default 6
   strutCurve?: number // mm — độ CONG thanh chống xiên (stone-pillar); 0 = thẳng. Optional, default 0
+  foundMaterial?: 'none' | 'wood-tex' // gỗ móng (wood-deck/stone-pillar): 'none' = MeshToon phẳng; 'wood-tex' = texture (caller bơm). Optional
+  postRadius?: number // mm — bán kính 8 cột trụ tròn (stone-pillar). Optional, default 67
+  postLength?: number // mm — chiều dài 8 cột trụ = khoảng cách 2 tầng xà (xà dưới + xiên đi theo). Optional, default 1500
+  understructSize?: number // mm — KÍCH THƯỚC khung-dưới (xà/trụ/xiên) ĐỘC LẬP deck — kéo deck KHÔNG ảnh hưởng. Optional, default 5000
+  understructMaterial?: 'none' | 'wood-tex' | 'bark-tex' // texture RIÊNG khung-dưới (tách deck): 'wood-tex' = Old Plywood; 'bark-tex' = Tree Bark. Optional, default 'none'
+  deckRailShow?: boolean // bật LAN CAN 4 mặt quanh deck (stone-pillar). Optional, default false
+  deckRailH?: number // mm — cao lan can. Optional, default 900
+  deckRailLength?: number // mm — DÀI (trục X) khung lan can chữ nhật, độc lập. Optional, default 5000
+  deckRailWidth?: number // mm — RỘNG (trục Z) khung lan can chữ nhật, độc lập. Optional, default 5000
   showSlab: boolean
   slabThick: number // mm — floor slab thickness
-  slabMaterial?: WallMaterial | 'walnut-tex' // vật liệu sàn: 'none' = bê tông xám; 'wood' = ván gỗ procedural (demo); 'walnut-tex' = texture ảnh PBR (PhotoGround, caller bơm material). Optional → backward-compat
+  slabMaterial?: WallMaterial | 'walnut-tex' | 'planks-tex' // vật liệu sàn: 'none' = bê tông xám; 'wood' = ván gỗ procedural (demo); 'walnut-tex' = Walnut Veneer (PhotoGround); 'planks-tex' = Wooden Planks (DÙNG CHUNG material gỗ deck móng — caller bơm). Optional → backward-compat
   columns: ColumnState[]
   // Cầu thang: footprint chiếu thẳng lên Y → khoét lỗ slab tầng trên (cầu thang đi xuống)
   stairs: StairState
@@ -233,6 +242,15 @@ export function mkStructure(): StructureState {
     beamHeight: 120, // 120mm bề cao tiết diện xà (stone-pillar)
     strutSegments: 6, // 6 đốt mỗi thanh chống xiên (stone-pillar)
     strutCurve: 0, // thẳng (stone-pillar)
+    foundMaterial: 'none', // gỗ móng MeshToon phẳng; 'wood-tex' (texture) ở GUI Foundation
+    postRadius: 67, // 67mm bán kính cột trụ tròn (stone-pillar)
+    postLength: 1500, // 1.5m chiều dài cột trụ = gap 2 tầng xà
+    understructSize: 5000, // 5m khung-dưới (độc lập deck)
+    understructMaterial: 'none', // texture riêng khung-dưới (MeshToon mặc định)
+    deckRailShow: false, // lan can deck tắt mặc định
+    deckRailH: 900, // cao lan can 0.9m
+    deckRailLength: 5000, // dài khung lan can 5m (độc lập)
+    deckRailWidth: 5000, // rộng khung lan can 5m (độc lập)
 
     showSlab: false,
     slabThick: 150,

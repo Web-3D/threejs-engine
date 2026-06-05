@@ -14,7 +14,32 @@
 // Loại bề mặt nền lô (tier A material — G0 màu phẳng, nâng cấp procedural sau theo material-roadmap).
 // 'grass' = procedural GrassGround; 'grass-tex' = texture ảnh (PhotoGround, cần caller bơm groundTextures —
 // fallback màu phẳng nếu thiếu); 'soil'/'gravel' = màu phẳng preset.
-export type GroundMaterialKey = 'grass' | 'grass-tex' | 'soil' | 'gravel'
+export type GroundMaterialKey =
+  | 'grass'
+  | 'grass-tex'
+  | 'soil'
+  | 'gravel'
+  | 'rippled-sand'
+  | 'construction-gravel'
+  | 'beach-gravel'
+  | 'rough-asphalt'
+  | 'worn-pavement'
+  | 'roman-stone-floor'
+
+// Ground key dùng TEXTURE ảnh (PhotoGround) — caller (archplan) bơm opts.groundTextures theo key. Thiếu
+// texture → fallback màu phẳng GROUND_PRESETS. 'grass'(procedural)/'soil'/'gravel' KHÔNG ở đây (màu/shader).
+const GROUND_TEX_KEYS = new Set<GroundMaterialKey>([
+  'grass-tex',
+  'rippled-sand',
+  'construction-gravel',
+  'beach-gravel',
+  'rough-asphalt',
+  'worn-pavement',
+  'roman-stone-floor',
+])
+export function isGroundTexKey(k: GroundMaterialKey): boolean {
+  return GROUND_TEX_KEYS.has(k)
+}
 
 export interface FenceConfig {
   enabled: boolean
@@ -124,15 +149,41 @@ export interface WaterConfig {
 // checker + grout, UV baked vào geometry, áp floor/wall riêng). Thêm stone/concrete… sau. edgeMaterial: chỉ 'none'.
 export type WaterMaterialKey = 'none' | 'tile'
 
+// TẦNG SURFACE chồng (nghệ thuật xếp lớp 3D): mỗi layer = 1 lớp vật liệu phủ kín lô, dày RIÊNG, xếp CHỒNG
+// lên base ground (+ các layer trước). Top layer che layer dưới; KHOÉT lỗ 1 layer → lớp dưới lộ ra (carve =
+// phase sau — chừa chỗ `holes?` để thêm). Đơn giản: material + thickness. lotShape (đã carve lỗ hồ) dùng chung.
+export interface GroundLayer {
+  material: GroundMaterialKey // vật liệu lớp (cùng bộ với base ground)
+  thickness: number // mm — dày lớp 10..100 (1..10cm)
+  length: number // mm — DÀI (trục X) tấm layer (box riêng, tâm lô). 500..40000
+  width: number // mm — RỘNG (trục Z) tấm layer. 500..40000
+  offsetX: number // mm — DỜI tâm layer theo X so tâm lô (Move tool kéo). Default 0
+  offsetZ: number // mm — DỜI tâm layer theo Z. Default 0
+}
+
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
   lotWidth: number // mm — bề ngang lô (trục X)
   lotDepth: number // mm — chiều sâu lô (trục Z)
   groundThick: number // mm — dày slab nền 10..100 (1..10cm); ≥10 để mặt trên cao hơn grid → hết z-fight
   ground: GroundMaterialKey
+  groundLayers?: GroundLayer[] // TẦNG surface chồng lên base (xếp lớp 3D). Optional → backward-compat (cũ = [])
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
+}
+
+// Factory 1 tầng surface chồng. Default soil 1cm, tấm 10×10m — lớp mới mỏng tối thiểu, vật liệu khác base.
+export function makeGroundLayer(overrides: Partial<GroundLayer> = {}): GroundLayer {
+  return {
+    material: 'soil',
+    thickness: GROUND_THICK_MIN,
+    length: 10000,
+    width: 10000,
+    offsetX: 0,
+    offsetZ: 0,
+    ...overrides,
+  }
 }
 
 // Hồ LÕM render được = pool & pond ĐANG BẬT (có basin đáy+vách + KHOÉT lỗ nền). Dùng bởi renderer (basin/
@@ -154,10 +205,18 @@ export const GROUND_PRESETS: Record<GroundMaterialKey, { color: number; roughnes
   'grass-tex': { color: 0x546029, roughness: 0.92 }, // olive (= avgColor uncut-grass) — fallback khi thiếu texture
   soil: { color: 0x6b4a2f, roughness: 1.0 }, // đất nâu
   gravel: { color: 0x8a8680, roughness: 0.9 }, // sỏi xám
+  'rippled-sand': { color: 0xcbb894, roughness: 1.0 }, // cát rám — fallback khi thiếu texture
+  'construction-gravel': { color: 0x8a857d, roughness: 0.95 }, // sỏi xám xây dựng
+  'beach-gravel': { color: 0x9c948a, roughness: 0.92 }, // sỏi biển xám-rám
+  'rough-asphalt': { color: 0x4a4a4d, roughness: 0.95 }, // nhựa đường xám đậm
+  'worn-pavement': { color: 0x8f8a82, roughness: 0.93 }, // vỉa hè mòn xám
+  'roman-stone-floor': { color: 0xb0a48d, roughness: 0.85 }, // sàn đá La Mã be-rám
 }
 
 export const GROUND_THICK_MIN = 10 // mm = 1cm — default, đáy ở y=0 → top cao hơn grid editor
 export const GROUND_THICK_MAX = 100 // mm = 10cm
+export const GROUND_LAYER_SIZE_MIN = 500 // mm = 0.5m — cạnh nhỏ nhất tấm layer chồng
+export const GROUND_LAYER_SIZE_MAX = 40000 // mm = 40m — cạnh lớn nhất (dài/rộng) tấm layer chồng
 
 // ── Factory ────────────────────────────────────────────────────────────────────
 
@@ -170,6 +229,7 @@ export function defaultSiteState(): SiteState {
     lotDepth: 14400,
     groundThick: GROUND_THICK_MIN,
     ground: 'grass',
+    groundLayers: [], // chưa có tầng chồng (thêm qua ＋ ở GUI)
     grass3d: {
       enabled: true,
       density: 100,
@@ -262,7 +322,23 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 function parseGround(v: unknown, fallback: GroundMaterialKey): GroundMaterialKey {
-  return v === 'soil' || v === 'gravel' || v === 'grass' || v === 'grass-tex' ? v : fallback
+  return typeof v === 'string' && v in GROUND_PRESETS ? (v as GroundMaterialKey) : fallback
+}
+
+// Tầng surface chồng: mảng (cap 8 lớp) — mỗi lớp material hợp lệ + thickness clamp 1..10cm. Sai → bỏ qua an toàn.
+function parseGroundLayers(raw: unknown): GroundLayer[] {
+  if (!Array.isArray(raw)) return []
+  return raw.slice(0, 8).map((r) => {
+    const o = (r ?? {}) as Partial<GroundLayer>
+    return {
+      material: parseGround(o.material, 'soil'),
+      thickness: clamp(num(o.thickness, GROUND_THICK_MIN), GROUND_THICK_MIN, GROUND_THICK_MAX),
+      length: clamp(num(o.length, 10000), GROUND_LAYER_SIZE_MIN, GROUND_LAYER_SIZE_MAX),
+      width: clamp(num(o.width, 10000), GROUND_LAYER_SIZE_MIN, GROUND_LAYER_SIZE_MAX),
+      offsetX: clamp(num(o.offsetX, 0), -GROUND_LAYER_SIZE_MAX, GROUND_LAYER_SIZE_MAX),
+      offsetZ: clamp(num(o.offsetZ, 0), -GROUND_LAYER_SIZE_MAX, GROUND_LAYER_SIZE_MAX),
+    }
+  })
 }
 
 function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): FenceConfig {
@@ -283,7 +359,11 @@ function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): Fenc
 
 // Mảng rào — 2 nguồn (ưu tiên giảm dần): fences[] (format mới) → fence đơn cũ (MIGRATE → [fence]) → default.
 // Tolerant: phần tử sai vẫn parse (parseFence default-fill), tối đa 8 lớp. Backward-compat không bump schema.
-function parseFences(rawArr: unknown, legacy: Partial<FenceConfig> | undefined, d: FenceConfig): FenceConfig[] {
+function parseFences(
+  rawArr: unknown,
+  legacy: Partial<FenceConfig> | undefined,
+  d: FenceConfig
+): FenceConfig[] {
   if (Array.isArray(rawArr)) {
     const out: FenceConfig[] = []
     for (const f of rawArr) {
@@ -428,6 +508,7 @@ export function parseSite(raw: unknown): SiteState {
     lotDepth: num(o.lotDepth, d.lotDepth),
     groundThick: clamp(num(o.groundThick, d.groundThick), GROUND_THICK_MIN, GROUND_THICK_MAX),
     ground: parseGround(o.ground, d.ground),
+    groundLayers: parseGroundLayers(o.groundLayers),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
     waters: parseWaters(o.waters, o.water),
     fences: parseFences(o.fences, o.fence, d.fences[0]),

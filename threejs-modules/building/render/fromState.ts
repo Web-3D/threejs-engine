@@ -79,6 +79,16 @@ export interface BuildRenderCtx {
   // Material sàn texture ('walnut-tex') do CALLER tạo+sở hữu (PhotoGround, cache 1 lần → KHÔNG recompile mỗi
   // build/frame kéo) + dispose. Lõi KHÔNG load URL. Thiếu (chưa load xong) → slab rơi về bê tông tạm.
   slabTexMat?: THREE.Material
+  // Material GỖ DECK móng (foundType wood-deck/stone-pillar + foundMaterial='wood-tex') = Wooden Planks — caller
+  // tạo+sở hữu (TexturedSurface triplanar, cache). DÙNG CHUNG cho slab 'planks-tex'. Thiếu → móng MeshToon gỗ
+  // phẳng. KHÔNG push ctx.mats (caller dispose).
+  foundWoodMat?: THREE.Material
+  // Material gỗ KHUNG-DƯỚI stone-pillar (understructMaterial='wood-tex') = Old Plywood — caller tạo+sở hữu
+  // (TexturedSurface triplanar, cache). TÁCH deck → texture riêng. Thiếu → khung-dưới MeshToon. KHÔNG push ctx.mats.
+  underWoodMat?: THREE.Material
+  // Material VỎ CÂY KHUNG-DƯỚI stone-pillar (understructMaterial='bark-tex') = Tree Bark — tuỳ chọn thứ 2 cho
+  // khung-dưới (TexturedSurface triplanar, cache). Thiếu → MeshToon. KHÔNG push ctx.mats.
+  underBarkMat?: THREE.Material
 }
 
 // SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
@@ -301,6 +311,15 @@ class StateRenderer {
         beamHeight: inst.structure.beamHeight, // bề cao tiết diện 16 xà (stone-pillar)
         strutSegments: inst.structure.strutSegments, // số đốt thanh chống xiên (stone-pillar)
         strutCurve: inst.structure.strutCurve, // độ cong thanh chống xiên (stone-pillar)
+        woodMaterial: this.foundWoodMaterial(inst), // gỗ móng 'wood-tex' (TexturedSurface) hoặc undefined = MeshToon
+        postRadius: inst.structure.postRadius, // bán kính 8 cột trụ (stone-pillar)
+        postLength: inst.structure.postLength, // chiều dài cột = gap 2 tầng xà (xà dưới + xiên đi theo)
+        understructHalf: (inst.structure.understructSize ?? 5000) / 2000, // nửa-span khung-dưới (ĐỘC LẬP deck)
+        understructMat: this.foundUnderMaterial(inst), // gỗ khung-dưới 'wood-tex' (riêng deck) hoặc undefined
+        deckRailShow: inst.structure.deckRailShow, // lan can 4 mặt quanh deck
+        deckRailH: inst.structure.deckRailH, // cao lan can
+        deckRailLength: inst.structure.deckRailLength, // dài khung lan can (X, độc lập)
+        deckRailWidth: inst.structure.deckRailWidth, // rộng khung lan can (Z, độc lập)
       }),
       inst,
       'found'
@@ -349,11 +368,28 @@ class StateRenderer {
     // 'walnut-tex' = material texture ảnh do caller bơm (PhotoGround cache, KHÔNG qua wallCache → KHÔNG push
     // ctx.mats: caller dispose). Chưa load xong (undefined) → rơi về bê tông tạm; load xong caller re-render.
     if (sm === 'walnut-tex') return this.ctx.slabTexMat
+    // 'planks-tex' = Wooden Planks — DÙNG CHUNG material gỗ deck móng (caller bơm foundWoodMat; cùng look deck+sàn).
+    if (sm === 'planks-tex') return this.ctx.foundWoodMat
     const color = 0x9b6b43 // nâu gỗ demo
     const scale = 1
     const key = this.ctx.wallCache.matKey(sm, color, scale, DEFAULT_BRICK)
     this.slabMatKeys.add(key)
     return this.ctx.wallCache.ensureMat(key, sm, color, scale, DEFAULT_BRICK)
+  }
+
+  // Gỗ móng: 'wood-tex' → material caller bơm (TexturedSurface triplanar cache, KHÔNG push ctx.mats: caller
+  // dispose). Chưa load xong (undefined) → móng rơi về MeshToon gỗ phẳng. 'none'/undefined → undefined.
+  private foundWoodMaterial(inst: ShapeInstance): THREE.Material | undefined {
+    return inst.structure.foundMaterial === 'wood-tex' ? this.ctx.foundWoodMat : undefined
+  }
+
+  // Vật liệu KHUNG-DƯỚI stone-pillar — texture RIÊNG deck: 'wood-tex' = Old Plywood (underWoodMat); 'bark-tex' =
+  // Tree Bark (underBarkMat). Chưa load → undefined = MeshToon. Tách hẳn deck → khung-dưới vân riêng.
+  private foundUnderMaterial(inst: ShapeInstance): THREE.Material | undefined {
+    const um = inst.structure.understructMaterial
+    if (um === 'wood-tex') return this.ctx.underWoodMat
+    if (um === 'bark-tex') return this.ctx.underBarkMat
+    return undefined
   }
 
   private buildBalconies(inst: ShapeInstance, wallBase: number): void {

@@ -14,8 +14,8 @@
  */
 
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 import type { PartResult } from '../tokens'
 
@@ -145,6 +145,15 @@ export interface PositionedFoundationOpts {
   beamHeight?: number // mm — bề cao tiết diện 16 xà (stone-pillar); kẹp ≤ khoảng hở dưới deck. Default 120
   strutSegments?: number // số ĐỐT mỗi thanh chống xiên (stone-pillar): nhiều = cong mượt. Default 6
   strutCurve?: number // mm — độ CONG thanh chống xiên (bulge control-point); 0 = thẳng. Default 0
+  woodMaterial?: THREE.Material // gỗ móng (caller bơm, vd TexturedSurface) — thay MeshToon phẳng. KHÔNG vào mats (caller dispose)
+  postRadius?: number // mm — bán kính 8 cột trụ tròn (stone-pillar). Default 67
+  postLength?: number // mm — chiều dài cột = gap 2 tầng xà (lowerY = beamY − postLength); xà dưới + xiên đi theo. Default 1500
+  understructHalf?: number // m — NỬA-SPAN khung-dưới (xà/trụ/xiên), ĐỘC LẬP deck fw/fd. Default 2.5
+  understructMat?: THREE.Material // material khung-dưới (caller bơm, riêng deck). KHÔNG vào mats (caller dispose)
+  deckRailShow?: boolean // bật LAN CAN 4 mặt quanh deck (stone-pillar). Default false
+  deckRailH?: number // mm — cao lan can. Default 900
+  deckRailLength?: number // mm — DÀI (trục X) khung lan can chữ nhật, độc lập. Default 5000
+  deckRailWidth?: number // mm — RỘNG (trục Z) khung lan can chữ nhật, độc lập. Default 5000
 }
 
 export interface SlabOpening {
@@ -228,13 +237,13 @@ function makeWoodDeckFoundation(
   }
   const geo = mergeGeometries(boxes, false) ?? new THREE.BufferGeometry()
   for (const b of boxes) b.dispose()
-  const mat = new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ nâu (demo)
+  const mat = opts.woodMaterial ?? new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ texture hoặc nâu phẳng
   const m = new THREE.Mesh(geo, mat)
   m.rotation.y = (opts.rotY * Math.PI) / 180
   m.position.set(opts.worldX, h / 2, opts.worldZ)
   m.castShadow = true
   m.receiveShadow = true
-  return { geos: [geo], mats: [mat], meshes: [m] }
+  return { geos: [geo], mats: opts.woodMaterial ? [] : [mat], meshes: [m] } // injected → caller dispose
 }
 
 // 8 hướng toả từ tâm: 4 GÓC + 4 TRUNG ĐIỂM cạnh (offset dx,dz so tâm). Dùng chung xà + trụ-nối (DRY).
@@ -334,7 +343,11 @@ function pushBentStrut(
     if (len > 1e-4) {
       const box = new THREE.BoxGeometry(w, len, w) // local +Y = trục đốt
       const q = new THREE.Quaternion().setFromUnitVectors(up, d.clone().normalize())
-      const m = new THREE.Matrix4().compose(prev.clone().lerp(cur, 0.5), q, new THREE.Vector3(1, 1, 1))
+      const m = new THREE.Matrix4().compose(
+        prev.clone().lerp(cur, 0.5),
+        q,
+        new THREE.Vector3(1, 1, 1)
+      )
       box.applyMatrix4(m)
       out.push(box)
     }
@@ -342,8 +355,9 @@ function pushBentStrut(
   }
 }
 
-// 8 thanh chống XIÊN từ TRUNG ĐIỂM mỗi xà dưới đâm vào TRỤC trụ giữa @45° (drop = run = L/2). Dạng chuỗi đốt
-// UỐN CONG được (seg = số đốt, curve = độ cong m). Bend trong MẶT PHẲNG ĐỨNG chứa thanh (bendDir = side⟂radial × chord).
+// 8 thanh chống XIÊN 45°: CHỈ 4 hướng CẠNH (trung điểm cạnh) xiên xuống-vào trục trụ giữa, MỖI cái + 1 BẢN SAO
+// xoay ngang 45° quanh tâm → vào 4 vị trí GÓC (cùng profile/chiều dài thanh cạnh, KHÔNG dùng radial góc dài hơn).
+// Xuất phát từ trụ dọc (rp = cạnh−inset, cao độ yBot), chuỗi đốt uốn cong (seg/curve).
 function pushDiagonalStruts(
   out: THREE.BufferGeometry[],
   cx: number,
@@ -353,25 +367,168 @@ function pushDiagonalStruts(
   yBot: number,
   w: number,
   seg: number,
-  curve: number
+  curve: number,
+  inset: number
 ): void {
-  for (const [dx, dz] of radialTargets(hw, hd)) {
+  const run = (hw + hd) / 2 - inset // 45° → thành phần ngang = đứng = run; S = run·√2
+  const c = Math.cos(Math.PI / 4)
+  const s = Math.sin(Math.PI / 4)
+  const edges: [number, number][] = [
+    [hw, 0],
+    [-hw, 0],
+    [0, hd],
+    [0, -hd],
+  ]
+  for (const [dx, dz] of edges) {
     const L = Math.hypot(dx, dz)
-    if (L < 0.2) continue
-    const start = new THREE.Vector3(cx + dx / 2, yBot, cz + dz / 2) // trung điểm xà dưới
-    const end = new THREE.Vector3(cx, yBot - L / 2, cz) // trục trụ giữa, 45°
-    const side = new THREE.Vector3(-dz / L, 0, dx / L) // ngang ⟂ bán kính = pháp tuyến mặt phẳng đứng
-    const chord = end.clone().sub(start).normalize()
-    const bendDir = new THREE.Vector3().crossVectors(side, chord).normalize() // ⟂ chord, trong mặt phẳng đứng
-    pushBentStrut(out, start, end, bendDir, seg, curve, w)
+    if (L < inset + 0.1) continue
+    const ux = dx / L
+    const uz = dz / L
+    const rp = L - inset
+    for (const rot of [false, true]) {
+      const ax = rot ? ux * c - uz * s : ux // bản sao GÓC = xoay radial 45° ngang quanh tâm
+      const az = rot ? ux * s + uz * c : uz
+      const start = new THREE.Vector3(cx + ax * rp, yBot, cz + az * rp)
+      const end = new THREE.Vector3(cx + ax * (rp - run), yBot - run, cz + az * (rp - run))
+      const side = new THREE.Vector3(-az, 0, ax) // ngang ⟂ bán kính = pháp tuyến mặt phẳng đứng
+      const chord = end.clone().sub(start).normalize()
+      const bendDir = new THREE.Vector3().crossVectors(side, chord).normalize()
+      pushBentStrut(out, start, end, bendDir, seg, curve, w)
+    }
   }
 }
 
-// Móng 'stone-pillar' (NgQuan 2026-06-05): sàn gỗ NGANG ở đỉnh + 1 TRỤ ĐÁ TRÒN TO ở giữa (đỡ chính) + 2 TẦNG
-// XÀ NGANG gỗ dưới đáy deck TOẢ ĐỒNG TÂM ra 4 GÓC + 4 TRUNG ĐIỂM cạnh (tầng dưới nhích xuống 150cm, song song;
-// bỏ qua nếu chui xuống đất) + 8 TRỤ DỌC TRÒN nối mút-ngoài 2 tầng xà (lùi 30cm, thò 30cm qua xà dưới) + 8 THANH
-// CHỐNG XIÊN từ trung điểm xà-dưới đâm vào trục trụ giữa @45° (chuỗi đốt uốn cong được: strutSegments/strutCurve).
-// 2 mesh: gỗ (deck + xà + trụ + chống merge) + đá (trụ giữa) riêng material. Trụ giữa cao = postH; r = pillarRadius. Cao tổng = foundH (≤4m).
+// KHUNG-DƯỚI stone-pillar (2 tầng 8 xà + 8 trụ + 8 chống xiên) — MESH RIÊNG + số đo RIÊNG `half` (nửa-span,
+// ĐỘC LẬP deck fw/fd → kéo deck KHÔNG ảnh hưởng). beamY = tầng trên (ngay dưới deck). Merge 1 geo. NgQuan 2026-06-05.
+function buildUnderstructure(
+  cx: number,
+  cz: number,
+  half: number,
+  beamY: number,
+  beamH: number,
+  beamTk: number,
+  h: number,
+  opts: PositionedFoundationOpts
+): THREE.BufferGeometry {
+  const out: THREE.BufferGeometry[] = []
+  pushRadialBeams(out, cx, cz, half, half, beamY, beamH, beamTk) // 8 xà tầng trên (span riêng, vuông)
+  const lowerY = beamY - (opts.postLength ?? 1500) / 1000 // chiều dài cột → vị trí xà dưới (+ xiên đi theo)
+  if (lowerY - beamH / 2 > -h / 2) {
+    pushRadialBeams(out, cx, cz, half, half, lowerY, beamH, beamTk) // 8 xà tầng dưới (chỉ khi còn trên đất)
+    const postR = (opts.postRadius ?? 67) / 1000 // bán kính cột trụ tròn (slider)
+    pushBeamPosts(out, cx, cz, half, half, beamY, lowerY, beamH, postR, 0.3, 0.3) // 8 trụ, lùi 30cm, thò 30cm
+    const seg = opts.strutSegments ?? 6
+    const curve = (opts.strutCurve ?? 0) / 1000
+    pushDiagonalStruts(out, cx, cz, half, half, lowerY, beamTk, seg, curve, 0.3) // 8 chống xiên @45° vào trụ giữa
+  }
+  const geo = mergeGeometries(out, false) ?? new THREE.BufferGeometry()
+  for (const b of out) b.dispose()
+  return geo
+}
+
+type BoxFn = (w: number, h: number, d: number, x: number, y: number, z: number) => void
+
+// Gom deck (+ lan can) thành 1 geometry. 1 box → trả thẳng (không merge thừa); >1 → merge (BoxGeometry đều
+// indexed → an toàn, né KI-004) rồi dispose box tạm.
+function mergeDeck(boxes: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  if (boxes.length === 1) return boxes[0]
+  const geo = mergeGeometries(boxes, false) ?? boxes[0]
+  for (const b of boxes) if (b !== geo) b.dispose()
+  return geo
+}
+
+// Balusters (thanh dọc thưa ~250mm) chạy theo 4 cạnh khung lan can. nx/nz chia đều, bỏ 2 đầu (đã có trụ góc).
+function pushBalustersAlong(
+  box: BoxFn,
+  cx: number,
+  cz: number,
+  halfL: number,
+  halfW: number,
+  y: number,
+  balH: number,
+  sec: number
+): void {
+  const gap = 0.25
+  const nx = Math.max(1, Math.round((2 * halfL) / gap))
+  for (let i = 1; i < nx; i++) {
+    const x = cx - halfL + (2 * halfL * i) / nx
+    box(sec, balH, sec, x, y, cz + halfW)
+    box(sec, balH, sec, x, y, cz - halfW)
+  }
+  const nz = Math.max(1, Math.round((2 * halfW) / gap))
+  for (let i = 1; i < nz; i++) {
+    const z = cz - halfW + (2 * halfW * i) / nz
+    box(sec, balH, sec, cx + halfL, y, z)
+    box(sec, balH, sec, cx - halfL, y, z)
+  }
+}
+
+// LAN CAN 4 mặt quanh deck — frame chữ nhật (halfL×halfW) đặt trên mặt deck (baseY local). 4 trụ góc + thanh
+// trên (2 cạnh X + 2 cạnh Z) + balusters thưa. Box gom vào `out` để merge CHUNG deckGeo → dùng deck material.
+function pushDeckRailing(
+  out: THREE.BufferGeometry[],
+  cx: number,
+  cz: number,
+  halfL: number,
+  halfW: number,
+  baseY: number,
+  railH: number
+): void {
+  const postSec = 0.08 // 80mm trụ góc
+  const railSec = 0.05 // 50mm thanh trên
+  const balSec = 0.03 // 30mm baluster
+  const topY = baseY + railH
+  const box: BoxFn = (w, h, d, x, y, z) => {
+    const g = new THREE.BoxGeometry(w, h, d)
+    g.translate(x, y, z)
+    out.push(g)
+  }
+  for (const sx of [-1, 1])
+    for (const sz of [-1, 1])
+      box(postSec, railH, postSec, cx + sx * halfL, baseY + railH / 2, cz + sz * halfW) // 4 trụ góc
+  for (const sz of [-1, 1])
+    box(2 * halfL, railSec, railSec, cx, topY - railSec / 2, cz + sz * halfW) // thanh trên cạnh X
+  for (const sx of [-1, 1])
+    box(railSec, railSec, 2 * halfW, cx + sx * halfL, topY - railSec / 2, cz) // thanh trên cạnh Z
+  pushBalustersAlong(
+    box,
+    cx,
+    cz,
+    halfL,
+    halfW,
+    baseY + (railH - railSec) / 2,
+    railH - railSec,
+    balSec
+  )
+}
+
+// Deck geometry: tấm gỗ ngang fw×deckThick×fd (+ lan can 4 mặt tuỳ chọn, merge chung → cùng material). baseY
+// local mặt deck = h/2 (sau mesh translate → world = h). Tách khỏi makeStonePillarFoundation (complexity ≤10).
+function buildDeckGeo(
+  fw: number,
+  fd: number,
+  cx: number,
+  cz: number,
+  h: number,
+  deckThick: number,
+  opts: PositionedFoundationOpts
+): THREE.BufferGeometry {
+  const boxes: THREE.BufferGeometry[] = []
+  const deckBox = new THREE.BoxGeometry(fw, deckThick, fd)
+  deckBox.translate(cx, h / 2 - deckThick / 2, cz)
+  boxes.push(deckBox)
+  if (opts.deckRailShow) {
+    const halfL = Math.max(0.1, (opts.deckRailLength ?? 5000) / 2000) // mm→m, nửa-dài
+    const halfW = Math.max(0.1, (opts.deckRailWidth ?? 5000) / 2000) // mm→m, nửa-rộng
+    const railH = Math.max(0.1, (opts.deckRailH ?? 900) / 1000)
+    pushDeckRailing(boxes, cx, cz, halfL, halfW, h / 2, railH) // baseY local = mặt deck (h/2)
+  }
+  return mergeDeck(boxes)
+}
+
+// Móng 'stone-pillar' (NgQuan 2026-06-05): 3 MESH RIÊNG material → (1) DECK gỗ ngang (theo fw/fd / mặt phẳng);
+// (2) KHUNG-DƯỚI gỗ (2 tầng 8 xà + 8 trụ tròn + 8 chống xiên 45°) — số đo RIÊNG `understructHalf` ĐỘC LẬP deck,
+// texture riêng (opts.understructMat); (3) TRỤ ĐÁ tròn giữa. Trụ giữa cao = postH; r = pillarRadius. Cao tổng = foundH (≤4m).
 function makeStonePillarFoundation(
   fw: number,
   fd: number,
@@ -381,45 +538,36 @@ function makeStonePillarFoundation(
 ): PartResult {
   const h = opts.h
   const deckThick = Math.min(0.12, h * 0.5)
-  const postH = Math.max(0.05, h - deckThick) // trụ chạy từ đất tới đáy deck
-  const wood: THREE.BufferGeometry[] = []
-  const deck = new THREE.BoxGeometry(fw, deckThick, fd) // mặt gỗ ngang ở đỉnh
-  deck.translate(cx, h / 2 - deckThick / 2, cz)
-  wood.push(deck)
-  // 8 XÀ NGANG dưới đáy deck, ĐỒNG TÂM (toả từ tâm/đỉnh-trụ) ra 4 GÓC + 4 TRUNG ĐIỂM cạnh. top xà = đáy deck
-  // (= đỉnh trụ) → xà gác trên trụ, đỡ deck ra mép. ang = atan2(-uz,ux) (local +X → hướng target, như woodEdge).
-  const beamTk = (opts.beamWidth ?? 100) / 1000 // bề rộng tiết diện xà (slider)
-  const beamH = Math.min((opts.beamHeight ?? 120) / 1000, postH) // bề cao (slider), kẹp ≤ khoảng hở dưới deck
-  const beamY = h / 2 - deckThick - beamH / 2 // tầng TRÊN: tâm y ngay dưới đáy deck
-  const hw = fw / 2
-  const hd = fd / 2
-  pushRadialBeams(wood, cx, cz, hw, hd, beamY, beamH, beamTk) // 8 xà tầng trên
-  const lowerY = beamY - 1.5 // tầng DƯỚI: 8 xà song song, nhích xuống 150cm
-  if (lowerY - beamH / 2 > -h / 2) {
-    pushRadialBeams(wood, cx, cz, hw, hd, lowerY, beamH, beamTk) // 8 xà tầng dưới (chỉ khi còn trên đất)
-    const postR = (0.1 / 2) * (4 / 3) // bán kính trụ tròn: cũ 0.05 (½×0.1) +1/3 = 0.0667
-    pushBeamPosts(wood, cx, cz, hw, hd, beamY, lowerY, beamH, postR, 0.3, 0.3) // 8 trụ tròn, lùi 30cm, thò 30cm qua xà dưới
-    const seg = opts.strutSegments ?? 6
-    const curve = (opts.strutCurve ?? 0) / 1000
-    pushDiagonalStruts(wood, cx, cz, hw, hd, lowerY, beamTk, seg, curve) // 8 thanh chống xiên @45° (đốt+cong)
-  }
-  const woodGeo = mergeGeometries(wood, false) ?? new THREE.BufferGeometry()
-  for (const b of wood) b.dispose()
-  const woodMat = new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ nâu (như wood-deck)
-  // Trụ đá tròn giữa: bán kính clamp để luôn nằm gọn trong deck.
+  const postH = Math.max(0.05, h - deckThick) // trụ đá chạy từ đất tới đáy deck
+  // (1) DECK — mesh riêng, theo mặt-phẳng fw/fd (+ LAN CAN 4 mặt tuỳ chọn, merge chung → dùng deck material).
+  const deckGeo = buildDeckGeo(fw, fd, cx, cz, h, deckThick, opts)
+  const deckMat = opts.woodMaterial ?? new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ texture / nâu phẳng
+  // (2) KHUNG-DƯỚI — mesh riêng, số đo RIÊNG (half ĐỘC LẬP deck; mặc định chuẩn 2.5m nửa-span).
+  const beamTk = (opts.beamWidth ?? 100) / 1000
+  const beamH = Math.min((opts.beamHeight ?? 120) / 1000, postH)
+  const beamY = h / 2 - deckThick - beamH / 2
+  const half = opts.understructHalf ?? 2.5
+  const underGeo = buildUnderstructure(cx, cz, half, beamY, beamH, beamTk, h, opts)
+  const underMat = opts.understructMat ?? new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // texture/màu RIÊNG deck
+  // (3) TRỤ ĐÁ giữa — bán kính clamp gọn trong deck.
   const r = Math.max(0.15, Math.min((opts.pillarRadius ?? 500) / 1000, Math.min(fw, fd) / 2 - 0.05))
   const pillarGeo = new THREE.CylinderGeometry(r, r, postH, 20, 1)
   pillarGeo.translate(cx, -h / 2 + postH / 2, cz)
   const stoneMat = new THREE.MeshToonMaterial({ color: COL_STONE_PILLAR })
-  const woodMesh = new THREE.Mesh(woodGeo, woodMat)
+  const deckMesh = new THREE.Mesh(deckGeo, deckMat)
+  const underMesh = new THREE.Mesh(underGeo, underMat)
   const stoneMesh = new THREE.Mesh(pillarGeo, stoneMat)
-  for (const m of [woodMesh, stoneMesh]) {
+  for (const m of [deckMesh, underMesh, stoneMesh]) {
     m.rotation.y = (opts.rotY * Math.PI) / 180
     m.position.set(opts.worldX, h / 2, opts.worldZ)
     m.castShadow = true
     m.receiveShadow = true
   }
-  return { geos: [woodGeo, pillarGeo], mats: [woodMat, stoneMat], meshes: [woodMesh, stoneMesh] }
+  // Material injected (caller-owned) → KHÔNG push mats (caller dispose); stoneMat + MeshToon tự tạo → push.
+  const mats: THREE.Material[] = [stoneMat]
+  if (!opts.woodMaterial) mats.push(deckMat)
+  if (!opts.understructMat) mats.push(underMat)
+  return { geos: [deckGeo, underGeo, pillarGeo], mats, meshes: [deckMesh, underMesh, stoneMesh] }
 }
 
 export function makePositionedFoundation(opts: PositionedFoundationOpts): PartResult {

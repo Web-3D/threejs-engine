@@ -26,6 +26,9 @@ import { TexturedSurface, type TexturedSurfaceMaps } from '../../shaders/surface
 import {
   type FenceConfig,
   GROUND_PRESETS,
+  type GroundLayer,
+  type GroundMaterialKey,
+  isGroundTexKey,
   renderPuddles,
   renderWaters,
   type SiteState,
@@ -61,6 +64,10 @@ export interface SiteRenderOpts {
   // module độc lập: lõi KHÔNG biết URL). Thiếu → 'grass-tex' fallback màu phẳng preset. + tileSizeMeters (m).
   groundTextures?: PhotoGroundMaps
   groundTileMeters?: number
+  // Material PhotoGround ĐÃ TẠO SẴN theo KEY (base + các TẦNG layer). Caller (editor) CACHE 1 lần/key — sống
+  // lab-lifetime, KHÔNG recompile mỗi rebuild; nhiều ground cùng key DÙNG CHUNG 1 material. Ưu tiên hơn
+  // groundTextures single. Lõi KHÔNG dispose (caller lo). Thiếu key → ground rơi về màu phẳng preset.
+  groundMatByKey?: Partial<Record<GroundMaterialKey, THREE.Material>>
   // Texture set cho MẶT tường rào (fence.type='wall' + fence.wallTex='cinder'/'stone') — TexturedSurface
   // (triplanar: tường DỌC nên cần). Caller LOAD theo manifest. Thiếu → tường màu phẳng. + tileSizeMeters (m).
   fenceWallTextures?: TexturedSurfaceMaps
@@ -84,6 +91,7 @@ export function renderSiteState(
 ): SiteHandle {
   if (!site.show) return { grass: null, waters: [] }
   buildGround(site, ctx, opts)
+  buildGroundLayers(site, ctx, opts) // TẦNG surface chồng (xếp lớp 3D) lên base
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
   // Cỏ né cả foundation (caller) LẪN footprint+coping MỖI hồ → không mọc xuyên mặt nước/dải viền.
   const exclude = siteGrassExclude(site, opts.exclude ?? [])
@@ -95,7 +103,8 @@ export function renderSiteState(
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
   // Rào ĐA-LỚP: dựng mỗi lớp enabled (vòng đồng tâm ở inset riêng). skipFence → editor tự dựng (_syncFence)
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
-  if (!opts.skipFence) for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
+  if (!opts.skipFence)
+    for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
   return { grass, waters }
 }
 
@@ -499,16 +508,146 @@ function lotShape(site: SiteState): THREE.Shape {
   return s
 }
 
-// grass = procedural shader (GrassGround, tier A); grass-tex = texture ảnh (PhotoGround, cần caller bơm
-// groundTextures — thiếu thì rơi xuống màu phẳng preset); soil/gravel = màu phẳng. Track: shader có dispose()
-// riêng → ctx.shaders; material phẳng → ctx.mats.
-function groundMaterial(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): THREE.Material {
-  if (site.ground === 'grass') {
-    const grass = new GrassGround({ scale: 1.0 })
-    ctx.shaders.push(grass)
-    return grass.getMaterial()
+type P2 = { x: number; y: number }
+const lerp2 = (a: number, b: number, t: number): number => a + (b - a) * t
+
+// 1 pass Sutherland-Hodgman: giữ đỉnh "inside" half-plane; cạnh cắt biên → chèn giao điểm (isect).
+function clipHalfPlane(poly: P2[], inside: (p: P2) => boolean, isect: (a: P2, b: P2) => P2): P2[] {
+  const out: P2[] = []
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[(i + poly.length - 1) % poly.length]
+    const b = poly[i]
+    const inb = inside(b)
+    if (inside(a) !== inb) out.push(isect(a, b))
+    if (inb) out.push(b)
   }
-  if (site.ground === 'grass-tex' && opts.groundTextures) {
+  return out
+}
+
+// Clip polygon vào rect [xmin,xmax]×[ymin,ymax] (4 half-plane). Né earcut VỠ khi hole nằm NGOÀI contour layer →
+// hole nước phải gọn trong rect. Trả polygon clip (rỗng nếu nước ngoài hẳn layer).
+function clipToRect(pts: P2[], xmin: number, xmax: number, ymin: number, ymax: number): P2[] {
+  let p = clipHalfPlane(
+    pts,
+    (q) => q.x >= xmin,
+    (a, b) => ({ x: xmin, y: lerp2(a.y, b.y, (xmin - a.x) / (b.x - a.x)) })
+  )
+  p = clipHalfPlane(
+    p,
+    (q) => q.x <= xmax,
+    (a, b) => ({ x: xmax, y: lerp2(a.y, b.y, (xmax - a.x) / (b.x - a.x)) })
+  )
+  p = clipHalfPlane(
+    p,
+    (q) => q.y >= ymin,
+    (a, b) => ({ x: lerp2(a.x, b.x, (ymin - a.y) / (b.y - a.y)), y: ymin })
+  )
+  p = clipHalfPlane(
+    p,
+    (q) => q.y <= ymax,
+    (a, b) => ({ x: lerp2(a.x, b.x, (ymax - a.y) / (b.y - a.y)), y: ymax })
+  )
+  return p
+}
+
+// Pool/pond đục lỗ GỒM dải EDGE/coping: rect bbox(polygon hồ) + edgeWidth — khớp đúng dải coping (rect-frame
+// bbox±ew của buildPoolEdge) → layer né cả viền, không chỉ mặt nước.
+function waterCarveWithEdge(w: WaterConfig): { x: number; z: number }[] {
+  const poly = pondWorldXZ(w)
+  const ew = w.edgeWidth / 1000
+  let x0 = Infinity
+  let x1 = -Infinity
+  let z0 = Infinity
+  let z1 = -Infinity
+  for (const p of poly) {
+    x0 = Math.min(x0, p.x)
+    x1 = Math.max(x1, p.x)
+    z0 = Math.min(z0, p.z)
+    z1 = Math.max(z1, p.z)
+  }
+  return [
+    { x: x0 - ew, z: z0 - ew },
+    { x: x1 + ew, z: z0 - ew },
+    { x: x1 + ew, z: z1 + ew },
+    { x: x0 - ew, z: z1 + ew },
+  ]
+}
+
+// Polygon (world XZ) MỌI mặt nước layer phải né: pool/pond (LÕM, GỒM dải edge/coping) + puddle (PHẲNG, đúng
+// footprint, không coping). "3 đứa" — ground KHÔNG bao giờ che mặt nước LẪN viền (NgQuan 2026-06-05).
+function allWaterCarvePolygons(site: SiteState): { x: number; z: number }[][] {
+  const out: { x: number; z: number }[][] = []
+  for (const w of renderWaters(site)) out.push(waterCarveWithEdge(w)) // pool/pond: + dải edge
+  for (const w of renderPuddles(site)) out.push(pondWorldXZ(w)) // puddle: phẳng, không edge
+  return out
+}
+
+// Geometry 1 tầng layer = ExtrudeGeometry rect (dài×rộng, tâm tại offset) dày th, ĐỤC LỖ mọi mặt nước rơi trong
+// rect (clip về rect → hole hợp lệ). Shape XY (x=worldX, y=−worldZ) → rotateX(−90) nằm ngang (đáy y=0, đỉnh th).
+function layerGeometry(
+  layer: GroundLayer,
+  th: number,
+  waters: { x: number; z: number }[][]
+): THREE.BufferGeometry {
+  const cx = layer.offsetX / 1000 // tâm shape x = worldX
+  const cy = -layer.offsetZ / 1000 // tâm shape y = −worldZ
+  const hx = layer.length / 2000
+  const hy = layer.width / 2000
+  const shape = new THREE.Shape()
+  shape.moveTo(cx - hx, cy - hy)
+  shape.lineTo(cx + hx, cy - hy)
+  shape.lineTo(cx + hx, cy + hy)
+  shape.lineTo(cx - hx, cy + hy)
+  shape.closePath()
+  for (const poly of waters) {
+    const clipped = clipToRect(
+      poly.map((q) => ({ x: q.x, y: -q.z })),
+      cx - hx,
+      cx + hx,
+      cy - hy,
+      cy + hy
+    )
+    if (clipped.length < 3) continue
+    const hole = new THREE.Path()
+    clipped.forEach((p, i) => (i === 0 ? hole.moveTo(p.x, p.y) : hole.lineTo(p.x, p.y)))
+    hole.closePath()
+    shape.holes.push(hole)
+  }
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: th, bevelEnabled: false })
+  geo.rotateX(-Math.PI / 2) // XY → XZ; depth +Z → +Y (đáy y=0, đỉnh y=th)
+  return geo
+}
+
+// TẦNG surface chồng: mỗi layer = ExtrudeGeometry RIÊNG (dài×rộng×dày + offset, ĐỤC LỖ pool/pond/puddle né-che),
+// XẾP CHỒNG Y lên base. Top che layer dưới (khoét lỗ lộ lớp dưới = phase sau). KÉO live = dời mesh.position (lỗ
+// đi theo tạm → re-carve khi buông). PhotoGround world-XZ map đúng mặt trên.
+function buildGroundLayers(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
+  const layers = site.groundLayers
+  if (!layers?.length) return
+  const waters = allWaterCarvePolygons(site) // gồm dải edge pool/pond + puddle phẳng
+  let baseY = site.groundThick / 1000 // mặt base ground = đáy layer đầu
+  layers.forEach((layer, i) => {
+    const th = layer.thickness / 1000
+    const geo = layerGeometry(layer, th, waters)
+    geo.translate(0, baseY, 0) // đáy = đỉnh lớp dưới (offset XZ đã nằm trong shape)
+    const mesh = new THREE.Mesh(geo, resolveGroundMat(layer.material, ctx, opts))
+    mesh.userData.groundLayerIdx = i // editor: Move tool nhận diện để kéo (G1+); base G0 KHÔNG có tag
+    mesh.receiveShadow = true
+    mesh.castShadow = true
+    ctx.geos.push(geo)
+    ctx.group.add(mesh)
+    baseY += th
+  })
+}
+
+// Material base ground: ưu tiên byKey; backward-compat consumer cũ chỉ bơm single groundTextures cho site.ground.
+function groundMaterial(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): THREE.Material {
+  if (
+    site.ground !== 'grass' &&
+    isGroundTexKey(site.ground) &&
+    !opts.groundMatByKey?.[site.ground] &&
+    opts.groundTextures
+  ) {
     const photo = new PhotoGround({
       maps: opts.groundTextures,
       tileSizeMeters: opts.groundTileMeters ?? 2,
@@ -516,7 +655,25 @@ function groundMaterial(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpt
     ctx.shaders.push(photo)
     return photo.getMaterial()
   }
-  const preset = GROUND_PRESETS[site.ground] // gồm fallback 'grass-tex' (olive) khi thiếu texture
+  return resolveGroundMat(site.ground, ctx, opts)
+}
+
+// Resolve material 1 ground key (base hoặc layer): grass = GrassGround (shader, ctx.shaders); tex-key + có
+// material cache (groundMatByKey) = DÙNG CHUNG material caller-owned (KHÔNG push/dispose — sống lab-lifetime,
+// hết recompile mỗi rebuild); còn lại = màu phẳng preset (ctx.mats). Caller dispose material cache ở teardown.
+function resolveGroundMat(
+  key: GroundMaterialKey,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): THREE.Material {
+  if (key === 'grass') {
+    const grass = new GrassGround({ scale: 1.0 })
+    ctx.shaders.push(grass)
+    return grass.getMaterial()
+  }
+  const cached = opts.groundMatByKey?.[key]
+  if (isGroundTexKey(key) && cached) return cached // Lab-owned cache — KHÔNG push ctx (caller dispose)
+  const preset = GROUND_PRESETS[key] // gồm fallback 'grass-tex' (olive) khi thiếu texture
   const mat = new THREE.MeshStandardMaterial({ color: preset.color, roughness: preset.roughness })
   ctx.mats.push(mat)
   return mat
@@ -583,7 +740,15 @@ export function gateWorldSpec(fence: FenceConfig, site: SiteState): GateWorldSpe
   const axis: 'x' | 'z' = gc.side <= 1 ? 'x' : 'z'
   const cx = gc.side <= 1 ? gc.posAlong : gc.side === 2 ? halfW : -halfW
   const cz = gc.side === 0 ? halfD : gc.side === 1 ? -halfD : gc.posAlong
-  return { cx, cz, axis, halfSpan: gc.halfGap, postH: gc.postH, top: site.groundThick / 1000, side: gc.side }
+  return {
+    cx,
+    cz,
+    axis,
+    halfSpan: gc.halfGap,
+    postH: gc.postH,
+    top: site.groundThick / 1000,
+    side: gc.side,
+  }
 }
 
 // Toạ độ XZ (m) 2 cột cổng = 2 mép gap trên cạnh `side`.
