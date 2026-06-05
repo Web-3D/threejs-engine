@@ -24,6 +24,7 @@ import { GrassGround } from '../../shaders/ground/GrassGround'
 import { PhotoGround, type PhotoGroundMaps } from '../../shaders/ground/PhotoGround'
 import { TexturedSurface, type TexturedSurfaceMaps } from '../../shaders/surface/TexturedSurface'
 import {
+  type FenceConfig,
   GROUND_PRESETS,
   renderPuddles,
   renderWaters,
@@ -92,7 +93,9 @@ export function renderSiteState(
   // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
   const waters = pools.map((w) => buildWater(w, site, ctx)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
-  if (site.fence.enabled && !opts.skipFence) buildSiteFence(site, ctx, opts)
+  // Rào ĐA-LỚP: dựng mỗi lớp enabled (vòng đồng tâm ở inset riêng). skipFence → editor tự dựng (_syncFence)
+  // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
+  if (!opts.skipFence) for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
   return { grass, waters }
 }
 
@@ -545,6 +548,44 @@ function gapSplit(lo: number, hi: number, gc: number, gh: number): [number, numb
   return segs
 }
 
+// Kẹp tham số cổng → GateSpec hợp lệ (gap luôn trong cạnh, chừa ≥15cm) hoặc null. DÙNG CHUNG buildSiteFence
+// (khoét gap) + gateWorldSpec (editor pick-box/drag) → single source, né drift toạ độ. null nếu không cổng.
+function gateClamp(fence: FenceConfig, halfW: number, halfD: number): GateSpec | null {
+  if (fence.type !== 'wall' || !fence.gate) return null
+  const side = fence.gateSide ?? 0
+  const spanHalf = side <= 1 ? halfW : halfD
+  const halfGap = Math.min((fence.gateWidth ?? 1400) / 2000, spanHalf - 0.15)
+  if (halfGap <= 0.1) return null
+  const lim = spanHalf - halfGap
+  const posAlong = Math.max(-lim, Math.min(lim, (fence.gatePos ?? 0) / 1000))
+  return { side, posAlong, halfGap, postH: (fence.gatePostH ?? 1600) / 1000 }
+}
+
+// Vị trí cổng trong THẾ GIỚI (m, XZ tâm gap + trục tiếp tuyến để editor kéo dọc cạnh). null nếu không cổng
+// hợp lệ. cx/cz = tâm khoảng trống; axis='x'(cạnh trước/sau) | 'z'(trái/phải) = trục trượt → gatePos. Editor
+// (ArchPlanLab) dùng để đặt pick-box + chiếu drag → gatePos. Khớp gatePostXZ (cùng gateClamp).
+export interface GateWorldSpec {
+  cx: number
+  cz: number
+  axis: 'x' | 'z'
+  halfSpan: number // m — nửa bề rộng gap (dọc tiếp tuyến)
+  postH: number // m
+  top: number // m — mặt nền (đáy box)
+  side: number
+}
+export function gateWorldSpec(fence: FenceConfig, site: SiteState): GateWorldSpec | null {
+  const inset = fence.inset / 1000
+  const halfW = site.lotWidth / 2000 - inset
+  const halfD = site.lotDepth / 2000 - inset
+  if (halfW <= 0 || halfD <= 0) return null
+  const gc = gateClamp(fence, halfW, halfD)
+  if (!gc) return null
+  const axis: 'x' | 'z' = gc.side <= 1 ? 'x' : 'z'
+  const cx = gc.side <= 1 ? gc.posAlong : gc.side === 2 ? halfW : -halfW
+  const cz = gc.side === 0 ? halfD : gc.side === 1 ? -halfD : gc.posAlong
+  return { cx, cz, axis, halfSpan: gc.halfGap, postH: gc.postH, top: site.groundThick / 1000, side: gc.side }
+}
+
 // Toạ độ XZ (m) 2 cột cổng = 2 mép gap trên cạnh `side`.
 function gatePostXZ(gate: GateSpec, halfW: number, halfD: number): [number, number][] {
   const a = gate.posAlong - gate.halfGap
@@ -813,31 +854,27 @@ function woodFenceGeos(
 // Tường rào (type='wall') + wallTex='cinder'/'stone' + caller bơm texture → MẶT = TexturedSurface (triplanar,
 // đúng mặt DỌC). Thiếu texture (hoặc 'plain') → màu phẳng. Gỗ → màu nâu phẳng. push ctx.shaders khi TexturedSurface.
 // EXPORT: caller (editor) dựng rào vào GROUP RIÊNG (dirty-check) để né rebuild rào/nước mỗi frame kéo slider rào.
-export function buildSiteFence(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
-  const inset = site.fence.inset / 1000
-  const h = site.fence.height / 1000
+// Dựng 1 LỚP rào (fence) vào ctx. site = lô (lotWidth/Depth/groundThick); fence = config lớp này (đa-lớp →
+// caller loop site.fences). opts.fenceWallMat (nếu có) = material CACHED riêng cho lớp này (editor bơm per-kind).
+export function buildSiteFence(
+  fence: FenceConfig,
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): void {
+  const inset = fence.inset / 1000
+  const h = fence.height / 1000
   const top = site.groundThick / 1000
   const halfW = site.lotWidth / 2000 - inset
   const halfD = site.lotDepth / 2000 - inset
   if (halfW <= 0 || halfD <= 0) return
-  const isWall = site.fence.type === 'wall'
-  // CỔNG (chỉ type='wall'): khoét gap 1 cạnh + 2 cột. Kẹp halfGap/posAlong để gap luôn nằm trong cạnh (chừa
-  // ≥15cm mỗi đầu). spanHalf = halfW (cạnh trước/sau) | halfD (cạnh trái/phải).
-  let gate: GateSpec | undefined
-  if (isWall && site.fence.gate) {
-    const side = site.fence.gateSide ?? 0
-    const spanHalf = side <= 1 ? halfW : halfD
-    const halfGap = Math.min((site.fence.gateWidth ?? 1400) / 2000, spanHalf - 0.15)
-    if (halfGap > 0.1) {
-      const lim = spanHalf - halfGap
-      const posAlong = Math.max(-lim, Math.min(lim, (site.fence.gatePos ?? 0) / 1000))
-      gate = { side, posAlong, halfGap, postH: (site.fence.gatePostH ?? 1600) / 1000 }
-    }
-  }
+  const isWall = fence.type === 'wall'
+  // CỔNG (chỉ type='wall'): khoét gap 1 cạnh + 2 cột. gateClamp lo kẹp halfGap/posAlong (gap luôn trong cạnh).
+  const gate = gateClamp(fence, halfW, halfD) ?? undefined
   // Đá (wallTex='stone') → geometry đỉnh-tròn-gợn + dày hơn (0.18), THEO LỰA CHỌN texture (không đợi load
   // xong: đang load vẫn ra khối đá xám tạm). Cinder/plain → box phẳng mỏng (0.12). Gỗ → cọc + thanh ngang.
   // fenceLodBox (đang kéo): stone tạm dùng box mỏng (rẻ) — material stone cached vẫn áp (triplanar lo).
-  const isStone = isWall && (site.fence.wallTex ?? 'plain') === 'stone' && !opts.fenceLodBox
+  const isStone = isWall && (fence.wallTex ?? 'plain') === 'stone' && !opts.fenceLodBox
   const geos = !isWall
     ? woodFenceGeos(halfW, halfD, h, top)
     : isStone
@@ -848,7 +885,7 @@ export function buildSiteFence(site: SiteState, ctx: SiteRenderCtx, opts: SiteRe
   if (!merged) return
   // Vật liệu MẶT tường: (1) fenceWallMat CACHED (editor — KHÔNG push shaders/mats, KHÔNG recompile mỗi rebuild
   // → trị tụt fps kéo cổng); (2) fenceWallTextures → tạo TexturedSurface (headless, push shaders); (3) màu phẳng.
-  const wantTex = isWall && (site.fence.wallTex ?? 'plain') !== 'plain'
+  const wantTex = isWall && (fence.wallTex ?? 'plain') !== 'plain'
   let mat: THREE.Material
   if (wantTex && opts.fenceWallMat) {
     mat = opts.fenceWallMat // cached — caller sở hữu dispose

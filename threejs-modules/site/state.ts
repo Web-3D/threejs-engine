@@ -32,6 +32,24 @@ export interface FenceConfig {
   gatePostH?: number // mm — chiều cao 2 cột cổng (độc lập chiều cao tường — trụ cổng thường cao hơn)
 }
 
+// Factory 1 lớp rào. ĐA-LỚP: site.fences[] — mỗi lớp = 1 vòng rào đồng tâm ở inset RIÊNG (lớp ngoài inset
+// nhỏ, lớp trong inset lớn). enabled mặc định true (lớp đầu); lớp thêm-mới editor stagger inset để khỏi chồng.
+export function makeFence(overrides: Partial<FenceConfig> = {}): FenceConfig {
+  return {
+    enabled: true,
+    type: 'wood',
+    height: 1200,
+    inset: 100,
+    wallTex: 'plain',
+    gate: false,
+    gateSide: 0,
+    gateWidth: 1400,
+    gatePos: 0,
+    gatePostH: 1600,
+    ...overrides,
+  }
+}
+
 // Cỏ 3D thật (tier B — GrassBlades instanced) = LỚP THỰC VẬT độc lập surface: render khi enabled, mọc trên
 // nền BẤT KỲ (grass/soil/gravel) — KHÔNG còn dính ground==='grass' (tách lớp material vs vegetation).
 // REBUILD TĂNG DẦN (preview-first): B0 = hình dáng trần. Thêm dần shape/màu-gradient/cong/xoắn/
@@ -114,7 +132,7 @@ export interface SiteState {
   ground: GroundMaterialKey
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
-  fence: FenceConfig
+  fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
 }
 
 // Hồ LÕM render được = pool & pond ĐANG BẬT (có basin đáy+vách + KHOÉT lỗ nền). Dùng bởi renderer (basin/
@@ -177,7 +195,7 @@ export function defaultSiteState(): SiteState {
       contactRadius: 0.07, // 7cm rộng ngang (phủ kín khe giữa lá → nền gốc liền mảng tối)
     },
     waters: defaultWaters(),
-    fence: { enabled: true, type: 'wood', height: 1200, inset: 100 },
+    fences: [makeFence()],
   }
 }
 
@@ -261,6 +279,21 @@ function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): Fenc
     gatePos: num(r.gatePos, 0),
     gatePostH: clamp(num(r.gatePostH, 1600), 600, 3500),
   }
+}
+
+// Mảng rào — 2 nguồn (ưu tiên giảm dần): fences[] (format mới) → fence đơn cũ (MIGRATE → [fence]) → default.
+// Tolerant: phần tử sai vẫn parse (parseFence default-fill), tối đa 8 lớp. Backward-compat không bump schema.
+function parseFences(rawArr: unknown, legacy: Partial<FenceConfig> | undefined, d: FenceConfig): FenceConfig[] {
+  if (Array.isArray(rawArr)) {
+    const out: FenceConfig[] = []
+    for (const f of rawArr) {
+      out.push(parseFence(f as Partial<FenceConfig>, d))
+      if (out.length >= 8) break
+    }
+    return out.length ? out : [makeFence()]
+  }
+  if (legacy && typeof legacy === 'object') return [parseFence(legacy, d)] // design cũ: 1 rào đơn → [rào]
+  return [makeFence()]
 }
 
 function parseColor(v: unknown, fallback: number): number {
@@ -383,7 +416,8 @@ export function parseSite(raw: unknown): SiteState {
   const d = defaultSiteState()
   if (!raw || typeof raw !== 'object') return d
   const o = raw as Partial<SiteState> & {
-    fence?: Partial<FenceConfig>
+    fences?: unknown
+    fence?: Partial<FenceConfig> // legacy: design cũ lưu 1 rào đơn → migrate trong parseFences
     grass3d?: Partial<Grass3DConfig>
     waters?: unknown
     water?: Partial<WaterConfig> // legacy: design cũ lưu 1 hồ đơn → migrate trong parseWaters
@@ -396,6 +430,6 @@ export function parseSite(raw: unknown): SiteState {
     ground: parseGround(o.ground, d.ground),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
     waters: parseWaters(o.waters, o.water),
-    fence: parseFence(o.fence, d.fence),
+    fences: parseFences(o.fences, o.fence, d.fences[0]),
   }
 }
