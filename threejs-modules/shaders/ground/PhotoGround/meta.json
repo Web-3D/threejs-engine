@@ -1,0 +1,10 @@
+{
+  "name": "PhotoGround",
+  "version": "1.0.0",
+  "category": "shaders",
+  "description": "Ground PBR từ texture ảnh (scan) — map/normal/rough/ao, lát world-XZ độc lập geometry UV",
+  "status": "stable",
+  "dependencies": ["three"],
+  "tags": ["ground", "pbr", "texture", "world-space", "tiling", "node-material"],
+  "three-version": ">=0.174"
+}

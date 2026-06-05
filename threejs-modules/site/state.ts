@@ -12,7 +12,9 @@
 // ── State types ────────────────────────────────────────────────────────────────
 
 // Loại bề mặt nền lô (tier A material — G0 màu phẳng, nâng cấp procedural sau theo material-roadmap).
-export type GroundMaterialKey = 'grass' | 'soil' | 'gravel'
+// 'grass' = procedural GrassGround; 'grass-tex' = texture ảnh (PhotoGround, cần caller bơm groundTextures —
+// fallback màu phẳng nếu thiếu); 'soil'/'gravel' = màu phẳng preset.
+export type GroundMaterialKey = 'grass' | 'grass-tex' | 'soil' | 'gravel'
 
 export interface FenceConfig {
   enabled: boolean
@@ -121,7 +123,8 @@ export function renderPuddles(site: SiteState): WaterConfig[] {
 // ── Presets ──────────────────────────────────────────────────────────────────────
 
 export const GROUND_PRESETS: Record<GroundMaterialKey, { color: number; roughness: number }> = {
-  grass: { color: 0x4a7c3a, roughness: 0.95 }, // cỏ xanh
+  grass: { color: 0x4a7c3a, roughness: 0.95 }, // cỏ xanh (procedural — preset chỉ fallback)
+  'grass-tex': { color: 0x546029, roughness: 0.92 }, // olive (= avgColor uncut-grass) — fallback khi thiếu texture
   soil: { color: 0x6b4a2f, roughness: 1.0 }, // đất nâu
   gravel: { color: 0x8a8680, roughness: 0.9 }, // sỏi xám
 }
@@ -232,7 +235,7 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 function parseGround(v: unknown, fallback: GroundMaterialKey): GroundMaterialKey {
-  return v === 'soil' || v === 'gravel' || v === 'grass' ? v : fallback
+  return v === 'soil' || v === 'gravel' || v === 'grass' || v === 'grass-tex' ? v : fallback
 }
 
 function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): FenceConfig {

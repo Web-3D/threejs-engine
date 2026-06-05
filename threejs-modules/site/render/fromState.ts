@@ -20,6 +20,7 @@ import { MeshStandardNodeMaterial } from 'three/webgpu'
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
 import { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
+import { PhotoGround, type PhotoGroundMaps } from '../../shaders/ground/PhotoGround'
 import {
   GROUND_PRESETS,
   renderPuddles,
@@ -53,6 +54,10 @@ export interface SiteRenderOpts {
   // Bỏ qua dựng cỏ (caller TỰ quản cỏ riêng qua buildSiteGrass + dirty-check để né re-scatter mỗi
   // edit). Khi true → handle.grass = null. Mặc định false (consumer khác giữ hành vi cũ: lõi dựng cỏ).
   skipGrass?: boolean
+  // Texture set cho ground 'grass-tex' (PhotoGround) — caller LOAD theo manifest assets/textures (rule
+  // module độc lập: lõi KHÔNG biết URL). Thiếu → 'grass-tex' fallback màu phẳng preset. + tileSizeMeters (m).
+  groundTextures?: PhotoGroundMaps
+  groundTileMeters?: number
 }
 
 // Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0). Trả handle (grass) cho live-tune.
@@ -62,7 +67,7 @@ export function renderSiteState(
   opts: SiteRenderOpts = {}
 ): SiteHandle {
   if (!site.show) return { grass: null, waters: [] }
-  buildGround(site, ctx)
+  buildGround(site, ctx, opts)
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
   // Cỏ né cả foundation (caller) LẪN footprint+coping MỖI hồ → không mọc xuyên mặt nước/dải viền.
   const exclude = siteGrassExclude(site, opts.exclude ?? [])
@@ -440,7 +445,7 @@ export function grassBuildSig(site: SiteState, exclude: GrassExcludeRect[]): str
 // Nền lô. PBR nhận IBL + đổ bóng. Lô tâm world (0,0). KHÔNG hồ → BoxGeometry dày (đáy y=0, top y=t).
 // CÓ hồ → ShapeGeometry PHẲNG ở mặt nền (y=t) KHOÉT LỖ polygon hồ: KHÔNG có mặt-cắt-dày → hết "đường xanh
 // cỏ" ở mép hồ (cut-face của slab cũ cao = groundThick, càng dày càng lộ). Vách basin tự chạy rim→đáy.
-function buildGround(site: SiteState, ctx: SiteRenderCtx): void {
+function buildGround(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
   const t = site.groundThick / 1000
   let geo: THREE.BufferGeometry
   if (renderWaters(site).length > 0) {
@@ -451,7 +456,7 @@ function buildGround(site: SiteState, ctx: SiteRenderCtx): void {
     geo = new THREE.BoxGeometry(site.lotWidth / 1000, t, site.lotDepth / 1000)
     geo.translate(0, t / 2, 0) // box tâm → đáy y=0
   }
-  const mesh = new THREE.Mesh(geo, groundMaterial(site, ctx))
+  const mesh = new THREE.Mesh(geo, groundMaterial(site, ctx, opts))
   mesh.receiveShadow = true
   ctx.geos.push(geo)
   ctx.group.add(mesh)
@@ -476,15 +481,24 @@ function lotShape(site: SiteState): THREE.Shape {
   return s
 }
 
-// grass = procedural shader (GrassGround, tier A — trông thật); soil/gravel = màu phẳng (nâng cấp sau).
-// Track đúng nơi: shader có dispose() riêng → ctx.shaders; material phẳng → ctx.mats.
-function groundMaterial(site: SiteState, ctx: SiteRenderCtx): THREE.Material {
+// grass = procedural shader (GrassGround, tier A); grass-tex = texture ảnh (PhotoGround, cần caller bơm
+// groundTextures — thiếu thì rơi xuống màu phẳng preset); soil/gravel = màu phẳng. Track: shader có dispose()
+// riêng → ctx.shaders; material phẳng → ctx.mats.
+function groundMaterial(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): THREE.Material {
   if (site.ground === 'grass') {
     const grass = new GrassGround({ scale: 1.0 })
     ctx.shaders.push(grass)
     return grass.getMaterial()
   }
-  const preset = GROUND_PRESETS[site.ground]
+  if (site.ground === 'grass-tex' && opts.groundTextures) {
+    const photo = new PhotoGround({
+      maps: opts.groundTextures,
+      tileSizeMeters: opts.groundTileMeters ?? 2,
+    })
+    ctx.shaders.push(photo)
+    return photo.getMaterial()
+  }
+  const preset = GROUND_PRESETS[site.ground] // gồm fallback 'grass-tex' (olive) khi thiếu texture
   const mat = new THREE.MeshStandardMaterial({ color: preset.color, roughness: preset.roughness })
   ctx.mats.push(mat)
   return mat
