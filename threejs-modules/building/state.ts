@@ -111,6 +111,8 @@ export interface StructureState {
   foundOh: RoofOverhang // m — móng nhô riêng 4 hướng N/E/S/W tính TỪ mặt ngoài tường (min 0, max 2)
   foundType?: 'concrete' | 'wood-deck' | 'stone-pillar' // móng: bê tông khối | sàn gỗ Nhật (lưới cột) | sàn gỗ trên 1 TRỤ ĐÁ tròn giữa + 2 tầng xà toả ra góc/cạnh + 8 trụ dọc nối. Optional → backward-compat
   deckPostSpacing?: number // mm — khoảng cách cột deck sàn gỗ (wood-deck): nhỏ = dày. Optional, default 1500
+  deckPostInset?: number // mm — cột chống (wood-deck) LÙI vào từ mép deck mỗi cạnh → tách cột khỏi mép sàn. Optional, default 50
+  deckPostSize?: number // mm — CẠNH tiết diện cột chống vuông (wood-deck): lớn = cột to. Optional, default 120
   pillarRadius?: number // mm — bán kính trụ đá giữa (stone-pillar): cao trụ = foundH. Optional, default 500
   beamWidth?: number // mm — bề RỘNG tiết diện 16 xà (stone-pillar). Optional, default 100
   beamHeight?: number // mm — bề CAO tiết diện 16 xà (stone-pillar); render kẹp ≤ khoảng hở dưới deck. Optional, default 120
@@ -237,6 +239,8 @@ export function mkStructure(): StructureState {
     foundOh: { n: 1, e: 1, s: 1, w: 1 }, // 1m nhô (Expand) mỗi mặt — preset stone-pillar
     foundType: 'stone-pillar', // default = trụ đá (preset nhà sàn); đổi concrete/wood-deck ở GUI ▸ Type
     deckPostSpacing: 1500, // 1.5m giữa các cột deck (wood-deck)
+    deckPostInset: 50, // 5cm cột chống lùi vào từ mép deck (wood-deck)
+    deckPostSize: 120, // 120mm cạnh tiết diện cột chống vuông (wood-deck)
     pillarRadius: 600, // 0.6m bán kính trụ đá giữa (stone-pillar)
     beamWidth: 210, // 210mm bề rộng tiết diện xà (stone-pillar)
     beamHeight: 250, // 250mm bề cao tiết diện xà (stone-pillar)

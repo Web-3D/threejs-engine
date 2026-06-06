@@ -30,6 +30,7 @@ import {
 } from '../build'
 import { makeRoof } from '../parts/RoofShape'
 import {
+  type GroundDrop,
   makePositionedBalcony,
   makePositionedColumn,
   makePositionedFoundation,
@@ -89,6 +90,9 @@ export interface BuildRenderCtx {
   // Material VỎ CÂY KHUNG-DƯỚI stone-pillar (understructMaterial='bark-tex') = Tree Bark — tuỳ chọn thứ 2 cho
   // khung-dưới (TexturedSurface triplanar, cache). Thiếu → MeshToon. KHÔNG push ctx.mats.
   underBarkMat?: THREE.Material
+  // Vùng nền tụt (lòng hồ pool/pond) trong WORLD mét — caller (integrator) tính từ site.waters rồi bơm vào.
+  // Cột chống móng (wood-deck post / stone-pillar trụ giữa) nằm trên đâm sâu tới đáy hồ. Thiếu → cột tới rim.
+  groundDrops?: GroundDrop[]
 }
 
 // SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
@@ -130,6 +134,8 @@ class StateRenderer {
   private out: Placement[] = []
   private asm!: WallAsmCtx
   private plainWalls = false // LOD lúc kéo: ép mọi tường về phẳng ('none') — bỏ brick-3d/gỗ instanced (rất nặng)
+  private plainFoundation = false // LOD móng RIÊNG: ép concrete (bỏ lưới cột deck/trụ). TÁCH plainWalls để xem-tĩnh
+  // & kéo-nguyên-nhà VẪN thấy cột (định vị trên hồ); chỉ element-drag (rebuild/frame) mới bật. Default = plainWalls.
   private hidden = new Set<string>() // floor.id ẩn — bỏ dựng mesh/pick nhưng GIỮ chiều cao (stacking đúng)
   private filter?: (instId: string) => boolean // lọc instance để dựng (split-render lúc kéo); giữ stacking
   private floorInstances: ShapeInstance[] = [] // instance CÙNG TẦNG đang dựng — cho đục-lỗ shape lồng (#3)
@@ -141,9 +147,11 @@ class StateRenderer {
     state: BuildingState,
     plainWalls = false,
     hidden = new Set<string>(),
-    filter?: (instId: string) => boolean
+    filter?: (instId: string) => boolean,
+    plainFoundation = plainWalls // mặc định móng theo tường (backward-compat); caller bơm false để giữ cột
   ): Placement[] {
     this.plainWalls = plainWalls
+    this.plainFoundation = plainFoundation
     this.hidden = hidden
     this.filter = filter
     this.asm = {
@@ -302,10 +310,13 @@ class StateRenderer {
         worldZ: inst.posZ / 1000,
         rotY: inst.rotY,
         openings: this.nestedOpenings(inst, (s) => s.showFoundation), // #3: khoét chỗ shape nhỏ lồng (cũng có móng)
-        // LOD lúc kéo (plainWalls): ép 'concrete' = slab phẳng, BỎ lưới cột deck (rất nặng khi rebuild/frame).
-        // Buông tay → full 'wood-deck' lại. Footprint/cao giữ nguyên → không nhảy hình.
-        foundType: this.plainWalls ? 'concrete' : inst.structure.foundType, // #6 wood-deck/stone-pillar
+        // LOD móng (plainFoundation, TÁCH plainWalls): ép 'concrete' = box phẳng, BỎ lưới cột deck/trụ (nặng khi
+        // rebuild/frame element-drag). Xem-tĩnh & kéo-nguyên-nhà → plainFoundation=false → GIỮ cột (định vị trên hồ).
+        foundType: this.plainFoundation ? 'concrete' : inst.structure.foundType, // #6 wood-deck/stone-pillar
         deckPostSpacing: inst.structure.deckPostSpacing, // #10: mật độ lưới cột deck
+        deckPostInset: inst.structure.deckPostInset, // mm — cột chống lùi vào từ mép deck (wood-deck)
+        deckPostSize: inst.structure.deckPostSize, // mm — cạnh tiết diện cột chống vuông (wood-deck)
+        groundDrops: this.ctx.groundDrops, // lòng hồ pool/pond → cột chống đâm sâu tới đáy
         pillarRadius: inst.structure.pillarRadius, // bán kính trụ đá giữa (stone-pillar)
         beamWidth: inst.structure.beamWidth, // bề rộng tiết diện 16 xà (stone-pillar)
         beamHeight: inst.structure.beamHeight, // bề cao tiết diện 16 xà (stone-pillar)
@@ -638,9 +649,12 @@ export function renderBuildingState(
   hiddenFloors?: Set<string>, // floor.id ẩn (editor) — bỏ dựng, giữ stacking. undefined = hiện tất cả
   // Lọc instance để DỰNG (vẫn cộng chiều cao stacking cho instance bị lọc). Cho editor SPLIT-render lúc kéo:
   // shape đang kéo → 1 group riêng (translate/rebuild rẻ), shape khác → group static (dựng 1 lần). undefined = dựng tất cả.
-  filter?: (instId: string) => boolean
+  filter?: (instId: string) => boolean,
+  // LOD móng RIÊNG: undefined → theo plainWalls (backward-compat); false → GIỮ cột (wood-deck/stone-pillar) dù
+  // tường phẳng → xem-tĩnh & kéo-nguyên-nhà thấy cột để định vị trên hồ. true → concrete (element-drag/frame).
+  plainFoundation?: boolean
 ): Placement[] {
-  return new StateRenderer(ctx).run(state, plainWalls, hiddenFloors, filter)
+  return new StateRenderer(ctx).run(state, plainWalls, hiddenFloors, filter, plainFoundation)
 }
 
 /**

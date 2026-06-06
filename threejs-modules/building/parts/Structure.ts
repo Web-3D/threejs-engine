@@ -128,6 +128,14 @@ function buildBeams(cfg: StructureConfig, mat: THREE.Material): GeoMeshPair {
 // Dùng bởi ArchPlanLab._buildStructureForInstance().
 // Kích thước từ turtle bbox — không cần bodyW/bodyH/numFloors.
 
+// Vùng nền HẠ THẤP (vd lòng hồ pool/pond) trong frame WORLD (mét). Cột chống móng nằm TRONG polygon này đâm
+// sâu thêm `dropY` xuống đáy. DOMAIN-NEUTRAL: building-kit KHÔNG biết "nước" — integrator (editor) tính từ
+// site.waters rồi bơm qua ctx. poly = footprint world (rect → 4 góc; free → polygon). NgQuan 2026-06-06.
+export interface GroundDrop {
+  poly: { x: number; z: number }[] // world meters — polygon footprint vùng nền tụt
+  dropY: number // mét — đáy sâu hơn mặt nền móng bao nhiêu → cột trong vùng kéo dài thêm bấy nhiêu
+}
+
 export interface PositionedFoundationOpts {
   bboxW: number // meters — turtle polygon bbox width (wall centerlines)
   bboxD: number // meters — turtle polygon bbox depth
@@ -140,6 +148,9 @@ export interface PositionedFoundationOpts {
   openings?: SlabOpening[] // lỗ khoét móng — shape LỒNG (#3): khoét móng shape lớn để nhét shape nhỏ (né z-fight)
   foundType?: 'concrete' | 'wood-deck' | 'stone-pillar' // bê tông khối | sàn gỗ Nhật (lưới cột) | sàn gỗ trên 1 trụ đá giữa + váy
   deckPostSpacing?: number // m? KHÔNG — mm (đồng bộ state); #10 khoảng cách lưới cột deck (default 1500mm)
+  deckPostInset?: number // mm — cột chống (wood-deck) LÙI vào từ mép deck mỗi cạnh → cột không sát mép sàn. Default 50
+  deckPostSize?: number // mm — CẠNH tiết diện cột chống vuông (wood-deck): lớn = cột to. Default 120
+  groundDrops?: GroundDrop[] // vùng nền tụt (lòng hồ pool/pond) — cột chống nằm trên đâm sâu tới đáy. Default rỗng
   pillarRadius?: number // mm — bán kính trụ đá giữa (stone-pillar); cao trụ = h. Default 500
   beamWidth?: number // mm — bề rộng tiết diện 16 xà (stone-pillar). Default 100
   beamHeight?: number // mm — bề cao tiết diện 16 xà (stone-pillar); kẹp ≤ khoảng hở dưới deck. Default 120
@@ -203,8 +214,9 @@ function boxFoundationGeo(
   return geo
 }
 
-// #6 Móng sàn gỗ Nhật (engawa/高床式): MẶT GỖ NGANG (deck) ở đỉnh + 4 CỘT VUÔNG ở 4 góc (thay 4 vách bê
-// tông). deck dày ~120mm đỡ tường; cột vuông 120mm chống từ đất lên đáy deck. Merge 1 mesh gỗ nâu (toon).
+// #6 Móng sàn gỗ Nhật (engawa/高床式): MẶT GỖ NGANG (deck) ở đỉnh + LƯỚI CỘT VUÔNG chống xuống đất. Deck và cột
+// chống = 2 MESH RIÊNG, 2 material riêng (deck = woodMaterial; cột = understructMat) → vân khác nhau, KHÔNG
+// chung texture. Cột LÙI `deckPostInset` (mm) vào từ mép deck → không sát mép sàn. NgQuan 2026-06-06.
 function makeWoodDeckFoundation(
   fw: number,
   fd: number,
@@ -214,36 +226,93 @@ function makeWoodDeckFoundation(
 ): PartResult {
   const h = opts.h
   const deckThick = Math.min(0.12, h * 0.5) // ván deck ~120mm (hoặc nửa chiều cao nếu móng thấp)
-  const postSize = 0.12 // cột vuông 120mm
   const postH = Math.max(0.05, h - deckThick)
-  const boxes: THREE.BufferGeometry[] = []
-  const deck = new THREE.BoxGeometry(fw, deckThick, fd) // mặt gỗ ngang ở đỉnh
-  deck.translate(cx, h / 2 - deckThick / 2, cz)
-  boxes.push(deck)
-  // #10 Lưới cột ĐỀU theo diện tích deck (gồm 4 góc). Mật độ = deckPostSpacing (mm→m). Merge nên rẻ (12 tri/cột, 1 draw).
+  const deckGeo = new THREE.BoxGeometry(fw, deckThick, fd) // (1) DECK — mặt gỗ ngang ở đỉnh
+  deckGeo.translate(cx, h / 2 - deckThick / 2, cz)
+  const postsGeo = buildDeckPosts(fw, fd, cx, cz, h, postH, opts) // (2) CỘT CHỐNG — lưới, lùi mép
+  const deckMat = opts.woodMaterial ?? new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ deck (planks/nâu)
+  const postMat = opts.understructMat ?? new THREE.MeshToonMaterial({ color: 0x7d5a39 }) // cột: vân RIÊNG, nâu sậm hơn
+  const deckMesh = new THREE.Mesh(deckGeo, deckMat)
+  const postMesh = new THREE.Mesh(postsGeo, postMat)
+  for (const m of [deckMesh, postMesh]) {
+    m.rotation.y = (opts.rotY * Math.PI) / 180
+    m.position.set(opts.worldX, h / 2, opts.worldZ)
+    m.castShadow = true
+    m.receiveShadow = true
+  }
+  const mats: THREE.Material[] = [] // chỉ fallback MeshToon vào mats (caller dispose); injected → caller sở hữu
+  if (!opts.woodMaterial) mats.push(deckMat)
+  if (!opts.understructMat) mats.push(postMat)
+  return { geos: [deckGeo, postsGeo], mats, meshes: [deckMesh, postMesh] }
+}
+
+// Ray-casting point-in-polygon (XZ). poly = world meters. Dùng test cột có nằm trên lòng hồ không.
+function pointInPoly(x: number, z: number, poly: { x: number; z: number }[]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x
+    const zi = poly[i].z
+    const xj = poly[j].x
+    const zj = poly[j].z
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside
+  }
+  return inside
+}
+
+// Cột tại LOCAL (lx,lz) trong frame móng → WORLD xz (xoay rotY quanh tâm building Ry: x'=x·cos+z·sin,
+// z'=−x·sin+z·cos, rồi +worldX/Z). Trả dropY LỚN NHẤT của các GroundDrop chứa điểm (0 = không trên hồ nào).
+function postDropAt(lx: number, lz: number, opts: PositionedFoundationOpts): number {
+  const drops = opts.groundDrops
+  if (!drops?.length) return 0
+  const a = (opts.rotY * Math.PI) / 180
+  const c = Math.cos(a)
+  const s = Math.sin(a)
+  const wx = opts.worldX + lx * c + lz * s
+  const wz = opts.worldZ - lx * s + lz * c
+  let best = 0
+  for (const d of drops) {
+    if (d.dropY > best && pointInPoly(wx, wz, d.poly)) best = d.dropY
+  }
+  return best
+}
+
+// Lưới cột vuông 120mm chống từ đất lên đáy deck, ĐỀU theo diện tích deck (gồm 4 góc). Mật độ = deckPostSpacing
+// (mm→m). LÙI `deckPostInset` (mm) vào trong từ mép deck mỗi cạnh → cột không trồi sát mép sàn. Cột nằm trên
+// lòng hồ (groundDrops) → đáy đâm sâu thêm tới đáy hồ. Merge 1 geo (rẻ: 12 tri/cột, 1 draw). Tách hàm Rule-50.
+function buildDeckPosts(
+  fw: number,
+  fd: number,
+  cx: number,
+  cz: number,
+  h: number,
+  postH: number,
+  opts: PositionedFoundationOpts
+): THREE.BufferGeometry {
+  const postSize = Math.max(0.02, (opts.deckPostSize ?? 120) / 1000) // mm→m, cạnh tiết diện cột vuông
+  const ins = Math.max(0, (opts.deckPostInset ?? 50) / 1000) // mm→m, lùi mép mỗi cạnh
+  const spanW = Math.max(postSize, fw - 2 * ins) // vùng đặt cột sau khi lùi
+  const spanD = Math.max(postSize, fd - 2 * ins)
   const spacing = Math.max(0.6, (opts.deckPostSpacing ?? 1500) / 1000)
-  const nx = Math.max(2, Math.round(fw / spacing) + 1)
-  const nz = Math.max(2, Math.round(fd / spacing) + 1)
-  const x0 = cx - fw / 2 + postSize / 2
-  const z0 = cz - fd / 2 + postSize / 2
-  const sx = nx > 1 ? (fw - postSize) / (nx - 1) : 0
-  const sz = nz > 1 ? (fd - postSize) / (nz - 1) : 0
+  const nx = Math.max(2, Math.round(spanW / spacing) + 1)
+  const nz = Math.max(2, Math.round(spanD / spacing) + 1)
+  const x0 = cx - spanW / 2 + postSize / 2 // tâm cột đầu (mặt ngoài = mép deck − ins)
+  const z0 = cz - spanD / 2 + postSize / 2
+  const sx = (spanW - postSize) / (nx - 1)
+  const sz = (spanD - postSize) / (nz - 1)
+  const boxes: THREE.BufferGeometry[] = []
   for (let i = 0; i < nx; i++) {
     for (let j = 0; j < nz; j++) {
-      const post = new THREE.BoxGeometry(postSize, postH, postSize)
-      post.translate(x0 + i * sx, -h / 2 + postH / 2, z0 + j * sz)
+      const px = x0 + i * sx
+      const pz = z0 + j * sz
+      const drop = postDropAt(px, pz, opts) // cột trên lòng hồ → kéo dài thêm tới đáy
+      const post = new THREE.BoxGeometry(postSize, postH + drop, postSize)
+      post.translate(px, -h / 2 + postH / 2 - drop / 2, pz) // đỉnh giữ dưới deck, đáy tụt drop
       boxes.push(post)
     }
   }
   const geo = mergeGeometries(boxes, false) ?? new THREE.BufferGeometry()
   for (const b of boxes) b.dispose()
-  const mat = opts.woodMaterial ?? new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // gỗ texture hoặc nâu phẳng
-  const m = new THREE.Mesh(geo, mat)
-  m.rotation.y = (opts.rotY * Math.PI) / 180
-  m.position.set(opts.worldX, h / 2, opts.worldZ)
-  m.castShadow = true
-  m.receiveShadow = true
-  return { geos: [geo], mats: opts.woodMaterial ? [] : [mat], meshes: [m] } // injected → caller dispose
+  return geo
 }
 
 // 8 hướng toả từ tâm: 4 GÓC + 4 TRUNG ĐIỂM cạnh (offset dx,dz so tâm). Dùng chung xà + trụ-nối (DRY).
@@ -549,10 +618,11 @@ function makeStonePillarFoundation(
   const half = opts.understructHalf ?? 2.5
   const underGeo = buildUnderstructure(cx, cz, half, beamY, beamH, beamTk, h, opts)
   const underMat = opts.understructMat ?? new THREE.MeshToonMaterial({ color: 0x9b6b43 }) // texture/màu RIÊNG deck
-  // (3) TRỤ ĐÁ giữa — bán kính clamp gọn trong deck.
+  // (3) TRỤ ĐÁ giữa — bán kính clamp gọn trong deck. Tâm trụ trên lòng hồ → đâm sâu thêm tới đáy.
   const r = Math.max(0.15, Math.min((opts.pillarRadius ?? 500) / 1000, Math.min(fw, fd) / 2 - 0.05))
-  const pillarGeo = new THREE.CylinderGeometry(r, r, postH, 20, 1)
-  pillarGeo.translate(cx, -h / 2 + postH / 2, cz)
+  const drop = postDropAt(cx, cz, opts)
+  const pillarGeo = new THREE.CylinderGeometry(r, r, postH + drop, 20, 1)
+  pillarGeo.translate(cx, -h / 2 + postH / 2 - drop / 2, cz)
   const stoneMat = new THREE.MeshToonMaterial({ color: COL_STONE_PILLAR })
   const deckMesh = new THREE.Mesh(deckGeo, deckMat)
   const underMesh = new THREE.Mesh(underGeo, underMat)
@@ -747,35 +817,44 @@ export function makePositionedBalcony(opts: PositionedBalconyOpts): PartResult {
   )
 
   const style = opts.railStyle ?? 'solid'
-  if (style === 'solid') {
-    buildSolidRails(add, concrete, opts, z0, cz)
-  } else {
-    // 3 mặt lan can (local XZ): trước (z xa) + 2 đầu (x trái/phải, z gần→xa).
-    const x0 = opts.alongOffset - opts.width / 2
-    const x1 = opts.alongOffset + opts.width / 2
-    const zF = z0 + opts.projection
-    const sides: Run[] = [
-      [x0, zF, x1, zF],
-      [x0, z0, x0, zF],
-      [x1, z0, x1, zF],
-    ]
-    const kit = railKit(style, mats) // metal tròn (metal-bar/glass-frame) | gỗ vuông bo cạnh (wood-bar)
-    buildFrame(add, kit, sides, opts.y, opts.railH)
-    if (style === 'glass-frame') {
-      const glass = new THREE.MeshStandardMaterial({
-        color: COL_BAL_GLASS,
-        metalness: 0,
-        roughness: 0.05,
-        transparent: true,
-        opacity: 0.32, // trong suốt thấy xuyên; roughness thấp → phản chiếu IBL (room env) = "kính phản chiếu"
-      })
-      mats.push(glass)
-      buildGlassPanels(add, glass, sides, opts.y, opts.railH)
-    } else {
-      buildBars(add, kit, sides, opts.y, opts.railH) // metal-bar (tròn ×1) | wood-bar (vuông bo, thưa ×2)
-    }
-  }
+  if (style === 'solid') buildSolidRails(add, concrete, opts, z0, cz)
+  else buildFancyRails(add, opts, mats, z0, style) // metal-bar | glass-frame | wood-bar (khung + thanh/kính)
   return { geos, mats, meshes: [grp] }
+}
+
+// Lan can KHÔNG-solid (metal-bar | glass-frame | wood-bar): 3 mặt (trước + 2 đầu) = khung (railKit) + thanh dọc
+// HOẶC tấm kính. Tách khỏi makePositionedBalcony để hàm đó ≤50 dòng (Rule-50). add/mats do caller chia sẻ.
+function buildFancyRails(
+  add: BalconyAdder,
+  opts: PositionedBalconyOpts,
+  mats: THREE.Material[],
+  z0: number,
+  style: 'metal-bar' | 'glass-frame' | 'wood-bar'
+): void {
+  // 3 mặt lan can (local XZ): trước (z xa) + 2 đầu (x trái/phải, z gần→xa).
+  const x0 = opts.alongOffset - opts.width / 2
+  const x1 = opts.alongOffset + opts.width / 2
+  const zF = z0 + opts.projection
+  const sides: Run[] = [
+    [x0, zF, x1, zF],
+    [x0, z0, x0, zF],
+    [x1, z0, x1, zF],
+  ]
+  const kit = railKit(style, mats) // metal tròn (metal-bar/glass-frame) | gỗ vuông bo cạnh (wood-bar)
+  buildFrame(add, kit, sides, opts.y, opts.railH)
+  if (style === 'glass-frame') {
+    const glass = new THREE.MeshStandardMaterial({
+      color: COL_BAL_GLASS,
+      metalness: 0,
+      roughness: 0.05,
+      transparent: true,
+      opacity: 0.32, // trong suốt thấy xuyên; roughness thấp → phản chiếu IBL (room env) = "kính phản chiếu"
+    })
+    mats.push(glass)
+    buildGlassPanels(add, glass, sides, opts.y, opts.railH)
+  } else {
+    buildBars(add, kit, sides, opts.y, opts.railH) // metal-bar (tròn ×1) | wood-bar (vuông bo, thưa ×2)
+  }
 }
 
 // Bộ thông số 1 kiểu khung lan can: hình (tròn cylinder / vuông RoundedBox), bán kính rail/cột/thanh,
