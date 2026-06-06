@@ -1,0 +1,67 @@
+---
+domain: ground
+title: Ground — sân nền đa-tầng (zones) + khoét (cut) lộ lớp dưới
+status: building
+tier: —
+modules:
+  - threejs-modules/site/render/fromState.ts
+  - threejs-modules/site/state.ts
+issues:
+  - KI-011
+updated: 2026-06-07
+---
+
+# Playbook — Ground (sân nền đa-tầng + khoét)
+
+> **Ranh giới:** recipe + sơ đồ tầng/toạ độ + lịch sử. Lỗi chi tiết → `known-issues/KI-NNN`. API/props → module README.
+
+## 1. Kết quả "hoàn chỉnh"
+
+Base ground (G0) = slab liền dưới đáy. Trên đó xếp **G-level** (1,2,…); mỗi level nhiều **zone** (mảng material
+rect/circle/ellipse) đồng phẳng. **Cut (khoét)** cùng level đục lỗ CHÍNH XÁC mọi shape (phủ một phần/cắt mép
+cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc base), KHÔNG viền/góc thừa/wedge.
+
+## 2. Recipe dựng
+
+- **State** (`state.ts`): `GroundLayer` = `material` + `thickness` + `shape`(rect/circle/ellipse) + `points` +
+  `offsetX/Z` + **`level`**(1-based) + **`op`**(add\|cut). `groundLayers[]` PHẲNG (flat) — `level`/`op` nhóm lúc render.
+- **Render** (`fromState.ts` → `buildGroundLayers`): mỗi level → `buildLevelZones` (zones đồng phẳng @baseY) rồi
+  `buildLevelCutPatches` (mảng xám highlight, ẩn).
+- **Khoét = polygon-boolean** (`layerGeometry`): `difference([contour], ...cuts+nước)` (lib `polygon-clipping`) →
+  MultiPolygon → mảng `Shape` → `ExtrudeGeometry`. Rỗng → `null` → bỏ mesh. KHÔNG earcut-hole (→ KI-011).
+- **Editor** (archplan `gui/site.ts`): nested-tabs `G0(base)|G1|G2…|＋`; mỗi G = `[Mảng add | Khoét cut]`, mỗi tab
+  = instance `Z1|Z2|＋` / `C1|C2|＋`. Cut highlight xám hiện CHỈ khi layer active (chọn tab GUI / click 3D / Move-drag)
+  qua `ctx.setActiveGroundLayer` → Lab toggle `.visible` (raycaster vẫn pick dù ẩn).
+
+## 3. Tầng & toạ độ (Y stacking)
+
+```
+baseY(lv=1) = groundThick/1000           # mặt trên base slab (mặc định 10mm = 0.01m)
+zone (add): đáy=baseY, đỉnh=baseY + thickness/1000      # dày slider 1–10cm
+top(level)  = baseY + max(thickness zones)/1000
+cut: khoét XUYÊN TRỌN zone (difference); highlight phẳng @ y = top + 0.005 (nổi 5mm, KHÔNG khối)
+baseY(lv+1) = top                         # level kế chồng tiếp lên
+```
+
+Local→world: `shapeToLocalPolygon` (mét, tâm gốc) + `offsetX/Z÷1000`. Shape XY dùng `(x, −z)` rồi `rotateX(−90)`.
+
+## 4. Lỗi thường gặp
+
+| Triệu chứng | Nguyên nhân (1 dòng) | Chi tiết & fix |
+| --- | --- | --- |
+| Cut để viền/góc thừa, wedge tròn/ellipse, cut==zone không xóa | earcut-hole chạm biên + cover-test ray-cast ở biên | `known-issues/KI-011` |
+| Đáy/lớp dưới vô hình sau khoét | merge index lệch / backdrop đặc che | `known-issues/KI-004` |
+| Kéo 1 layer → rebuild cả site | thiếu dirty-check / RTT tái tạo | `known-issues/KI-005` |
+
+## 5. Lịch sử nâng cấp
+
+- `2026-06-05` — site-kit GROUND đa-tầng `groundLayers[]` (box độc lập, xếp chồng Y, đục lỗ nước) + G1+ kéo-được
+- `2026-06-06` — free-form shape (rect/circle/ellipse) + cut-reveal (clip-hole) + "bộ nền" phím tắt (Phase 2 inc 1)
+- `2026-06-07` — nested-tabs G-level `[Mảng add|Khoét cut]` + cut highlight xám-khi-chọn + **khoét = polygon-boolean** (hết viền/góc/wedge, KI-011)
+
+## 6. Liên hệ
+
+- **Modules:** [fromState.ts](../threejs-modules/site/render/fromState.ts) · [state.ts](../threejs-modules/site/state.ts)
+- **Editor:** archplan `src/archplan/gui/site.ts` (nested-tabs + cut highlight) · `ArchPlanLab.ts` (`_applyCutVisibility`)
+- **Deferred:** free-bezier editor cho ground · cut "lộ lớp riêng từng level" (hiện lộ-xuyên theo stacking)
+- **KI:** KI-011 (cần polygon-boolean) · KI-004 · KI-005

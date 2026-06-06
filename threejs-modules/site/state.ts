@@ -166,7 +166,8 @@ export interface GroundLayer {
   offsetZ: number // mm — DỜI tâm layer theo Z. Default 0
   shape?: 'rect' | 'circle' | 'ellipse' | 'free' // hình mảng (tessellate ở shapes.ts). Optional → 'rect' (backward-compat)
   points?: WaterPoint[] // đỉnh + tay-cầm bezier khi shape='free' — DÙNG CHUNG WaterPoint. Optional
-  op?: 'add' | 'cut' // 'add' = mảng phủ material riêng; 'cut' = khoét xuyên MỌI add-layer → lộ base. Optional → 'add'
+  op?: 'add' | 'cut' // 'add' = mảng phủ material riêng; 'cut' = khoét add-layer cùng/cao level hơn → LỘ level dưới. Optional → 'add'
+  level?: number // G-LEVEL (1-based) — gom GUI thành G1/G2…; cut level N khoét add-layer level≥N (lộ level N−1). Optional → 1
 }
 
 export interface SiteState {
@@ -192,6 +193,7 @@ export function makeGroundLayer(overrides: Partial<GroundLayer> = {}): GroundLay
     offsetZ: 0,
     shape: 'rect',
     op: 'add',
+    level: 1,
     ...overrides,
   }
 }
@@ -338,7 +340,7 @@ function parseGround(v: unknown, fallback: GroundMaterialKey): GroundMaterialKey
 // Tầng surface chồng: mảng (cap 8 lớp) — mỗi lớp material hợp lệ + thickness clamp 1..10cm. Sai → bỏ qua an toàn.
 function parseGroundLayers(raw: unknown): GroundLayer[] {
   if (!Array.isArray(raw)) return []
-  return raw.slice(0, 8).map((r) => {
+  return raw.slice(0, 24).map((r, idx) => {
     const o = (r ?? {}) as Partial<GroundLayer>
     return {
       material: parseGround(o.material, 'soil'),
@@ -350,6 +352,7 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       shape: o.shape === 'circle' || o.shape === 'ellipse' || o.shape === 'free' ? o.shape : 'rect',
       points: parsePoints(o.points), // dùng chung parse với hồ (đỉnh + tay-cầm bezier)
       op: o.op === 'cut' ? 'cut' : 'add',
+      level: clamp(num(o.level, idx + 1), 1, 99), // thiếu level (design cũ) → migrate idx+1 (giữ tách G1/G2…)
     }
   })
 }

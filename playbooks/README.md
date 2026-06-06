@@ -70,6 +70,7 @@ Copy `_TEMPLATE.md` → `<slug>.md` → điền 6 mục → thêm 1 dòng vào i
 | Mảng | File | Tier | Trạng thái | Module(s) | KI |
 | --- | --- | --- | --- | --- | --- |
 | Cỏ 3D | [grass.md](grass.md) | B | building | GrassBlades, GrassGround | KI-003, KI-005 |
+| Ground | [ground.md](ground.md) | — | building | fromState.ts, state.ts | KI-011 |
 | Hồ nước | [pond.md](pond.md) | B | building | WaterSurface, fromState | KI-004, KI-005, KI-006, KI-007, KI-008 |
 | Cửa sổ / lỗ mở | [window.md](window.md) | — | building | WallSingle, InstancedBrickWall, WoodSidingStrip, WoodSidingWall | KI-001, KI-003 |
 <!-- /AUTO:index -->

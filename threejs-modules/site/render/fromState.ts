@@ -10,6 +10,9 @@
  * DISPOSE: ctx.geos/mats do caller dispose. Renderer không giữ gì.
  */
 
+// boolean zone−cut (Martinez) — khoét chính xác mọi shape. Lib export RUNTIME chỉ qua DEFAULT (named .d.ts lệch
+// bản esm → `{difference}` = undefined lúc chạy); type-only named OK (erased). Gọi polygonClipping.difference.
+import polygonClipping, { type MultiPolygon, type Ring } from 'polygon-clipping'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -484,77 +487,20 @@ function lotShape(site: SiteState): THREE.Shape {
   return s
 }
 
-type P2 = { x: number; y: number }
-
-// 1 pass Sutherland-Hodgman: giữ đỉnh "inside" half-plane; cạnh cắt biên → chèn giao điểm (isect).
-function clipHalfPlane(poly: P2[], inside: (p: P2) => boolean, isect: (a: P2, b: P2) => P2): P2[] {
-  const out: P2[] = []
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[(i + poly.length - 1) % poly.length]
-    const b = poly[i]
-    const inb = inside(b)
-    if (inside(a) !== inb) out.push(isect(a, b))
-    if (inb) out.push(b)
-  }
-  return out
+// {x,z} polygon (world, mét) → Ring polygon-clipping ở (x, −z) — KHÉP KÍN (đỉnh đầu lặp cuối, lib yêu cầu).
+function toRing(poly: { x: number; z: number }[]): Ring {
+  const r: Ring = poly.map((p) => [p.x, -p.z])
+  if (r.length > 0) r.push([r[0][0], r[0][1]])
+  return r
 }
 
-// Diện tích có dấu (XY) → winding (>0 = CCW).
-function polyAreaXY(poly: P2[]): number {
-  let a = 0
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i]
-    const q = poly[(i + 1) % poly.length]
-    a += p.x * q.y - q.x * p.y
+// 1 Ring (x, −z) → nạp vào THREE Path/Shape (moveTo/lineTo), bỏ đỉnh khép trùng cuối.
+function ringToPath(ring: Ring, target: THREE.Path): void {
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x, y] = ring[i]
+    if (i === 0) target.moveTo(x, y)
+    else target.lineTo(x, y)
   }
-  return a
-}
-
-// Giao SEGMENT p→q với ĐƯỜNG THẲNG vô hạn qua a→b (clip Sutherland-Hodgman cạnh bất kỳ, không chỉ axis-aligned).
-function segLineIsect(p: P2, q: P2, a: P2, b: P2): P2 {
-  const ex = b.x - a.x
-  const ey = b.y - a.y
-  const dx = q.x - p.x
-  const dy = q.y - p.y
-  const denom = ex * dy - ey * dx
-  if (Math.abs(denom) < 1e-9) return { x: p.x, y: p.y } // song song (hiếm) → trả p
-  const t = -(ex * (p.y - a.y) - ey * (p.x - a.x)) / denom
-  return { x: p.x + t * dx, y: p.y + t * dy }
-}
-
-// Clip subject qua 1 CẠNH (a→b) của clip polygon. Interior bên TRÁI nếu CCW (cross≥0). Tách ra né closure-in-loop.
-function clipEdge(subject: P2[], a: P2, b: P2, ccw: boolean): P2[] {
-  const ex = b.x - a.x
-  const ey = b.y - a.y
-  const inside = (p: P2): boolean => {
-    const cross = ex * (p.y - a.y) - ey * (p.x - a.x)
-    return ccw ? cross >= 0 : cross <= 0
-  }
-  return clipHalfPlane(subject, inside, (p, q) => segLineIsect(p, q, a, b))
-}
-
-// Clip subject vào CONVEX clip polygon (Sutherland-Hodgman mỗi cạnh). Tổng quát clipToRect cho contour LỒI
-// (rect/circle/ellipse). Trả [] nếu subject ngoài hẳn.
-function clipToConvexPolygon(subject: P2[], clip: P2[]): P2[] {
-  const ccw = polyAreaXY(clip) > 0
-  let out = subject
-  for (let i = 0; i < clip.length && out.length >= 3; i++) {
-    out = clipEdge(out, clip[i], clip[(i + 1) % clip.length], ccw)
-  }
-  return out
-}
-
-// Point-in-polygon (XY, ray-casting) — cho contour CONCAVE (free): hole hợp lệ khi MỌI đỉnh nằm trong.
-function pointInPolyXY(p: P2, poly: P2[]): boolean {
-  let inside = false
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x
-    const yi = poly[i].y
-    const xj = poly[j].x
-    const yj = poly[j].y
-    if (yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi) inside = !inside
-  }
-  return inside
 }
 
 // Contour 1 layer (world XZ, mét) theo shape (rect/circle/ellipse/free). Tái dùng length/width = trục shape.
@@ -568,13 +514,6 @@ function layerWorldPolygon(layer: GroundLayer): { x: number; z: number }[] {
     points: layer.points ?? [],
   })
   return local.map((p) => ({ x: ox + p.x, z: oz + p.z }))
-}
-
-// Hole (XY) → clip về contour layer. Convex (rect/circle/ellipse) = clip thật; free (concave) = chỉ giữ nếu NẰM
-// TRỌN trong contour (cắt-biên-concave bỏ — polygon-boolean defer).
-function clipHoleToContour(holeXY: P2[], contour: P2[], convex: boolean): P2[] {
-  if (convex) return clipToConvexPolygon(holeXY, contour)
-  return holeXY.every((p) => pointInPolyXY(p, contour)) ? holeXY : []
 }
 
 // Pool/pond đục lỗ GỒM dải EDGE/coping: polygon hồ NỞ ra edgeWidth (offsetPolygon) — khớp đúng vành coping bo-cong
@@ -593,57 +532,138 @@ function allWaterCarvePolygons(site: SiteState): { x: number; z: number }[][] {
 }
 
 // Geometry 1 tầng ADD-layer = ExtrudeGeometry theo SHAPE (rect/circle/ellipse/free, contour = layerWorldPolygon)
-// dày th, ĐỤC LỖ mọi `holes` (nước + vùng CUT) rơi trong contour (clip convex / fully-inside concave). Shape XY
+// dày th, ĐỤC LỖ mọi `holes` (nước + vùng CUT) bằng polygon-boolean THẬT (difference): khoét chính xác mọi case —
+// phủ một phần/lệch/mép cong/xóa hết — KHÔNG còn viền/góc thừa/wedge. Kết quả MultiPolygon (cut có thể chẻ zone
+// thành nhiều mảnh, mỗi mảnh có lỗ) → mảng Shape. Rỗng (cut phủ trọn) → null (caller KHÔNG dựng mesh). Shape XY
 // (x=worldX, y=−worldZ) → rotateX(−90) nằm ngang (đáy y=0, đỉnh th).
 function layerGeometry(
   layer: GroundLayer,
   th: number,
   holes: { x: number; z: number }[][]
-): THREE.BufferGeometry {
-  const contour = layerWorldPolygon(layer).map((q) => ({ x: q.x, y: -q.z })) // world XZ → XY (x, −z)
-  const shape = new THREE.Shape()
-  contour.forEach((p, i) => (i === 0 ? shape.moveTo(p.x, p.y) : shape.lineTo(p.x, p.y)))
-  shape.closePath()
-  const convex = (layer.shape ?? 'rect') !== 'free' // rect/circle/ellipse = lồi → clip thật; free = fully-inside
-  for (const poly of holes) {
-    const clipped = clipHoleToContour(
-      poly.map((q) => ({ x: q.x, y: -q.z })),
-      contour,
-      convex
-    )
-    if (clipped.length < 3) continue
-    const hole = new THREE.Path()
-    clipped.forEach((p, i) => (i === 0 ? hole.moveTo(p.x, p.y) : hole.lineTo(p.x, p.y)))
-    hole.closePath()
-    shape.holes.push(hole)
+): THREE.BufferGeometry | null {
+  const contour = toRing(layerWorldPolygon(layer))
+  if (contour.length < 4) return null // contour < 3 đỉnh thật → bỏ
+  const clips: MultiPolygon = holes.filter((h) => h.length >= 3).map((h) => [toRing(h)])
+  const result: MultiPolygon =
+    clips.length > 0 ? polygonClipping.difference([contour], ...clips) : [[contour]]
+  const shapes: THREE.Shape[] = []
+  for (const poly of result) {
+    if (!poly[0] || poly[0].length < 4) continue // ring biên ngoài < 3 đỉnh → bỏ mảnh
+    const shape = new THREE.Shape()
+    ringToPath(poly[0], shape) // ring[0] = biên ngoài
+    for (let h = 1; h < poly.length; h++) {
+      const path = new THREE.Path()
+      ringToPath(poly[h], path) // ring[1..] = lỗ
+      shape.holes.push(path)
+    }
+    shapes.push(shape)
   }
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: th, bevelEnabled: false })
+  if (shapes.length === 0) return null // bị khoét sạch → không có gì để dựng
+  const geo = new THREE.ExtrudeGeometry(shapes, { depth: th, bevelEnabled: false })
   geo.rotateX(-Math.PI / 2) // XY → XZ; depth +Z → +Y (đáy y=0, đỉnh y=th)
   return geo
 }
 
-// TẦNG surface chồng: mỗi ADD-layer = ExtrudeGeometry RIÊNG (shape + offset, ĐỤC LỖ nước + vùng CUT), XẾP CHỒNG
-// Y lên base. Layer `op:'cut'` = KHÔNG dựng mesh — polygon của nó vào `holes` → khoét MỌI add-layer → LỘ base
-// (đáy hồ "form trống tự do"). KÉO live = dời mesh.position. PhotoGround world-XZ map đúng mặt trên.
+// Các G-LEVEL phân biệt (1-based, tăng dần) — gồm CẢ level chỉ-có-cut (cut-only). Xếp chồng Y theo level.
+function groundRenderLevels(layers: GroundLayer[]): number[] {
+  const set = new Set<number>()
+  for (const l of layers) set.add(l.level ?? 1)
+  return [...set].sort((a, b) => a - b)
+}
+
+// Dựng 1 ZONE (mesh) tại baseY (KHÔNG cộng baseY trong level → zones cùng level đồng phẳng). holes = NƯỚC + vùng
+// CUT cùng level (ĐỤC LỖ thật → lộ lớp dưới). groundLayerIdx = index phẳng gốc (ArchPlanLab pick).
+function addZoneMesh(
+  layer: GroundLayer,
+  idx: number,
+  baseY: number,
+  holes: { x: number; z: number }[][],
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): void {
+  const geo = layerGeometry(layer, layer.thickness / 1000, holes)
+  if (!geo) return // zone bị cut khoét sạch (difference rỗng) → không dựng mesh
+  geo.translate(0, baseY, 0)
+  const mesh = new THREE.Mesh(geo, resolveGroundMat(layer.material, ctx, opts))
+  mesh.userData.groundLayerIdx = idx
+  mesh.receiveShadow = true
+  mesh.castShadow = true
+  ctx.geos.push(geo)
+  ctx.group.add(mesh)
+}
+
+// Dựng MỌI zone của 1 level tại CÙNG baseY (đồng phẳng). Trả baseY kế = baseY + dày-zone-LỚN-NHẤT.
+function buildLevelZones(
+  layers: GroundLayer[],
+  lv: number,
+  baseY: number,
+  water: { x: number; z: number }[][],
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): number {
+  // Vùng CUT cùng level → ĐỤC LỖ zones level này (difference). Phủ trọn → zone rỗng → addZoneMesh tự bỏ mesh.
+  const cuts = layers
+    .filter((l) => l.op === 'cut' && (l.level ?? 1) === lv)
+    .map((l) => layerWorldPolygon(l))
+  let maxTh = 0
+  layers.forEach((layer, idx) => {
+    if (layer.op === 'cut' || (layer.level ?? 1) !== lv) return
+    addZoneMesh(layer, idx, baseY, [...water, ...cuts], ctx, opts)
+    maxTh = Math.max(maxTh, layer.thickness / 1000) // giữ stacking ổn định kể cả zone bị khoét sạch
+  })
+  return baseY + maxTh
+}
+
+// CUT đã ĐỤC LỖ THẬT vào zones (buildLevelZones → holes) → lộ lớp dưới. Mảng XÁM này CHỈ là HIGHLIGHT-khi-chọn
+// (KHÔNG phải cơ chế khoét). ShapeGeometry footprint @y (trên đỉnh zones level đó). MẶC ĐỊNH ẩN (visible=false) —
+// KHÔNG xám lúc bình thường (thấy lỗ khoét lộ dưới); ArchPlanLab bật visible (hiện xám) CHỈ khi layer active
+// (chọn tab GUI / click-focus / Move-drag). Raycaster vẫn pick dù ẩn (THREE bỏ .visible) → click/kéo trúng được.
+function buildLevelCutPatches(
+  layers: GroundLayer[],
+  lv: number,
+  y: number,
+  ctx: SiteRenderCtx
+): void {
+  layers.forEach((layer, idx) => {
+    if (layer.op !== 'cut' || (layer.level ?? 1) !== lv) return
+    const poly = layerWorldPolygon(layer)
+    if (poly.length < 3) return
+    const shape = new THREE.Shape()
+    poly.forEach((q, i) => (i === 0 ? shape.moveTo(q.x, -q.z) : shape.lineTo(q.x, -q.z)))
+    shape.closePath()
+    const geo = new THREE.ShapeGeometry(shape)
+    geo.rotateX(-Math.PI / 2)
+    geo.translate(0, y, 0)
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x8a8a8a, // xám
+      transparent: true,
+      opacity: 0.72, // mờ (thấy mờ zone dưới)
+      roughness: 0.95,
+      side: THREE.DoubleSide,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.userData.groundLayerIdx = idx // ArchPlanLab Move-drag/click-focus pick
+    mesh.userData.isCutPatch = true // ArchPlanLab toggle .visible: chỉ hiện XÁM khi active (click/move)
+    mesh.visible = false // mặc định ẩn (không xám); raycaster vẫn pick (THREE bỏ qua .visible)
+    mesh.receiveShadow = true
+    ctx.geos.push(geo)
+    ctx.mats.push(mat)
+    ctx.group.add(mesh)
+  })
+}
+
+// TẦNG surface đa G-level: zones CÙNG level = ĐỒNG PHẲNG (cùng baseY); level sau chồng lên (baseY += dày lớn
+// nhất). CUT cùng level = ĐỤC LỖ THẬT zones (lộ lớp dưới) + thêm mảng XÁM highlight-khi-chọn (ẩn mặc định).
 function buildGroundLayers(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
   const layers = site.groundLayers
   if (!layers?.length) return
-  const holes = allWaterCarvePolygons(site) // nước (pool/pond+edge, puddle)
-  for (const l of layers) if (l.op === 'cut') holes.push(layerWorldPolygon(l)) // + vùng CUT khoét lộ base
+  const water = allWaterCarvePolygons(site) // nước (pool/pond+edge, puddle)
   let baseY = site.groundThick / 1000 // mặt base ground = đáy add-layer đầu
-  layers.forEach((layer, i) => {
-    if (layer.op === 'cut') return // cut: không mesh (polygon đã vào holes); KHÔNG cộng baseY (không bề dày)
-    const th = layer.thickness / 1000
-    const geo = layerGeometry(layer, th, holes)
-    geo.translate(0, baseY, 0) // đáy = đỉnh lớp dưới (offset XZ đã nằm trong shape)
-    const mesh = new THREE.Mesh(geo, resolveGroundMat(layer.material, ctx, opts))
-    mesh.userData.groundLayerIdx = i // editor: Move tool nhận diện để kéo (G1+); base G0 KHÔNG có tag
-    mesh.receiveShadow = true
-    mesh.castShadow = true
-    ctx.geos.push(geo)
-    ctx.group.add(mesh)
-    baseY += th
-  })
+  for (const lv of groundRenderLevels(layers)) {
+    const top = buildLevelZones(layers, lv, baseY, water, ctx, opts)
+    buildLevelCutPatches(layers, lv, top + 0.005, ctx) // mảng xám highlight (ẩn) trên zones đã khoét
+    baseY = top
+  }
 }
 
 // Material base ground: ưu tiên byKey; backward-compat consumer cũ chỉ bơm single groundTextures cho site.ground.
