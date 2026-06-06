@@ -160,10 +160,13 @@ export type WaterMaterialKey = 'none' | 'tile'
 export interface GroundLayer {
   material: GroundMaterialKey // vật liệu lớp (cùng bộ với base ground)
   thickness: number // mm — dày lớp 10..100 (1..10cm)
-  length: number // mm — DÀI (trục X) tấm layer (box riêng, tâm lô). 500..40000
-  width: number // mm — RỘNG (trục Z) tấm layer. 500..40000
+  length: number // mm — DÀI (trục X): rect 2 cạnh / ellipse trục-X / circle đường-kính (=min length,width). 500..40000
+  width: number // mm — RỘNG (trục Z): rect 2 cạnh / ellipse trục-Z. 500..40000
   offsetX: number // mm — DỜI tâm layer theo X so tâm lô (Move tool kéo). Default 0
   offsetZ: number // mm — DỜI tâm layer theo Z. Default 0
+  shape?: 'rect' | 'circle' | 'ellipse' | 'free' // hình mảng (tessellate ở shapes.ts). Optional → 'rect' (backward-compat)
+  points?: WaterPoint[] // đỉnh + tay-cầm bezier khi shape='free' — DÙNG CHUNG WaterPoint. Optional
+  op?: 'add' | 'cut' // 'add' = mảng phủ material riêng; 'cut' = khoét xuyên MỌI add-layer → lộ base. Optional → 'add'
 }
 
 export interface SiteState {
@@ -187,6 +190,8 @@ export function makeGroundLayer(overrides: Partial<GroundLayer> = {}): GroundLay
     width: 10000,
     offsetX: 0,
     offsetZ: 0,
+    shape: 'rect',
+    op: 'add',
     ...overrides,
   }
 }
@@ -342,6 +347,9 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       width: clamp(num(o.width, 10000), GROUND_LAYER_SIZE_MIN, GROUND_LAYER_SIZE_MAX),
       offsetX: clamp(num(o.offsetX, 0), -GROUND_LAYER_SIZE_MAX, GROUND_LAYER_SIZE_MAX),
       offsetZ: clamp(num(o.offsetZ, 0), -GROUND_LAYER_SIZE_MAX, GROUND_LAYER_SIZE_MAX),
+      shape: o.shape === 'circle' || o.shape === 'ellipse' || o.shape === 'free' ? o.shape : 'rect',
+      points: parsePoints(o.points), // dùng chung parse với hồ (đỉnh + tay-cầm bezier)
+      op: o.op === 'cut' ? 'cut' : 'add',
     }
   })
 }

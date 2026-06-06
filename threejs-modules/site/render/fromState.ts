@@ -485,7 +485,6 @@ function lotShape(site: SiteState): THREE.Shape {
 }
 
 type P2 = { x: number; y: number }
-const lerp2 = (a: number, b: number, t: number): number => a + (b - a) * t
 
 // 1 pass Sutherland-Hodgman: giữ đỉnh "inside" half-plane; cạnh cắt biên → chèn giao điểm (isect).
 function clipHalfPlane(poly: P2[], inside: (p: P2) => boolean, isect: (a: P2, b: P2) => P2): P2[] {
@@ -500,30 +499,82 @@ function clipHalfPlane(poly: P2[], inside: (p: P2) => boolean, isect: (a: P2, b:
   return out
 }
 
-// Clip polygon vào rect [xmin,xmax]×[ymin,ymax] (4 half-plane). Né earcut VỠ khi hole nằm NGOÀI contour layer →
-// hole nước phải gọn trong rect. Trả polygon clip (rỗng nếu nước ngoài hẳn layer).
-function clipToRect(pts: P2[], xmin: number, xmax: number, ymin: number, ymax: number): P2[] {
-  let p = clipHalfPlane(
-    pts,
-    (q) => q.x >= xmin,
-    (a, b) => ({ x: xmin, y: lerp2(a.y, b.y, (xmin - a.x) / (b.x - a.x)) })
-  )
-  p = clipHalfPlane(
-    p,
-    (q) => q.x <= xmax,
-    (a, b) => ({ x: xmax, y: lerp2(a.y, b.y, (xmax - a.x) / (b.x - a.x)) })
-  )
-  p = clipHalfPlane(
-    p,
-    (q) => q.y >= ymin,
-    (a, b) => ({ x: lerp2(a.x, b.x, (ymin - a.y) / (b.y - a.y)), y: ymin })
-  )
-  p = clipHalfPlane(
-    p,
-    (q) => q.y <= ymax,
-    (a, b) => ({ x: lerp2(a.x, b.x, (ymax - a.y) / (b.y - a.y)), y: ymax })
-  )
-  return p
+// Diện tích có dấu (XY) → winding (>0 = CCW).
+function polyAreaXY(poly: P2[]): number {
+  let a = 0
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i]
+    const q = poly[(i + 1) % poly.length]
+    a += p.x * q.y - q.x * p.y
+  }
+  return a
+}
+
+// Giao SEGMENT p→q với ĐƯỜNG THẲNG vô hạn qua a→b (clip Sutherland-Hodgman cạnh bất kỳ, không chỉ axis-aligned).
+function segLineIsect(p: P2, q: P2, a: P2, b: P2): P2 {
+  const ex = b.x - a.x
+  const ey = b.y - a.y
+  const dx = q.x - p.x
+  const dy = q.y - p.y
+  const denom = ex * dy - ey * dx
+  if (Math.abs(denom) < 1e-9) return { x: p.x, y: p.y } // song song (hiếm) → trả p
+  const t = -(ex * (p.y - a.y) - ey * (p.x - a.x)) / denom
+  return { x: p.x + t * dx, y: p.y + t * dy }
+}
+
+// Clip subject qua 1 CẠNH (a→b) của clip polygon. Interior bên TRÁI nếu CCW (cross≥0). Tách ra né closure-in-loop.
+function clipEdge(subject: P2[], a: P2, b: P2, ccw: boolean): P2[] {
+  const ex = b.x - a.x
+  const ey = b.y - a.y
+  const inside = (p: P2): boolean => {
+    const cross = ex * (p.y - a.y) - ey * (p.x - a.x)
+    return ccw ? cross >= 0 : cross <= 0
+  }
+  return clipHalfPlane(subject, inside, (p, q) => segLineIsect(p, q, a, b))
+}
+
+// Clip subject vào CONVEX clip polygon (Sutherland-Hodgman mỗi cạnh). Tổng quát clipToRect cho contour LỒI
+// (rect/circle/ellipse). Trả [] nếu subject ngoài hẳn.
+function clipToConvexPolygon(subject: P2[], clip: P2[]): P2[] {
+  const ccw = polyAreaXY(clip) > 0
+  let out = subject
+  for (let i = 0; i < clip.length && out.length >= 3; i++) {
+    out = clipEdge(out, clip[i], clip[(i + 1) % clip.length], ccw)
+  }
+  return out
+}
+
+// Point-in-polygon (XY, ray-casting) — cho contour CONCAVE (free): hole hợp lệ khi MỌI đỉnh nằm trong.
+function pointInPolyXY(p: P2, poly: P2[]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x
+    const yi = poly[i].y
+    const xj = poly[j].x
+    const yj = poly[j].y
+    if (yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+// Contour 1 layer (world XZ, mét) theo shape (rect/circle/ellipse/free). Tái dùng length/width = trục shape.
+function layerWorldPolygon(layer: GroundLayer): { x: number; z: number }[] {
+  const ox = layer.offsetX / 1000
+  const oz = layer.offsetZ / 1000
+  const local = shapeToLocalPolygon({
+    shape: layer.shape ?? 'rect',
+    width: layer.length,
+    depth: layer.width,
+    points: layer.points ?? [],
+  })
+  return local.map((p) => ({ x: ox + p.x, z: oz + p.z }))
+}
+
+// Hole (XY) → clip về contour layer. Convex (rect/circle/ellipse) = clip thật; free (concave) = chỉ giữ nếu NẰM
+// TRỌN trong contour (cắt-biên-concave bỏ — polygon-boolean defer).
+function clipHoleToContour(holeXY: P2[], contour: P2[], convex: boolean): P2[] {
+  if (convex) return clipToConvexPolygon(holeXY, contour)
+  return holeXY.every((p) => pointInPolyXY(p, contour)) ? holeXY : []
 }
 
 // Pool/pond đục lỗ GỒM dải EDGE/coping: polygon hồ NỞ ra edgeWidth (offsetPolygon) — khớp đúng vành coping bo-cong
@@ -541,30 +592,24 @@ function allWaterCarvePolygons(site: SiteState): { x: number; z: number }[][] {
   return out
 }
 
-// Geometry 1 tầng layer = ExtrudeGeometry rect (dài×rộng, tâm tại offset) dày th, ĐỤC LỖ mọi mặt nước rơi trong
-// rect (clip về rect → hole hợp lệ). Shape XY (x=worldX, y=−worldZ) → rotateX(−90) nằm ngang (đáy y=0, đỉnh th).
+// Geometry 1 tầng ADD-layer = ExtrudeGeometry theo SHAPE (rect/circle/ellipse/free, contour = layerWorldPolygon)
+// dày th, ĐỤC LỖ mọi `holes` (nước + vùng CUT) rơi trong contour (clip convex / fully-inside concave). Shape XY
+// (x=worldX, y=−worldZ) → rotateX(−90) nằm ngang (đáy y=0, đỉnh th).
 function layerGeometry(
   layer: GroundLayer,
   th: number,
-  waters: { x: number; z: number }[][]
+  holes: { x: number; z: number }[][]
 ): THREE.BufferGeometry {
-  const cx = layer.offsetX / 1000 // tâm shape x = worldX
-  const cy = -layer.offsetZ / 1000 // tâm shape y = −worldZ
-  const hx = layer.length / 2000
-  const hy = layer.width / 2000
+  const contour = layerWorldPolygon(layer).map((q) => ({ x: q.x, y: -q.z })) // world XZ → XY (x, −z)
   const shape = new THREE.Shape()
-  shape.moveTo(cx - hx, cy - hy)
-  shape.lineTo(cx + hx, cy - hy)
-  shape.lineTo(cx + hx, cy + hy)
-  shape.lineTo(cx - hx, cy + hy)
+  contour.forEach((p, i) => (i === 0 ? shape.moveTo(p.x, p.y) : shape.lineTo(p.x, p.y)))
   shape.closePath()
-  for (const poly of waters) {
-    const clipped = clipToRect(
+  const convex = (layer.shape ?? 'rect') !== 'free' // rect/circle/ellipse = lồi → clip thật; free = fully-inside
+  for (const poly of holes) {
+    const clipped = clipHoleToContour(
       poly.map((q) => ({ x: q.x, y: -q.z })),
-      cx - hx,
-      cx + hx,
-      cy - hy,
-      cy + hy
+      contour,
+      convex
     )
     if (clipped.length < 3) continue
     const hole = new THREE.Path()
@@ -577,17 +622,19 @@ function layerGeometry(
   return geo
 }
 
-// TẦNG surface chồng: mỗi layer = ExtrudeGeometry RIÊNG (dài×rộng×dày + offset, ĐỤC LỖ pool/pond/puddle né-che),
-// XẾP CHỒNG Y lên base. Top che layer dưới (khoét lỗ lộ lớp dưới = phase sau). KÉO live = dời mesh.position (lỗ
-// đi theo tạm → re-carve khi buông). PhotoGround world-XZ map đúng mặt trên.
+// TẦNG surface chồng: mỗi ADD-layer = ExtrudeGeometry RIÊNG (shape + offset, ĐỤC LỖ nước + vùng CUT), XẾP CHỒNG
+// Y lên base. Layer `op:'cut'` = KHÔNG dựng mesh — polygon của nó vào `holes` → khoét MỌI add-layer → LỘ base
+// (đáy hồ "form trống tự do"). KÉO live = dời mesh.position. PhotoGround world-XZ map đúng mặt trên.
 function buildGroundLayers(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
   const layers = site.groundLayers
   if (!layers?.length) return
-  const waters = allWaterCarvePolygons(site) // gồm dải edge pool/pond + puddle phẳng
-  let baseY = site.groundThick / 1000 // mặt base ground = đáy layer đầu
+  const holes = allWaterCarvePolygons(site) // nước (pool/pond+edge, puddle)
+  for (const l of layers) if (l.op === 'cut') holes.push(layerWorldPolygon(l)) // + vùng CUT khoét lộ base
+  let baseY = site.groundThick / 1000 // mặt base ground = đáy add-layer đầu
   layers.forEach((layer, i) => {
+    if (layer.op === 'cut') return // cut: không mesh (polygon đã vào holes); KHÔNG cộng baseY (không bề dày)
     const th = layer.thickness / 1000
-    const geo = layerGeometry(layer, th, waters)
+    const geo = layerGeometry(layer, th, holes)
     geo.translate(0, baseY, 0) // đáy = đỉnh lớp dưới (offset XZ đã nằm trong shape)
     const mesh = new THREE.Mesh(geo, resolveGroundMat(layer.material, ctx, opts))
     mesh.userData.groundLayerIdx = i // editor: Move tool nhận diện để kéo (G1+); base G0 KHÔNG có tag
