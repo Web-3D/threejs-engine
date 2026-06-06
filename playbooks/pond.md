@@ -27,6 +27,11 @@ xuống thấy đáy gợn sóng). KHÔNG có lớp nào (nền/lưới) cắt s
 
 ## 2. Recipe dựng
 
+**Form (shape):** `rect | circle | ellipse | free`. Tessellate ở **`site/shapes.ts` `shapeToLocalPolygon`** (circle/
+ellipse = `EllipseCurve` tái dùng width/depth; free = polygon-**bezier** 2 tay-cầm in/out độc lập mỗi đỉnh, `CubicBezierCurve`).
+`pondWorldXZ` = tessellate + offset → **mọi consumer (mặt nước/basin/lỗ-nền/carve/cột-đâm-đáy/cỏ) theo đường cong**.
+Coping (`buildPoolEdge`) + ground carve (`waterCarveWithEdge`) dùng `offsetPolygon` **bo-cong ôm hình** (không bbox).
+
 **(A) Mặt nước = component `WaterSurface`** (`MeshBasicNodeMaterial`, mesh xoay −90°X nằm ngang):
 - `reflector({ resolution, bounces:false })` = gương phẳng thật (+1 render pass/RTT). `.target` phải là
   **con của mesh** (mặt phẳng phản chiếu bám nước).
@@ -106,6 +111,7 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 - `2026-06-05` — bỏ FXAA hook ở `BaseWorld` (revert); fix **phím tắt Z/X mất** (vỏ archplan): listener đăng ký TRƯỚC `_buildScene` + click 3D blur input GUI (`_blurActiveInput`) — keydown `e.target instanceof HTMLInputElement` chặn khi ô số slider giữ focus.
 - `2026-06-05` — **caro hồ bơi (tile material)**: basin **TÁCH 2 mesh** (floor+wall) thay merge → `floorMaterial`/`wallMaterial` ĐỘC LẬP, dropdown **None | Caro (tile)** (Edge giữ None). Caro = `MeshStandardNodeMaterial` `colorNode` procedural: ô vuông 2 màu xen kẽ (`floor(uv).x+y mod 2`) + mạch vữa grout, **UV baked** (floor world-XZ, wall chu-vi×cao), ô 0.2m, **3 màu user chọn** (Floor color=ô chính, Tile 2, Grout). Khúc xạ nước làm caro gợn → rõ "đáy hồ bơi". Bỏ `mergeGeometries` basin → **KI-004 hết nguồn gốc** (cho basin; `buildFence` còn merge).
 - `2026-06-05` — **default surface params** chốt theo user-tune (ảnh): Mirror 30 / Wave spd 10 / Ripple 5 / **Turbulence 150** / **Refraction 160** / Murk 10 / **Wave size 12** (`rippleScale` 1). State +`tileColor2`/`groutColor` (parse tolerant). Default chỉ áp hồ MỚI/reset — design đang lưu giữ giá trị riêng.
+- `2026-06-06` — **FORM TỰ DO (Phase 1)**: shape +`circle`/`ellipse`/`free-bezier`. `site/shapes.ts` (mới) tessellate → `pondWorldXZ` SINGLE-SOURCE lan ra basin/lỗ-nền/carve/cột-đâm-đáy/cỏ. `WaterPoint` +tay-cầm `inX/inZ/outX/outZ` (bezier 2 tay độc lập, kéo trong 3D ở `waterDrag` session `'handle'` — sphere cyan + line nối). Coping/carve bo-cong qua `offsetPolygon` (miter pháp-tuyến-đỉnh). Seed free = 8 điểm chu-vi + Catmull-Rom mirror. Backward-compat (optional + parse tolerant). Giới hạn: earcut không guard self-intersection; offsetPolygon concave-gắt tự-cắt. Phase 2 (ground patch + cut-reveal) reuse cơ chế hole này.
 - `2026-06-06` — **CỘT MÓNG đâm tới đáy hồ** (consumer mới của `depthY`): editor `_groundDropsForBuild` lấy `renderWaters` (pool+pond) → `pondWorldXZ` polygon + `dropY=depthY/1000+2cm` → bơm vào building-kit qua `BuildRenderCtx.groundDrops` (type domain-neutral `GroundDrop`, building-kit KHÔNG import site-kit). `postDropAt` per-cột (point-in-polygon, xoay rotY) kéo dài cột nằm trên hồ tới đáy basin (wood-deck=lưới cột; stone-pillar=trụ đá giữa). **Coupling 1 chiều, refresh khi BUILDING rebuild** — đổi sâu/dời hồ SAU thì cột stale tới khi bật/tắt Move/▶Build/reload (`_applySite` chỉ `_renderSite`, không rebuild nhà). Hồ ở mép nhà stone-pillar → trụ-giữa-trên-đất không đâm (deck lửng mép nước) = giới hạn 1-trụ-trung-tâm.
 
 ## 6. Liên hệ

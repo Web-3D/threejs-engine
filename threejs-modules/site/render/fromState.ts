@@ -23,6 +23,7 @@ import { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { PhotoGround, type PhotoGroundMaps } from '../../shaders/ground/PhotoGround'
 import { TexturedSurface, type TexturedSurfaceMaps } from '../../shaders/surface/TexturedSurface'
+import { offsetPolygon, shapeToLocalPolygon } from '../shapes' // tessellate shape→polygon + vành coping bo-cong
 import {
   type FenceConfig,
   GROUND_PRESETS,
@@ -157,10 +158,8 @@ function waterRect(w: WaterConfig): GrassExcludeRect {
 function buildWater(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): WaterSurface {
   buildBasin(w, site, ctx) // đáy hồ vẽ TRƯỚC (opaque) → nước (transparent) khúc xạ thấy đáy
   buildPoolEdge(w, site, ctx) // dải coping/mép viền quanh hồ (rect-frame ở mặt nền)
-  const points =
-    w.shape === 'free' && w.points.length >= 3
-      ? w.points.map((p) => ({ x: p.x / 1000, z: p.z / 1000 })) // mm → m, local
-      : undefined
+  // points local (mét) cho MỌI shape ≠ rect (circle/ellipse/free → ShapeGeometry); rect → undefined (PlaneGeometry).
+  const points = w.shape === 'rect' ? undefined : shapeToLocalPolygon(w)
   // Mặt nước chìm ~3cm dưới vành nền (rim = groundThick) → đọc ra "lỗ" — nhưng LUÔN cao hơn đáy basin
   // ≥3cm. Slab nền mỏng (~1cm) nên KHÔNG kẹp lip theo slab mà kẹp theo đáy (yBot). Nền editor được khoét
   // CÙNG lỗ ở vỏ (_rebuildEditorGround) → nhìn từ trên xuyên xuống thấy đáy, không bị tấm backdrop che.
@@ -193,10 +192,7 @@ function buildWater(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): WaterS
 // nền. baseY = mặt nền + 5mm (đậu trên, né z-fight). Khúc xạ (viewportSharedTexture) xuyên thấy NỀN/cỏ phía
 // sau → đúng cảm giác vũng nông; vẫn phản chiếu trời/nhà (+1 RTT như hồ). depthY/edgeWidth/bottomColor KHÔNG dùng.
 function buildPuddle(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): WaterSurface {
-  const points =
-    w.shape === 'free' && w.points.length >= 3
-      ? w.points.map((p) => ({ x: p.x / 1000, z: p.z / 1000 }))
-      : undefined
+  const points = w.shape === 'rect' ? undefined : shapeToLocalPolygon(w) // tessellate shape (puddle phẳng)
   const water = new WaterSurface({
     width: w.width / 1000,
     depth: w.depth / 1000,
@@ -221,20 +217,12 @@ function buildPuddle(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): Water
 
 // Đỉnh 1 hồ trong world XZ (mét): rect → 4 góc quanh offset; free → offset + points.
 // EXPORT: vỏ (editor) cần khoét CÙNG lỗ này vào nền backdrop của nó (nếu không sẽ che đáy hồ).
+// Polygon mặt nước (world XZ, mét) cho MỌI shape (rect/circle/ellipse/free-bezier) — tessellate ở shapes.ts rồi
+// cộng offset hồ. SINGLE SOURCE: basin/lỗ-nền/carve-layer/foundation-drop/cỏ-né/coping đều phái sinh từ đây.
 export function pondWorldXZ(w: WaterConfig): { x: number; z: number }[] {
   const ox = w.offsetX / 1000
   const oz = w.offsetZ / 1000
-  if (w.shape === 'free' && w.points.length >= 3) {
-    return w.points.map((p) => ({ x: ox + p.x / 1000, z: oz + p.z / 1000 }))
-  }
-  const hw = w.width / 2000
-  const hd = w.depth / 2000
-  return [
-    { x: ox - hw, z: oz - hd },
-    { x: ox + hw, z: oz - hd },
-    { x: ox + hw, z: oz + hd },
-    { x: ox - hw, z: oz + hd },
-  ]
+  return shapeToLocalPolygon(w).map((p) => ({ x: ox + p.x, z: oz + p.z }))
 }
 
 // Polygon (world XZ) của MỌI hồ đang bật — vỏ (editor) khoét lỗ nền/lưới CÙNG các lỗ này (nhiều hồ).
@@ -242,28 +230,16 @@ export function waterPolygons(site: SiteState): { x: number; z: number }[][] {
   return renderWaters(site).map((w) => pondWorldXZ(w))
 }
 
-// Dải coping/mép viền quanh 1 hồ = rect-frame (outer = bbox + edgeWidth, hole = polygon hồ) ở mặt nền
-// (+3mm né z-fight). Placeholder material → màu đá xám mặc định; render thật theo edgeMaterial sau.
+// Dải coping/mép viền quanh 1 hồ = VÀNH BO-CONG ôm hình hồ (outer = offsetPolygon(poly, edgeWidth), hole = poly)
+// ở mặt nền (+3mm né z-fight). Bám MỌI shape (tròn/ellipse/bezier) thay vì khung bbox cũ. Material đá xám mặc định.
 function buildPoolEdge(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): void {
   if (w.edgeWidth <= 0) return
   const ew = w.edgeWidth / 1000
   const poly = pondWorldXZ(w)
-  let x0 = Infinity
-  let x1 = -Infinity
-  let z0 = Infinity
-  let z1 = -Infinity
-  for (const p of poly) {
-    x0 = Math.min(x0, p.x)
-    x1 = Math.max(x1, p.x)
-    z0 = Math.min(z0, p.z)
-    z1 = Math.max(z1, p.z)
-  }
-  // Shape XY (x=worldX, y=−worldZ) → rotateX(−90) đặt nằm ngang. Outer rect bbox±ew, hole = polygon hồ.
+  const outer = offsetPolygon(poly, ew) // nở ra ngoài theo pháp-tuyến đỉnh → vành cong đều
+  // Shape XY (x=worldX, y=−worldZ) → rotateX(−90) nằm ngang. Outer = vành offset, hole = polygon hồ.
   const s = new THREE.Shape()
-  s.moveTo(x0 - ew, -(z0 - ew))
-  s.lineTo(x1 + ew, -(z0 - ew))
-  s.lineTo(x1 + ew, -(z1 + ew))
-  s.lineTo(x0 - ew, -(z1 + ew))
+  outer.forEach((q, i) => (i === 0 ? s.moveTo(q.x, -q.z) : s.lineTo(q.x, -q.z)))
   s.closePath()
   const hole = new THREE.Path()
   poly.forEach((q, i) => (i === 0 ? hole.moveTo(q.x, -q.z) : hole.lineTo(q.x, -q.z)))
@@ -550,27 +526,10 @@ function clipToRect(pts: P2[], xmin: number, xmax: number, ymin: number, ymax: n
   return p
 }
 
-// Pool/pond đục lỗ GỒM dải EDGE/coping: rect bbox(polygon hồ) + edgeWidth — khớp đúng dải coping (rect-frame
-// bbox±ew của buildPoolEdge) → layer né cả viền, không chỉ mặt nước.
+// Pool/pond đục lỗ GỒM dải EDGE/coping: polygon hồ NỞ ra edgeWidth (offsetPolygon) — khớp đúng vành coping bo-cong
+// của buildPoolEdge → layer né cả viền theo đường cong, không chỉ mặt nước. (edge=0 → trùng polygon hồ.)
 function waterCarveWithEdge(w: WaterConfig): { x: number; z: number }[] {
-  const poly = pondWorldXZ(w)
-  const ew = w.edgeWidth / 1000
-  let x0 = Infinity
-  let x1 = -Infinity
-  let z0 = Infinity
-  let z1 = -Infinity
-  for (const p of poly) {
-    x0 = Math.min(x0, p.x)
-    x1 = Math.max(x1, p.x)
-    z0 = Math.min(z0, p.z)
-    z1 = Math.max(z1, p.z)
-  }
-  return [
-    { x: x0 - ew, z: z0 - ew },
-    { x: x1 + ew, z: z0 - ew },
-    { x: x1 + ew, z: z1 + ew },
-    { x: x0 - ew, z: z1 + ew },
-  ]
+  return offsetPolygon(pondWorldXZ(w), w.edgeWidth / 1000)
 }
 
 // Polygon (world XZ) MỌI mặt nước layer phải né: pool/pond (LÕM, GỒM dải edge/coping) + puddle (PHẲNG, đúng

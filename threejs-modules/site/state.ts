@@ -112,18 +112,23 @@ export interface Grass3DConfig {
 // puddle = placeholder (coming soon, chưa dựng hình riêng) → renderPools() lọc ra.
 export type WaterKind = 'pool' | 'pond' | 'puddle'
 
-// Đỉnh polygon mặt nước (mm, LOCAL so tâm hồ). Dùng khi shape='free'.
+// Đỉnh polygon mặt nước (mm, LOCAL so tâm hồ). Dùng khi shape='free'. Tay-cầm bezier (in/out, offset mm so anchor)
+// — optional, thiếu cả 2 trên 1 đoạn → cạnh THẲNG (backward-compat polygon cũ). 2 tay-cầm độc lập = trộn góc/cong.
 export interface WaterPoint {
   x: number
   z: number
+  inX?: number // tay-cầm VÀO (tiếp tuyến cạnh tới đỉnh) — offset mm so anchor
+  inZ?: number
+  outX?: number // tay-cầm RA (tiếp tuyến cạnh rời đỉnh)
+  outZ?: number
 }
 
 export interface WaterConfig {
   kind: WaterKind // pool = hồ gương (render); pond/puddle = placeholder, chưa render (lọc bởi renderPools)
   enabled: boolean
-  shape: 'rect' | 'free' // rect = chữ nhật width×depth; free = polygon points[] (kéo đỉnh trong 3D)
-  width: number // mm — bề ngang hồ (X) — chỉ dùng khi shape='rect'
-  depth: number // mm — chiều sâu hồ (Z) — chỉ dùng khi shape='rect'
+  shape: 'rect' | 'circle' | 'ellipse' | 'free' // chữ nhật | tròn | ellipse | polygon-bezier (kéo đỉnh+tay-cầm 3D)
+  width: number // mm — bề ngang hồ (X): rect 2 cạnh / ellipse trục-X / circle đường-kính (=min width,depth)
+  depth: number // mm — chiều sâu hồ (Z): rect 2 cạnh / ellipse trục-Z. (circle dùng min của 2)
   points: WaterPoint[] // đỉnh polygon (mm, local) — chỉ dùng khi shape='free'; <3 đỉnh → fallback rect
   offsetX: number // mm — tâm hồ lệch so tâm lô (X)
   offsetZ: number // mm — tâm hồ lệch so tâm lô (Z)
@@ -409,13 +414,20 @@ function parseGrass3d(raw: Partial<Grass3DConfig> | undefined, d: Grass3DConfig)
 }
 
 // 1 phần tử → WaterPoint hợp lệ (clamp ±50m) hoặc null. Tách riêng cho parsePoints giữ complexity thấp.
+// Tay-cầm bezier (in/out): optional, chỉ nhận khi là số hữu hạn (clamp ±50m) → giữ undefined nếu thiếu (cạnh thẳng).
 function toWaterPoint(p: unknown): WaterPoint | null {
   if (!p || typeof p !== 'object') return null
   const px = (p as { x?: unknown }).x
   const pz = (p as { z?: unknown }).z
   if (typeof px !== 'number' || typeof pz !== 'number') return null
   if (!Number.isFinite(px) || !Number.isFinite(pz)) return null
-  return { x: clamp(px, -50000, 50000), z: clamp(pz, -50000, 50000) }
+  const r = p as Record<string, unknown>
+  const wp: WaterPoint = { x: clamp(px, -50000, 50000), z: clamp(pz, -50000, 50000) }
+  for (const k of ['inX', 'inZ', 'outX', 'outZ'] as const) {
+    const v = r[k]
+    if (typeof v === 'number' && Number.isFinite(v)) wp[k] = clamp(v, -50000, 50000)
+  }
+  return wp
 }
 
 // Polygon đỉnh: lọc phần tử hợp lệ, tối đa 32 đỉnh. Sai/thiếu → [].
@@ -444,7 +456,7 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
   return {
     kind: parseKind(r.kind, d.kind),
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
-    shape: r.shape === 'free' ? 'free' : 'rect',
+    shape: r.shape === 'free' || r.shape === 'circle' || r.shape === 'ellipse' ? r.shape : 'rect',
     width: clamp(num(r.width, d.width), 1000, 30000),
     depth: clamp(num(r.depth, d.depth), 1000, 30000),
     points: parsePoints(r.points),
