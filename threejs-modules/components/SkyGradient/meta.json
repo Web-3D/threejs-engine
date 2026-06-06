@@ -1,0 +1,10 @@
+{
+  "name": "SkyGradient",
+  "category": "components",
+  "version": "1.0.0",
+  "status": "unit-pass",
+  "description": "Bầu trời gradient dome WebGPU (zenith→horizon) lerp ngày↔đêm theo độ-cao mặt trời + quầng nắng/hoàng hôn",
+  "dependencies": ["three"],
+  "tags": ["sky", "environment", "day-night", "tsl", "gradient", "dome", "webgpu"],
+  "three-version": ">=0.174"
+}

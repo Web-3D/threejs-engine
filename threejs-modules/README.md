@@ -132,6 +132,7 @@
 | `WoodSidingStrip` | Tường ván gỗ 1 KHỐI răng cưa, HỘP KÍN 6 MẶT + khoét cửa/sổ (jamb reveal) — plain mesh MERGE được xuyên nhà | wood, siding, clapboard, strip, mergeable, openings | ✅ in-use |
 | `GrassBlades` | Cỏ 3D nhú lên (tier B) — InstancedMesh lá geometry, accent-only+cap; cặp `GrassGround` tier A. **Rebuild tăng dần (preview-first)** — B0: lá phẳng + 1 màu | vegetation, instanced, grass, cỏ, tier-b, site-kit | ✅ in-use |
 | `WaterSurface` | Hồ nước vừa PHẢN CHIẾU vừa NHÌN XUYÊN ĐÁY (tier C) — `reflector` + `viewportSharedTexture` (refraction) fresnel-blend + form tự do (kéo đỉnh). Đáy basin + khoét lỗ nền ở site-kit. ⚠ +1 render pass/RTT | water, hồ, reflection, refraction, mirror, site-kit, tier-c | ✅ in-use |
+| `SkyGradient` | Bầu trời gradient ngày↔đêm WebGPU qua `scene.backgroundNode` (KHÔNG mesh → luôn phủ, né "quả cầu từ ngoài") — zenith→horizon lerp theo độ-cao sun + quầng nắng/hoàng hôn. `setSun(dir)`→day-factor để mờ đèn fill/env | sky, environment, day-night, gradient, backgroundnode, tsl, webgpu | ✅ in-use |
 
 ---
 
