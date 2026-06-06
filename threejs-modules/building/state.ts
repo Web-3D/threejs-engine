@@ -232,25 +232,25 @@ export function mkBalcony(): BalconyState {
 
 export function mkStructure(): StructureState {
   return {
-    showFoundation: false,
-    foundH: 500,
-    foundOh: { n: 0, e: 0, s: 0, w: 0 }, // mặc định KHÍT footprint tường (không nhô) → ghép khối shape liền mép
-    foundType: 'concrete', // bê tông khối; đổi 'wood-deck'/'stone-pillar' ở GUI Foundation ▸ Type
+    showFoundation: true, // default: hiện móng (preset stone-pillar nhà sàn)
+    foundH: 4000, // 4m — cao móng stone-pillar (cột chống cao)
+    foundOh: { n: 1, e: 1, s: 1, w: 1 }, // 1m nhô (Expand) mỗi mặt — preset stone-pillar
+    foundType: 'stone-pillar', // default = trụ đá (preset nhà sàn); đổi concrete/wood-deck ở GUI ▸ Type
     deckPostSpacing: 1500, // 1.5m giữa các cột deck (wood-deck)
-    pillarRadius: 500, // 0.5m bán kính trụ đá giữa (stone-pillar)
-    beamWidth: 100, // 100mm bề rộng tiết diện xà (stone-pillar)
-    beamHeight: 120, // 120mm bề cao tiết diện xà (stone-pillar)
-    strutSegments: 6, // 6 đốt mỗi thanh chống xiên (stone-pillar)
-    strutCurve: 0, // thẳng (stone-pillar)
-    foundMaterial: 'none', // gỗ móng MeshToon phẳng; 'wood-tex' (texture) ở GUI Foundation
-    postRadius: 67, // 67mm bán kính cột trụ tròn (stone-pillar)
-    postLength: 1500, // 1.5m chiều dài cột trụ = gap 2 tầng xà
-    understructSize: 5000, // 5m khung-dưới (độc lập deck)
-    understructMaterial: 'none', // texture riêng khung-dưới (MeshToon mặc định)
-    deckRailShow: false, // lan can deck tắt mặc định
-    deckRailH: 900, // cao lan can 0.9m
-    deckRailLength: 5000, // dài khung lan can 5m (độc lập)
-    deckRailWidth: 5000, // rộng khung lan can 5m (độc lập)
+    pillarRadius: 600, // 0.6m bán kính trụ đá giữa (stone-pillar)
+    beamWidth: 210, // 210mm bề rộng tiết diện xà (stone-pillar)
+    beamHeight: 250, // 250mm bề cao tiết diện xà (stone-pillar)
+    strutSegments: 16, // 16 đốt mỗi thanh chống xiên (stone-pillar) — cong mượt
+    strutCurve: 300, // 300mm cong thanh chống xiên (stone-pillar)
+    foundMaterial: 'wood-tex', // Wood planks (texture) cho deck — preset
+    postRadius: 150, // 150mm bán kính cột trụ tròn (stone-pillar)
+    postLength: 1000, // 1m chiều dài cột trụ = gap 2 tầng xà
+    understructSize: 4500, // 4.5m khung-dưới (độc lập deck)
+    understructMaterial: 'wood-tex', // Old Plywood — preset khung-dưới
+    deckRailShow: true, // lan can deck BẬT mặc định (preset)
+    deckRailH: 700, // cao lan can 0.7m
+    deckRailLength: 4800, // dài khung lan can 4.8m (độc lập)
+    deckRailWidth: 5100, // rộng khung lan can 5.1m (độc lập)
 
     showSlab: false,
     slabThick: 150,
