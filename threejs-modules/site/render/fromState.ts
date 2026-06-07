@@ -628,11 +628,17 @@ function buildGround(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts):
 
 // Geometry nền base (G0) TÁCH RIÊNG → caller LIVE-rebuild geometry-only (terrain drag): swap mesh.geometry,
 // KHÔNG đụng water reflector RTT / NodeMaterial (= chỗ tụt fps). terrain bật → lưới displaced; tắt → phẳng cũ.
-export function groundGeometry(site: SiteState, opts: SiteRenderOpts): THREE.BufferGeometry {
+// clean=true (commit): cắt lỗ hồ SẠCH bám polygon (clip ô-biên). clean=false (live-drag): bỏ-ô nhanh (răng cưa
+// tạm) → né clip Martinez per-frame. Buông slider = commit (clean) → mép snap về sạch.
+export function groundGeometry(
+  site: SiteState,
+  opts: SiteRenderOpts,
+  clean = true
+): THREE.BufferGeometry {
   const t = site.groundThick / 1000
   const terr = site.terrain
   return terr && terr.enabled
-    ? griddedGroundGeometry(site, opts, terr, t)
+    ? griddedGroundGeometry(site, opts, terr, t, clean)
     : flatGroundGeometry(site, t)
 }
 
@@ -649,49 +655,169 @@ function flatGroundGeometry(site: SiteState, t: number): THREE.BufferGeometry {
   return geo
 }
 
-// 🏔️ Nền GÒ (terrain bật): lưới res×res trên bbox lô, đẩy Y = topY + heightAt(hf). BỎ ô có tâm trong polygon hồ
-// (đục lỗ xấp xỉ theo grid — mask→0 quanh hồ nên mép ở cao-độ-phẳng → mượt). Mặt trên ĐƠN (như path hồ cũ, không
-// skirt: viền lô phẳng + rào che). Material sample positionWorld.xz → texture tự bám gò, không cần uv chuẩn.
+// 🏔️ Nền GÒ (terrain bật): lưới res×res trên bbox lô, đẩy Y = topY + heightAt(hf). Lỗ nền = waterPolygons
+// (pool/pond WATER-SHAPE thuần, KHỚP path phẳng — KHÔNG edge/puddle). clean=true (commit) → CLIP ô-biên bằng
+// polygon-clipping (mép bám đúng polygon, mịn như cut C1); clean=false (live) → bỏ-NGUYÊN-ô (răng cưa nhanh, né
+// clip Martinez mỗi frame). Mặt trên ĐƠN (viền phẳng+rào che). Material sample positionWorld.xz → texture tự bám gò.
+interface GridBuild {
+  res: number
+  nx: number
+  hw: number // m — nửa ngang lô
+  hd: number // m — nửa sâu lô
+  hf: HeightField
+  topY: number
+  holes: { x: number; z: number }[][] // polygon hồ (world XZ)
+  boxes: { x0: number; x1: number; z0: number; z1: number }[] // bbox hồ +1 ô (broad-phase né corner-test/clip)
+  clean: boolean
+  pos: number[]
+  uv: number[]
+  idx: number[]
+}
+
+function gridX(g: GridBuild, i: number): number {
+  return -g.hw + (i / g.res) * 2 * g.hw
+}
+function gridZ(g: GridBuild, j: number): number {
+  return -g.hd + (j / g.res) * 2 * g.hd
+}
+
 function griddedGroundGeometry(
   site: SiteState,
   opts: SiteRenderOpts,
   terrain: TerrainConfig,
-  topY: number
+  topY: number,
+  clean: boolean
 ): THREE.BufferGeometry {
   const res = terrain.resolution
   const hw = site.lotWidth / 2000
   const hd = site.lotDepth / 2000
-  const hf = buildHeightField(site, opts, terrain)
-  // Lỗ nền = waterPolygons (pool/pond, WATER-SHAPE thuần) — KHỚP path phẳng (lotShape). KHÔNG dùng carve+edge
-  // (sẽ thủng dưới coping) và KHÔNG gồm puddle (puddle nằm TRÊN nền, không có basin → không khoét).
   const holes = waterPolygons(site)
-  const nx = res + 1
-  const pos: number[] = []
-  const uv: number[] = []
-  for (let j = 0; j <= res; j++) {
+  const cell = Math.max((2 * hw) / res, (2 * hd) / res)
+  const g: GridBuild = {
+    res,
+    nx: res + 1,
+    hw,
+    hd,
+    hf: buildHeightField(site, opts, terrain),
+    topY,
+    holes,
+    boxes: holes.map((h) => polyBox(h, cell)),
+    clean,
+    pos: [],
+    uv: [],
+    idx: [],
+  }
+  for (let j = 0; j <= res; j++)
     for (let i = 0; i <= res; i++) {
-      const x = -hw + (i / res) * 2 * hw
-      const z = -hd + (j / res) * 2 * hd
-      pos.push(x, topY + heightAt(hf, x, z), z)
-      uv.push(i / res, j / res)
+      const x = gridX(g, i)
+      const z = gridZ(g, j)
+      g.pos.push(x, topY + heightAt(g.hf, x, z), z)
+      g.uv.push(i / res, j / res)
     }
-  }
-  const idx: number[] = []
-  for (let j = 0; j < res; j++) {
-    for (let i = 0; i < res; i++) {
-      const cx = -hw + ((i + 0.5) / res) * 2 * hw
-      const cz = -hd + ((j + 0.5) / res) * 2 * hd
-      if (insideWaterHole(cx, cz, holes)) continue // ô tâm trong hồ → bỏ (lỗ nền)
-      const a = j * nx + i
-      idx.push(a, a + nx, a + 1, a + 1, a + nx, a + nx + 1) // winding → normal +Y
-    }
-  }
+  for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) emitGridCell(g, i, j)
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
-  geo.setIndex(idx)
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3))
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2))
+  geo.setIndex(g.idx)
   geo.computeVertexNormals()
   return geo
+}
+
+// bbox polygon + lề m — broad-phase: ô ngoài hết mọi bbox → chắc chắn ngoài hồ (bỏ qua corner-test/clip).
+function polyBox(
+  h: { x: number; z: number }[],
+  m: number
+): { x0: number; x1: number; z0: number; z1: number } {
+  let x0 = Infinity
+  let x1 = -Infinity
+  let z0 = Infinity
+  let z1 = -Infinity
+  for (const p of h) {
+    x0 = Math.min(x0, p.x)
+    x1 = Math.max(x1, p.x)
+    z0 = Math.min(z0, p.z)
+    z1 = Math.max(z1, p.z)
+  }
+  return { x0: x0 - m, x1: x1 + m, z0: z0 - m, z1: z1 + m }
+}
+
+// 1 ô lưới → tam-giác. !clean (live) → bỏ-ô theo tâm (răng cưa nhanh). clean: xa hồ / 0 góc trong → 2 tris lưới;
+// 4 góc trong → bỏ (lỗ); 1–3 góc (cắt biên) → clip sạch. a = index đỉnh góc (i,j).
+function emitGridCell(g: GridBuild, i: number, j: number): void {
+  const a = j * g.nx + i
+  if (!g.clean) {
+    if (!insideWaterHole(gridX(g, i + 0.5), gridZ(g, j + 0.5), g.holes)) pushGridQuad(g, a)
+    return
+  }
+  if (!cellNearWater(g, i, j)) {
+    pushGridQuad(g, a)
+    return
+  }
+  const corners = cellCorners(g, i, j)
+  let inside = 0
+  for (const c of corners) if (insideWaterHole(c.x, c.z, g.holes)) inside++
+  if (inside === 0) pushGridQuad(g, a)
+  else if (inside < 4) clipCellAgainstWater(g, corners)
+}
+
+function pushGridQuad(g: GridBuild, a: number): void {
+  g.idx.push(a, a + g.nx, a + 1, a + 1, a + g.nx, a + g.nx + 1) // winding → normal +Y
+}
+
+function cellCorners(g: GridBuild, i: number, j: number): { x: number; z: number }[] {
+  const x0 = gridX(g, i)
+  const x1 = gridX(g, i + 1)
+  const z0 = gridZ(g, j)
+  const z1 = gridZ(g, j + 1)
+  return [
+    { x: x0, z: z0 },
+    { x: x1, z: z0 },
+    { x: x1, z: z1 },
+    { x: x0, z: z1 },
+  ]
+}
+
+function cellNearWater(g: GridBuild, i: number, j: number): boolean {
+  const x0 = gridX(g, i)
+  const x1 = gridX(g, i + 1)
+  const z0 = gridZ(g, j)
+  const z1 = gridZ(g, j + 1)
+  for (const b of g.boxes) if (x1 >= b.x0 && x0 <= b.x1 && z1 >= b.z0 && z0 <= b.z1) return true
+  return false
+}
+
+// Cắt ô-biên SẠCH: ô − hồ (polygon-clipping difference, như cut C1) → MultiPolygon → tam-giác-hoá
+// (ShapeUtils.triangulateShape) → đỉnh đẩy y=topY+heightAt. Mép bám đúng đường hồ (tròn/ellipse/bezier).
+function clipCellAgainstWater(g: GridBuild, corners: { x: number; z: number }[]): void {
+  const cellRing: Ring = corners.map((c) => [c.x, c.z])
+  cellRing.push([corners[0].x, corners[0].z]) // khép kín
+  const waterMulti: MultiPolygon = g.holes.map((h) => [closeWaterRing(h)])
+  const result = polygonClipping.difference([cellRing], waterMulti)
+  for (const poly of result) {
+    const ring = poly[0]
+    if (!ring || ring.length < 4) continue // biên ngoài < 3 đỉnh thật → bỏ
+    const pts = ring.map(([x, z]) => new THREE.Vector2(x, z)) // Vector2 (triangulateShape gọi .equals)
+    for (const [ia, ib, ic] of THREE.ShapeUtils.triangulateShape(pts, []))
+      emitWorldTri(g, pts[ia], pts[ib], pts[ic])
+  }
+}
+
+function closeWaterRing(h: { x: number; z: number }[]): Ring {
+  const r: Ring = h.map((p) => [p.x, p.z])
+  if (r.length > 0) r.push([h[0].x, h[0].z])
+  return r
+}
+
+// Emit 1 tam-giác (đỉnh Vector2: x=worldX, y=worldZ) — canh winding +Y (grid: signed-area(x,z) < 0; >0 thì lật).
+function emitWorldTri(g: GridBuild, a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2): void {
+  const area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)
+  const tri = area > 0 ? [a, c, b] : [a, b, c]
+  const base = g.pos.length / 3
+  for (const p of tri) {
+    g.pos.push(p.x, g.topY + heightAt(g.hf, p.x, p.y), p.y) // p.y = worldZ
+    g.uv.push(0, 0)
+  }
+  g.idx.push(base, base + 1, base + 2)
 }
 
 // Height-field gò: maskRects giữ-phẳng = footprint nhà (opts) + bbox MỌI hồ/vũng (waterRect, đã nở edgeWidth).
