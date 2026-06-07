@@ -12,7 +12,7 @@ issues:
   - KI-006
   - KI-007
   - KI-008
-updated: 2026-06-06
+updated: 2026-06-07
 ---
 
 # Playbook — Hồ nước
@@ -112,6 +112,7 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 - `2026-06-05` — **caro hồ bơi (tile material)**: basin **TÁCH 2 mesh** (floor+wall) thay merge → `floorMaterial`/`wallMaterial` ĐỘC LẬP, dropdown **None | Caro (tile)** (Edge giữ None). Caro = `MeshStandardNodeMaterial` `colorNode` procedural: ô vuông 2 màu xen kẽ (`floor(uv).x+y mod 2`) + mạch vữa grout, **UV baked** (floor world-XZ, wall chu-vi×cao), ô 0.2m, **3 màu user chọn** (Floor color=ô chính, Tile 2, Grout). Khúc xạ nước làm caro gợn → rõ "đáy hồ bơi". Bỏ `mergeGeometries` basin → **KI-004 hết nguồn gốc** (cho basin; `buildFence` còn merge).
 - `2026-06-05` — **default surface params** chốt theo user-tune (ảnh): Mirror 30 / Wave spd 10 / Ripple 5 / **Turbulence 150** / **Refraction 160** / Murk 10 / **Wave size 12** (`rippleScale` 1). State +`tileColor2`/`groutColor` (parse tolerant). Default chỉ áp hồ MỚI/reset — design đang lưu giữ giá trị riêng.
 - `2026-06-06` — **FORM TỰ DO (Phase 1)**: shape +`circle`/`ellipse`/`free-bezier`. `site/shapes.ts` (mới) tessellate → `pondWorldXZ` SINGLE-SOURCE lan ra basin/lỗ-nền/carve/cột-đâm-đáy/cỏ. `WaterPoint` +tay-cầm `inX/inZ/outX/outZ` (bezier 2 tay độc lập, kéo trong 3D ở `waterDrag` session `'handle'` — sphere cyan + line nối). Coping/carve bo-cong qua `offsetPolygon` (miter pháp-tuyến-đỉnh). Seed free = 8 điểm chu-vi + Catmull-Rom mirror. Backward-compat (optional + parse tolerant). Giới hạn: earcut không guard self-intersection; offsetPolygon concave-gắt tự-cắt. Phase 2 (ground patch + cut-reveal) reuse cơ chế hole này.
+- `2026-06-07` — **RÀO/VIỀN quanh hồ** (`buildPondBorder`, dọc vành ngoài coping = `offsetPolygon(pond, edgeWidth)`) AUTO theo shape: **rect → hàng rào gỗ** (cọc 8cm cách ~1.5m + 2 thanh ngang, box merge indexed); **tròn/ellipse/free → ĐÁ CUỘI** (Icosahedron detail-1 faceted, sample arc-length mỗi 0.82×đường-kính = xếp liền, jitter scale/xoay **deterministic** `hash01(idx)` né nhảy mỗi rebuild, merge non-indexed). State `WaterConfig` +`borderEnabled`/`borderHeight`(100–1200mm)/`borderColor` (parse tolerant). GUI `buildBorderRows` ở tab edge (slider/màu **commit-only** né reflector thrash). KHÔNG trộn box+icosa 1 merge (né KI-004). Nhãn tab **"Pool edge"→"Pond edge"** theo `w.kind`.
 - `2026-06-06` — **CỘT MÓNG đâm tới đáy hồ** (consumer mới của `depthY`): editor `_groundDropsForBuild` lấy `renderWaters` (pool+pond) → `pondWorldXZ` polygon + `dropY=depthY/1000+2cm` → bơm vào building-kit qua `BuildRenderCtx.groundDrops` (type domain-neutral `GroundDrop`, building-kit KHÔNG import site-kit). `postDropAt` per-cột (point-in-polygon, xoay rotY) kéo dài cột nằm trên hồ tới đáy basin (wood-deck=lưới cột; stone-pillar=trụ đá giữa). **Coupling 1 chiều, refresh khi BUILDING rebuild** — đổi sâu/dời hồ SAU thì cột stale tới khi bật/tắt Move/▶Build/reload (`_applySite` chỉ `_renderSite`, không rebuild nhà). Hồ ở mép nhà stone-pillar → trụ-giữa-trên-đất không đâm (deck lửng mép nước) = giới hạn 1-trụ-trung-tâm.
 
 ## 6. Liên hệ

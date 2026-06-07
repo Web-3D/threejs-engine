@@ -166,6 +166,7 @@ function buildWater(
 ): WaterSurface {
   buildBasin(w, site, ctx, opts) // đáy hồ vẽ TRƯỚC (opaque) → nước (transparent) khúc xạ thấy đáy
   buildPoolEdge(w, site, ctx) // dải coping/mép viền quanh hồ (rect-frame ở mặt nền)
+  buildPondBorder(w, site, ctx) // 🪨 rào gỗ (rect) / đá cuội (cong) chạy dọc vành ngoài coping
   // points local (mét) cho MỌI shape ≠ rect (circle/ellipse/free → ShapeGeometry); rect → undefined (PlaneGeometry).
   const points = w.shape === 'rect' ? undefined : shapeToLocalPolygon(w)
   // Mặt nước chìm ~3cm dưới vành nền (rim = groundThick) → đọc ra "lỗ" — nhưng LUÔN cao hơn đáy basin
@@ -262,6 +263,121 @@ function buildPoolEdge(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): voi
   ctx.geos.push(geo)
   ctx.mats.push(mat)
   ctx.group.add(mesh)
+}
+
+// 🪨 RÀO/VIỀN quanh hồ chạy dọc VÀNH NGOÀI coping (offsetPolygon edgeWidth; bờ nước nếu edgeWidth=0). Auto theo
+// shape: rect → hàng rào gỗ (cọc + 2 thanh ngang); tròn/ellipse/free → đá cuội tròn xếp liền uốn theo bờ. Merge
+// 1 mesh (rào=box indexed / đá=icosa non-indexed — KHÔNG trộn 2 loại trong 1 merge, né KI-004). Material phẳng.
+function buildPondBorder(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): void {
+  if (!w.borderEnabled) return
+  const ring = w.edgeWidth > 0 ? offsetPolygon(pondWorldXZ(w), w.edgeWidth / 1000) : pondWorldXZ(w)
+  if (ring.length < 3) return
+  const topY = site.groundThick / 1000 // mặt nền (coping ở +3mm)
+  const size = w.borderHeight / 1000
+  const isRect = w.shape === 'rect'
+  const geos = isRect ? pondFenceGeos(ring, topY, size) : pondStoneGeos(ring, topY, size)
+  if (geos.length === 0) return
+  const merged = mergeGeometries(geos, false)
+  for (const g of geos) g.dispose()
+  if (!merged) return
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.borderColor,
+    roughness: 0.92,
+    flatShading: !isRect, // đá → faceted (cuội thật); rào gỗ → mượt
+  })
+  const mesh = new THREE.Mesh(merged, mat)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  ctx.geos.push(merged)
+  ctx.mats.push(mat)
+  ctx.group.add(mesh)
+}
+
+// Pseudo-random [0,1) DETERMINISTIC theo (i, salt) — né đá nhảy vị trí/scale mỗi rebuild (sin-hash kinh điển).
+function hash01(i: number, salt: number): number {
+  const v = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453
+  return v - Math.floor(v)
+}
+
+// 1 viên đá cuội tại (px,pz): IcosahedronGeometry(r, detail=1) faceted (~80 tri), jitter scale ngang 0.78..1.18 +
+// hơi dẹt Y + xoay Y random (deterministic theo idx). Tâm ở topY + r×0.4 (chìm nhẹ xuống coping → tự nhiên).
+function stoneAt(
+  px: number,
+  pz: number,
+  topY: number,
+  r: number,
+  idx: number
+): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(r, 1)
+  const s = 0.78 + hash01(idx, 1.7) * 0.4 // scale ngang 0.78..1.18
+  const sy = 0.7 + hash01(idx, 5.3) * 0.45 // hơi dẹt 0.7..1.15
+  const rot = new THREE.Matrix4().makeRotationY(hash01(idx, 9.1) * Math.PI * 2)
+  g.applyMatrix4(rot.multiply(new THREE.Matrix4().makeScale(s, s * sy, s))) // scale rồi xoay
+  g.translate(px, topY + r * 0.4, pz)
+  return g
+}
+
+// Đá cuội xếp liền dọc polygon `ring` (world XZ, mét; tự nối last→first). Sample arc-length mỗi ~0.82×đường-kính
+// (xếp liền, chồng nhẹ → không hở). Mỗi điểm 1 viên (stoneAt, jitter deterministic theo index chạy liên tục).
+function pondStoneGeos(
+  ring: { x: number; z: number }[],
+  topY: number,
+  diam: number
+): THREE.BufferGeometry[] {
+  const r = diam / 2
+  const step = Math.max(0.05, diam * 0.82)
+  const out: THREE.BufferGeometry[] = []
+  const n = ring.length
+  let acc = 0 // arc-length tới điểm đặt kế (mang dư qua cạnh sau)
+  let idx = 0
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % n]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const segLen = Math.hypot(dx, dz)
+    if (segLen < 1e-4) continue
+    while (acc <= segLen) {
+      out.push(stoneAt(a.x + (dx / segLen) * acc, a.z + (dz / segLen) * acc, topY, r, idx++))
+      acc += step
+    }
+    acc -= segLen
+  }
+  return out
+}
+
+// Hàng rào gỗ dọc polygon `ring` (rect = 4 cạnh): mỗi cạnh → cọc đứng cách ~1.5m (cọc t=0 = góc, không lặp) +
+// 2 THANH NGANG (trên h×0.85, giữa h×0.45) chạy hết cạnh (box dài=len, xoay theo hướng cạnh). Box → merge.
+function pondFenceGeos(
+  ring: { x: number; z: number }[],
+  topY: number,
+  h: number
+): THREE.BufferGeometry[] {
+  const out: THREE.BufferGeometry[] = []
+  const n = ring.length
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % n]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const len = Math.hypot(dx, dz)
+    if (len < 1e-4) continue
+    const nPost = Math.max(1, Math.round(len / 1.5))
+    for (let k = 0; k < nPost; k++) {
+      const t = k / nPost // 0..(<1): t=0 = góc, cạnh sau lo góc kế → không lặp
+      const p = new THREE.BoxGeometry(0.08, h, 0.08) // cọc 8cm
+      p.translate(a.x + dx * t, topY + h / 2, a.z + dz * t)
+      out.push(p)
+    }
+    const ang = Math.atan2(dz, dx) // hướng cạnh → xoay box-X (rotateY(−ang))
+    for (const ry of [h * 0.85, h * 0.45]) {
+      const rail = new THREE.BoxGeometry(len, 0.05, 0.05) // thanh 5cm dài hết cạnh
+      rail.rotateY(-ang)
+      rail.translate((a.x + b.x) / 2, topY + ry, (a.z + b.z) / 2)
+      out.push(rail)
+    }
+  }
+  return out
 }
 
 // Đáy 1 hồ = SÀN (ShapeGeometry @yBot) + VÁCH (quad mỗi cạnh RIM→floor) — 2 MESH RIÊNG để floor/wall mang

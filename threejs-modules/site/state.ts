@@ -156,6 +156,11 @@ export interface WaterConfig {
   floorMaterial: WaterMaterialKey // chất liệu đáy hồ: 'none' (màu bottomColor) | 'tile' (caro hồ bơi)
   wallMaterial: WaterMaterialKey // chất liệu tường hồ: 'none' | 'tile' (caro) — ĐỘC LẬP với floor
   edgeMaterial: WaterMaterialKey // chất liệu dải coping — hiện chỉ 'none' (chưa lát caro coping)
+  // 🪨 RÀO/VIỀN quanh hồ (chạy dọc VÀNH NGOÀI coping). Auto theo shape: rect → hàng rào gỗ (cọc + 2 thanh
+  // ngang); tròn/ellipse/free → ĐÁ CUỘI tròn xếp liền uốn theo bờ. borderHeight = cao rào / đường kính đá.
+  borderEnabled: boolean // bật rào/đá quanh hồ
+  borderHeight: number // mm — cao hàng rào (rect) / đường kính đá cuội (cong). 100..1200
+  borderColor: number // màu rào/đá (gỗ nâu / đá xám) — 1 field dùng chung 2 mode
 }
 
 // Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural
@@ -320,6 +325,9 @@ export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
     floorMaterial: 'none', // 'tile' = caro hồ bơi (đổi ở GUI Bottom → Floor/Wall mat)
     wallMaterial: 'none',
     edgeMaterial: 'none',
+    borderEnabled: false, // 🪨 rào/đá quanh hồ — mặc định tắt
+    borderHeight: 350, // 35cm — cao rào / đường kính đá cuội
+    borderColor: 0x9a8f80, // xám-ấm (đá); đổi nâu ở GUI cho rào gỗ
   }
 }
 
@@ -507,6 +515,9 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     floorMaterial: parseMat(r.floorMaterial),
     wallMaterial: parseMat(r.wallMaterial),
     edgeMaterial: parseMat(r.edgeMaterial),
+    borderEnabled: typeof r.borderEnabled === 'boolean' ? r.borderEnabled : d.borderEnabled,
+    borderHeight: clamp(num(r.borderHeight, d.borderHeight), 100, 1200),
+    borderColor: parseColor(r.borderColor, d.borderColor),
   }
 }
 
