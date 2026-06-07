@@ -72,6 +72,9 @@ export interface SiteRenderOpts {
   // lab-lifetime, KHÔNG recompile mỗi rebuild; nhiều ground cùng key DÙNG CHUNG 1 material. Ưu tiên hơn
   // groundTextures single. Lõi KHÔNG dispose (caller lo). Thiếu key → ground rơi về màu phẳng preset.
   groundMatByKey?: Partial<Record<GroundMaterialKey, THREE.Material>>
+  // 🪨 Material RÀO/VIỀN hồ (TexturedSurface triplanar) theo borderMaterial key. Caller CACHE 1 lần/key (lab-
+  // lifetime, KHÔNG push/dispose ở lõi). Thiếu/'none' → rào dùng màu phẳng borderColor. Triplanar áp được cả đá/gỗ.
+  borderMatByKey?: Partial<Record<string, THREE.Material>>
   // Texture set cho MẶT tường rào (fence.type='wall' + fence.wallTex='cinder'/'stone') — TexturedSurface
   // (triplanar: tường DỌC nên cần). Caller LOAD theo manifest. Thiếu → tường màu phẳng. + tileSizeMeters (m).
   fenceWallTextures?: TexturedSurfaceMaps
@@ -166,7 +169,7 @@ function buildWater(
 ): WaterSurface {
   buildBasin(w, site, ctx, opts) // đáy hồ vẽ TRƯỚC (opaque) → nước (transparent) khúc xạ thấy đáy
   buildPoolEdge(w, site, ctx) // dải coping/mép viền quanh hồ (rect-frame ở mặt nền)
-  buildPondBorder(w, site, ctx) // 🪨 rào gỗ (rect) / đá cuội (cong) chạy dọc vành ngoài coping
+  buildPondBorder(w, site, ctx, opts) // 🪨 rào gỗ (rect) / đá cuội (cong) chạy dọc vành ngoài coping
   // points local (mét) cho MỌI shape ≠ rect (circle/ellipse/free → ShapeGeometry); rect → undefined (PlaneGeometry).
   const points = w.shape === 'rect' ? undefined : shapeToLocalPolygon(w)
   // Mặt nước chìm ~3cm dưới vành nền (rim = groundThick) → đọc ra "lỗ" — nhưng LUÔN cao hơn đáy basin
@@ -268,7 +271,12 @@ function buildPoolEdge(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): voi
 // 🪨 RÀO/VIỀN quanh hồ chạy dọc VÀNH NGOÀI coping (offsetPolygon edgeWidth; bờ nước nếu edgeWidth=0). Auto theo
 // shape: rect → hàng rào gỗ (cọc + 2 thanh ngang); tròn/ellipse/free → đá cuội tròn xếp liền uốn theo bờ. Merge
 // 1 mesh (rào=box indexed / đá=icosa non-indexed — KHÔNG trộn 2 loại trong 1 merge, né KI-004). Material phẳng.
-function buildPondBorder(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): void {
+function buildPondBorder(
+  w: WaterConfig,
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): void {
   if (!w.borderEnabled) return
   const ring = w.edgeWidth > 0 ? offsetPolygon(pondWorldXZ(w), w.edgeWidth / 1000) : pondWorldXZ(w)
   if (ring.length < 3) return
@@ -280,17 +288,30 @@ function buildPondBorder(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): v
   const merged = mergeGeometries(geos, false)
   for (const g of geos) g.dispose()
   if (!merged) return
-  const mat = new THREE.MeshStandardMaterial({
-    color: w.borderColor,
-    roughness: 0.92,
-    flatShading: !isRect, // đá → faceted (cuội thật); rào gỗ → mượt
-  })
-  const mesh = new THREE.Mesh(merged, mat)
+  const mesh = new THREE.Mesh(merged, borderMaterialFor(w, isRect, opts, ctx))
   mesh.castShadow = true
   mesh.receiveShadow = true
   ctx.geos.push(merged)
-  ctx.mats.push(mat)
   ctx.group.add(mesh)
+}
+
+// Material rào/viền: texture đá injected (TexturedSurface triplanar, caller-owned) → KHÔNG push; else màu phẳng
+// borderColor (push ctx.mats). isRect → rào gỗ mượt; cong → đá faceted (flatShading). Tách giữ complexity ≤10.
+function borderMaterialFor(
+  w: WaterConfig,
+  isRect: boolean,
+  opts: SiteRenderOpts,
+  ctx: SiteRenderCtx
+): THREE.Material {
+  const injected = w.borderMaterial !== 'none' ? opts.borderMatByKey?.[w.borderMaterial] : undefined
+  if (injected) return injected
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.borderColor,
+    roughness: 0.92,
+    flatShading: !isRect,
+  })
+  ctx.mats.push(mat)
+  return mat
 }
 
 // Pseudo-random [0,1) DETERMINISTIC theo (i, salt) — né đá nhảy vị trí/scale mỗi rebuild (sin-hash kinh điển).

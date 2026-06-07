@@ -67,6 +67,7 @@ Local→world: `shapeToLocalPolygon` (mét, tâm gốc) + `offsetX/Z÷1000`. Sha
 - `2026-06-07` — nested-tabs G-level `[Mảng add|Khoét cut]` + cut highlight xám-khi-chọn + **khoét = polygon-boolean** (hết viền/góc/wedge, KI-011)
 - `2026-06-07` — +4 texture surface (artificial_turf/grass_o/thai sand 2K+4K) → 3 hệ: ground surface + bộ nền (phím 5-7, `_photoEditorGround` share PhotoGround) + **water bottom** (texture đáy hồ, `basinMaterial` inject `groundMatByKey`); 4K né prefetch (chỉ tải khi chọn)
 - `2026-06-07` — **add/cut mảng FORM TỰ DO** (Free bezier): `groundFormRow`+`Free`, seed blob `rectBezierPoints` (chung hồ), **GroundTool** (`interaction/groundDrag.ts`) nắn đỉnh+tay-cầm 3D (mirror waterDrag; outline-khi-kéo, commit-khi-buông; body-drag giữ Lab). Render contour cong đã sẵn từ `2026-06-06`
+- `2026-06-07` — **+cobblestone** vào ground surface (GroundMaterialKey + GROUND_TEX_KEYS + GROUND_PRESETS #626263 + GROUND_TEX_SPEC + GROUND_OPTS) — nhân bản pattern texture (PhotoGround world-XZ, ktx2). Đá cobblestone lát sân/lối.
 - `2026-06-07` — **G rỗng** (`site.groundLevels` count tường minh): `＋`G = +1 tầng RỖNG (bỏ auto-Z1) + **`✕ Remove G`** (xoá tầng + dồn level + clear active); editor enumerate `groundEditorLevels(1..N)`, render KHÔNG đổi (derive layers). Parse migrate `?? max(level)`, không bump schema
 
 ## 6. Liên hệ

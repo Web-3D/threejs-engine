@@ -29,6 +29,7 @@ export type GroundMaterialKey =
   | 'grass-o'
   | 'thai-beach-sand-2k'
   | 'thai-beach-sand-4k'
+  | 'cobblestone'
 
 // Ground key dùng TEXTURE ảnh (PhotoGround) — caller (archplan) bơm opts.groundTextures theo key. Thiếu
 // texture → fallback màu phẳng GROUND_PRESETS. 'grass'(procedural)/'soil'/'gravel' KHÔNG ở đây (màu/shader).
@@ -44,6 +45,7 @@ const GROUND_TEX_KEYS = new Set<GroundMaterialKey>([
   'grass-o',
   'thai-beach-sand-2k',
   'thai-beach-sand-4k',
+  'cobblestone',
 ])
 export function isGroundTexKey(k: GroundMaterialKey): boolean {
   return GROUND_TEX_KEYS.has(k)
@@ -160,13 +162,18 @@ export interface WaterConfig {
   // ngang); tròn/ellipse/free → ĐÁ CUỘI tròn xếp liền uốn theo bờ. borderHeight = cao rào / đường kính đá.
   borderEnabled: boolean // bật rào/đá quanh hồ
   borderHeight: number // mm — cao hàng rào (rect) / đường kính đá cuội (cong). 100..1200
-  borderColor: number // màu rào/đá (gỗ nâu / đá xám) — 1 field dùng chung 2 mode
+  borderColor: number // màu rào/đá khi borderMaterial='none' (gỗ nâu / đá xám) — 1 field dùng chung 2 mode
+  borderMaterial: BorderMaterialKey // 'none' = màu phẳng; texture đá (triplanar) → áp lên geometry rào/đá
 }
 
 // Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural
 // checker + grout); GroundMaterialKey texture (cát/cỏ) = PhotoGround world-XZ lát đáy (đáy basin uv=world-XZ →
 // khớp). Áp floor/wall riêng. edgeMaterial: chỉ 'none'. Texture đáy = material injected (groundMatByKey) caller-owned.
 export type WaterMaterialKey = 'none' | 'tile' | GroundMaterialKey
+
+// 🪨 Vật liệu RÀO/VIỀN quanh hồ: 'none' = màu phẳng borderColor; còn lại = texture đá (TexturedSurface triplanar,
+// archplan bơm opts.borderMatByKey). Triplanar → áp được cả đá cuội (icosa) lẫn rào gỗ (box).
+export type BorderMaterialKey = 'none' | 'icelandic-jagged' | 'coal-stone' | 'rock-rough'
 
 // TẦNG SURFACE chồng (nghệ thuật xếp lớp 3D): mỗi layer = 1 lớp vật liệu phủ kín lô, dày RIÊNG, xếp CHỒNG
 // lên base ground (+ các layer trước). Top layer che layer dưới; KHOÉT lỗ 1 layer → lớp dưới lộ ra (carve =
@@ -243,6 +250,7 @@ export const GROUND_PRESETS: Record<GroundMaterialKey, { color: number; roughnes
   'grass-o': { color: 0x556b2b, roughness: 0.93 }, // cỏ tự nhiên (oeeb70) xanh-olive — fallback
   'thai-beach-sand-2k': { color: 0xd6c5a0, roughness: 1.0 }, // cát biển Thái rám ấm — fallback
   'thai-beach-sand-4k': { color: 0xd6c5a0, roughness: 1.0 }, // cát biển Thái 4K (cùng màu fallback)
+  cobblestone: { color: 0x626263, roughness: 0.95 }, // đá cobblestone xám — fallback khi thiếu texture
 }
 
 export const GROUND_THICK_MIN = 10 // mm = 1cm — default, đáy ở y=0 → top cao hơn grid editor
@@ -328,6 +336,7 @@ export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
     borderEnabled: false, // 🪨 rào/đá quanh hồ — mặc định tắt
     borderHeight: 350, // 35cm — cao rào / đường kính đá cuội
     borderColor: 0x9a8f80, // xám-ấm (đá); đổi nâu ở GUI cho rào gỗ
+    borderMaterial: 'none', // 'none' = màu phẳng; chọn texture đá ở GUI
   }
 }
 
@@ -488,6 +497,19 @@ function parseMat(v: unknown): WaterMaterialKey {
   return 'none'
 }
 
+// 🪨 Material rào/viền: 'none' (màu phẳng) | 3 texture đá. Lạ → 'none' (forward-compat).
+const BORDER_MAT_KEYS = new Set<BorderMaterialKey>([
+  'none',
+  'icelandic-jagged',
+  'coal-stone',
+  'rock-rough',
+])
+function parseBorderMat(v: unknown): BorderMaterialKey {
+  return typeof v === 'string' && BORDER_MAT_KEYS.has(v as BorderMaterialKey)
+    ? (v as BorderMaterialKey)
+    : 'none'
+}
+
 function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): WaterConfig {
   const r = raw ?? {}
   return {
@@ -518,6 +540,7 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     borderEnabled: typeof r.borderEnabled === 'boolean' ? r.borderEnabled : d.borderEnabled,
     borderHeight: clamp(num(r.borderHeight, d.borderHeight), 100, 1200),
     borderColor: parseColor(r.borderColor, d.borderColor),
+    borderMaterial: parseBorderMat(r.borderMaterial),
   }
 }
 
