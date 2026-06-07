@@ -56,6 +56,7 @@ export interface SiteRenderCtx {
 export interface SiteHandle {
   grass: GrassBlades | null
   waters: WaterSurface[] // 1 WaterSurface mỗi hồ ĐANG BẬT (cùng thứ tự renderWaters(site)) — caller zip cfg↔surf
+  ground: THREE.Mesh | null // mesh nền base (G0) — caller giữ ref để LIVE-rebuild geometry-only (terrain drag, né water-RTT)
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -101,8 +102,8 @@ export function renderSiteState(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts = {}
 ): SiteHandle {
-  if (!site.show) return { grass: null, waters: [] }
-  buildGround(site, ctx, opts)
+  if (!site.show) return { grass: null, waters: [], ground: null }
+  const ground = buildGround(site, ctx, opts)
   buildGroundLayers(site, ctx, opts) // TẦNG surface chồng (xếp lớp 3D) lên base
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
   // Cỏ né cả foundation (caller) LẪN footprint+coping MỖI hồ → không mọc xuyên mặt nước/dải viền.
@@ -117,7 +118,7 @@ export function renderSiteState(
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
   if (!opts.skipFence)
     for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
-  return { grass, waters }
+  return { grass, waters, ground }
 }
 
 // Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật. Export để
@@ -616,16 +617,23 @@ export function grassBuildSig(site: SiteState, exclude: GrassExcludeRect[]): str
 // Nền lô. PBR nhận IBL + đổ bóng. Lô tâm world (0,0). KHÔNG hồ → BoxGeometry dày (đáy y=0, top y=t).
 // CÓ hồ → ShapeGeometry PHẲNG ở mặt nền (y=t) KHOÉT LỖ polygon hồ: KHÔNG có mặt-cắt-dày → hết "đường xanh
 // cỏ" ở mép hồ (cut-face của slab cũ cao = groundThick, càng dày càng lộ). Vách basin tự chạy rim→đáy.
-function buildGround(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
-  const t = site.groundThick / 1000
-  const terr = site.terrain
-  // terrain bật → lưới displaced (gò); tắt/thiếu → path phẳng cũ (ShapeGeometry có lỗ hồ / Box).
-  const geo =
-    terr && terr.enabled ? griddedGroundGeometry(site, opts, terr, t) : flatGroundGeometry(site, t)
+function buildGround(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): THREE.Mesh {
+  const geo = groundGeometry(site, opts)
   const mesh = new THREE.Mesh(geo, groundMaterial(site, ctx, opts))
   mesh.receiveShadow = true
   ctx.geos.push(geo)
   ctx.group.add(mesh)
+  return mesh
+}
+
+// Geometry nền base (G0) TÁCH RIÊNG → caller LIVE-rebuild geometry-only (terrain drag): swap mesh.geometry,
+// KHÔNG đụng water reflector RTT / NodeMaterial (= chỗ tụt fps). terrain bật → lưới displaced; tắt → phẳng cũ.
+export function groundGeometry(site: SiteState, opts: SiteRenderOpts): THREE.BufferGeometry {
+  const t = site.groundThick / 1000
+  const terr = site.terrain
+  return terr && terr.enabled
+    ? griddedGroundGeometry(site, opts, terr, t)
+    : flatGroundGeometry(site, t)
 }
 
 // Nền PHẲNG (terrain tắt) — giữ nguyên hành vi cũ: có hồ → ShapeGeometry 1 mặt (lỗ hồ, hở màu cỏ); không hồ → Box dày.
