@@ -8,19 +8,23 @@ status: fixed
 when: Bật ≥2 WaterSurface (pool/pond, reflector bounces=false) cùng lúc — gương 1 (hoặc cả 2) đứng hình MỌI góc nhìn; 1 hồ thì bình thường. KHÔNG do terrain (tắt terrain vẫn bị).
 where:
   - threejs-modules/components/WaterSurface/index.ts:161   # reflector({bounces:false})
-  - archplan/src/archplan/ArchPlanLab.ts                    # _rebuildSite set layer + onInit enable camera/_ray
+  - threejs-modules/components/WaterSurface/index.ts        # excludeReflectionLayer + setTime disable layer trên virtualCamera (FIX)
+  - archplan/src/archplan/ArchPlanLab.ts                    # WATER_REFLECT_LAYER: _rebuildSite set+exclude + onInit enable camera/_ray
   - three/src/nodes/utils/ReflectorNode.js:372             # `if (bounces===false && _inReflector) return false`
+  - three/src/nodes/utils/ReflectorNode.js:323             # `virtualCamera = camera.clone()` → COPY layers (mấu chốt)
 discovered: 2026-06-07
-fixed-in: "67050c5"
+fixed-in: "f66bddf + fa562b5 (verify OK 2026-06-07); 67050c5 = thử đầu CHƯA ăn (thiếu disable layer trên virtualCamera)"
 related:
   - ki:KI-006
+  - commit:f66bddf
+  - commit:fa562b5
   - commit:67050c5
-tags: [reflector, mirror, water, pond, _inReflector, layer, multi-instance, nested-render]
+tags: [reflector, mirror, water, pond, _inReflector, layer, multi-instance, nested-render, camera-clone]
 ---
 
 ## 1. Lỗi gì (triệu chứng)
 
-Khi lô có **≥2 hồ phản chiếu** (pool/pond đều dùng `WaterSurface` reflector) bật cùng lúc → ảnh gương **đứng hình ("đơ")** ở MỌI góc nhìn (không chỉ top-down). Với **1 hồ** thì gương chạy bình thường. Độc lập terrain (tắt terrain vẫn bị) — KHÔNG phải bug terrain.
+Khi lô có **≥2 hồ phản chiếu** (pool/pond đều dùng `WaterSurface` reflector) bật cùng lúc → ảnh gương **đứng hình ("đơ")** ở MỌI góc nhìn (không chỉ top-down). Với **1 hồ** thì gương chạy bình thường. Độc lập terrain (tắt terrain vẫn bị) — KHÔNG phải bug terrain. Kèm triệu chứng "**không ăn bóng**" = ảnh gương đơ là ảnh CŨ nên không cập nhật bóng/cảnh hiện tại; gương chạy lại thì bóng hiện đúng (KHÔNG phải bug shadow riêng).
 
 ## 2. Khi nào & Ở đâu
 
