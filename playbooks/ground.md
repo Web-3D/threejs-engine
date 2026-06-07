@@ -42,6 +42,8 @@ cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc 
   smoothstep →1 ở garden ⇒ **móng/hồ/rào/lot-edge GIỮ PHẲNG, không đổi**. Đục lỗ hồ = BỎ tam-giác có tâm trong
   `allWaterCarvePolygons` (point-in-poly; mép răng-cưa nằm dưới coping nên khuất). terrain tắt → path phẳng cũ. Cỏ
   bám gò = Phase 2 (`heightAt` callback vào GrassBlades). Slider noise đầy đủ ở GUI tab Ground (`buildTerrainControls`).
+  **GOTCHA G0/grid:** `heightAt` BIAS FBM `[-1,1]→[0,1]` (`fbm·0.5+0.5`) = heightmap KHÔNG-âm + `Math.max(dy,0)` →
+  Y = topY+Δy LUÔN ≥ topY (groundThick 10mm). FBM dao động ÂM → nền xấn dưới grid → **lỗ đen lộ void** (đã vấp).
 - **Form** zone/cut: `Rect | Tròn | Ellipse | Free (bezier)` (`groundFormRow`). Đổi → Free: seed blob 8-điểm
   (`rectBezierPoints`, DÙNG CHUNG với hồ) từ `length×width`. **Nắn 3D** (`interaction/groundDrag.ts` GroundTool, mirror
   waterDrag): Move + layer free active → overlay đỉnh (vàng) + 2 tay-cầm bezier in/out (cyan) + line; kéo đỉnh/tay-cầm
