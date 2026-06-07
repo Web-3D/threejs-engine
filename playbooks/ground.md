@@ -44,6 +44,9 @@ cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc 
   bám gò = Phase 2 (`heightAt` callback vào GrassBlades). Slider noise đầy đủ ở GUI tab Ground (`buildTerrainControls`).
   **GOTCHA G0/grid:** `heightAt` BIAS FBM `[-1,1]→[0,1]` (`fbm·0.5+0.5`) = heightmap KHÔNG-âm + `Math.max(dy,0)` →
   Y = topY+Δy LUÔN ≥ topY (groundThick 10mm). FBM dao động ÂM → nền xấn dưới grid → **lỗ đen lộ void** (đã vấp).
+  **PERF kéo slider:** terrain chỉ đụng ground geo → live-drag dùng **`_applyTerrainLive` SWAP geometry-only**
+  (`groundGeometry()` export + `SiteHandle.ground` ref) — KHÔNG `_rebuildSite` (tránh tái-tạo water reflector RTT
+  + recompile NodeMaterial = tụt fps). Buông = `applySite(true)` commit. Nặng nữa → hạ slider Resolution.
 - **Form** zone/cut: `Rect | Tròn | Ellipse | Free (bezier)` (`groundFormRow`). Đổi → Free: seed blob 8-điểm
   (`rectBezierPoints`, DÙNG CHUNG với hồ) từ `length×width`. **Nắn 3D** (`interaction/groundDrag.ts` GroundTool, mirror
   waterDrag): Move + layer free active → overlay đỉnh (vàng) + 2 tay-cầm bezier in/out (cyan) + line; kéo đỉnh/tay-cầm
