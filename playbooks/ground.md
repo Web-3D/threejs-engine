@@ -32,6 +32,10 @@ cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc 
 - **Editor** (archplan `gui/site.ts`): nested-tabs `G0(base)|G1|G2…|＋`; mỗi G = `[Mảng add | Khoét cut]`, mỗi tab
   = instance `Z1|Z2|＋` / `C1|C2|＋`. Cut highlight xám hiện CHỈ khi layer active (chọn tab GUI / click 3D / Move-drag)
   qua `ctx.setActiveGroundLayer` → Lab toggle `.visible` (raycaster vẫn pick dù ẩn).
+- **Form** zone/cut: `Rect | Tròn | Ellipse | Free (bezier)` (`groundFormRow`). Đổi → Free: seed blob 8-điểm
+  (`rectBezierPoints`, DÙNG CHUNG với hồ) từ `length×width`. **Nắn 3D** (`interaction/groundDrag.ts` GroundTool, mirror
+  waterDrag): Move + layer free active → overlay đỉnh (vàng) + 2 tay-cầm bezier in/out (cyan) + line; kéo đỉnh/tay-cầm
+  → ghi `points[]` live + viền vàng định-vị; buông = commit (rebuild đặt lỗ-cut). Body-drag (dời layer) vẫn ở Lab `_layerDrag`.
 
 ## 3. Tầng & toạ độ (Y stacking)
 
@@ -59,10 +63,11 @@ Local→world: `shapeToLocalPolygon` (mét, tâm gốc) + `offsetX/Z÷1000`. Sha
 - `2026-06-06` — free-form shape (rect/circle/ellipse) + cut-reveal (clip-hole) + "bộ nền" phím tắt (Phase 2 inc 1)
 - `2026-06-07` — nested-tabs G-level `[Mảng add|Khoét cut]` + cut highlight xám-khi-chọn + **khoét = polygon-boolean** (hết viền/góc/wedge, KI-011)
 - `2026-06-07` — +4 texture surface (artificial_turf/grass_o/thai sand 2K+4K) → 3 hệ: ground surface + bộ nền (phím 5-7, `_photoEditorGround` share PhotoGround) + **water bottom** (texture đáy hồ, `basinMaterial` inject `groundMatByKey`); 4K né prefetch (chỉ tải khi chọn)
+- `2026-06-07` — **add/cut mảng FORM TỰ DO** (Free bezier): `groundFormRow`+`Free`, seed blob `rectBezierPoints` (chung hồ), **GroundTool** (`interaction/groundDrag.ts`) nắn đỉnh+tay-cầm 3D (mirror waterDrag; outline-khi-kéo, commit-khi-buông; body-drag giữ Lab). Render contour cong đã sẵn từ `2026-06-06`
 
 ## 6. Liên hệ
 
-- **Modules:** [fromState.ts](../threejs-modules/site/render/fromState.ts) · [state.ts](../threejs-modules/site/state.ts)
-- **Editor:** archplan `src/archplan/gui/site.ts` (nested-tabs + cut highlight) · `ArchPlanLab.ts` (`_applyCutVisibility`)
-- **Deferred:** free-bezier editor cho ground · cut "lộ lớp riêng từng level" (hiện lộ-xuyên theo stacking)
+- **Modules:** [fromState.ts](../threejs-modules/site/render/fromState.ts) · [state.ts](../threejs-modules/site/state.ts) · [shapes.ts](../threejs-modules/site/shapes.ts) (tessellate rect/circle/ellipse/free)
+- **Editor:** archplan `gui/site.ts` (nested-tabs + Form + cut highlight) · `interaction/groundDrag.ts` (GroundTool nắn đỉnh/tay-cầm free) · `ArchPlanLab.ts` (`_applyCutVisibility` + `_activeLayerIdx` + `_layerDrag` body)
+- **Deferred:** WYSIWYG live-rebuild geometry khi kéo (hiện chỉ outline) · cut "lộ lớp riêng từng level" (hiện lộ-xuyên theo stacking) · offsetPolygon concave gắt tự-cắt (lib offset robust)
 - **KI:** KI-011 (cần polygon-boolean) · KI-004 · KI-005
