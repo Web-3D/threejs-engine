@@ -32,6 +32,17 @@ cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc 
   `buildLevelCutPatches` (mảng xám highlight, ẩn).
 - **Khoét = polygon-boolean** (`layerGeometry`): `difference([contour], ...cuts+nước)` (lib `polygon-clipping`) →
   MultiPolygon → mảng `Shape` → `ExtrudeGeometry`. Rỗng → `null` → bỏ mesh. KHÔNG earcut-hole (→ KI-011).
+- **🕳️ Khoét lỗ HỒ — THỐNG NHẤT quanh 1 nguồn `pondWorldXZ`** (tessellate water-shape MỌI form ở `shapes.ts`; đổi
+  shape hồ → lan hết). 2 biến thể có-chủ-đích + cơ chế theo từng vùng:
+
+  | Vùng khoét | Polygon | Vì sao khác | Cơ chế |
+  | --- | --- | --- | --- |
+  | **Base ground** (phẳng `lotShape` · gò `griddedGroundGeometry` · editor backdrop `_rebuildEditorGround` · grid `_rebuildGrid`) | **`waterPolygons`** = `pondWorldXZ` (water-only, KHÔNG edge, KHÔNG puddle) | base NẰM DƯỚI coping → coping đặt LÊN base (base che dưới coping) | phẳng/editor = earcut `Shape.holes`; gò = **clip ô-biên `polygon-clipping`** (commit) / bỏ-ô (live) |
+  | **Zone/layer chồng** (`layerGeometry`) | **`allWaterCarvePolygons`** = `pondWorldXZ` **+ `offsetPolygon(edgeWidth)`** + puddle | tầng TRÊN không che coping → khoét RỘNG hơn (lộ coping) | `polygon-clipping` difference (gồm cả vùng cut) |
+
+  Nguyên tắc: **base = water-only (che-dưới-coping)**; **tầng-trên = water+edge (né-coping)**. Puddle (phẳng, không
+  basin) → base KHÔNG khoét (puddle nằm trên nền); zone-chồng CÓ né. Coping `buildPoolEdge` = vành `pondWorldXZ →
+  offsetPolygon(edgeWidth)`. ⚠ Đừng đổi base sang `allWaterCarvePolygons` (thủng dưới coping + puddle lơ lửng — đã vấp).
 - **Editor** (archplan `gui/site.ts`): nested-tabs `G0(base)|G1|G2…|＋`; mỗi G = `[Mảng add | Khoét cut]`, mỗi tab
   = instance `Z1|Z2|＋` / `C1|C2|＋`. Cut highlight xám hiện CHỈ khi layer active (chọn tab GUI / click 3D / Move-drag)
   qua `ctx.setActiveGroundLayer` → Lab toggle `.visible` (raycaster vẫn pick dù ẩn). Tab G enumerate `1..groundLevels`
@@ -39,9 +50,10 @@ cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc 
 - **Terrain (nền lồi-lõm, Phase 1)** (`terrain.ts` + `buildGround`): `site.terrain` (optional) bật → base ground =
   LƯỚI `resolution²` displaced Y bằng `heightAt(hf,x,z)` = **mask · (FBM noise nền + Σ gò)** ÷1000. **mask=0** ở
   pad nhà (`opts.buildingFootprint` = `_foundationRects`) ∪ quanh hồ (waterRect+edge) ∪ viền lô (`edgeFlat` band) →
-  smoothstep →1 ở garden ⇒ **móng/hồ/rào/lot-edge GIỮ PHẲNG, không đổi**. Đục lỗ hồ = BỎ tam-giác có tâm trong
-  `allWaterCarvePolygons` (point-in-poly; mép răng-cưa nằm dưới coping nên khuất). terrain tắt → path phẳng cũ. Cỏ
-  bám gò = Phase 2 (`heightAt` callback vào GrassBlades). Slider noise đầy đủ ở GUI tab Ground (`buildTerrainControls`).
+  smoothstep →1 ở garden ⇒ **móng/hồ/rào/lot-edge GIỮ PHẲNG, không đổi**. Đục lỗ hồ = `waterPolygons` (KHỚP path
+  phẳng — xem bảng "Khoét lỗ hồ" dưới): commit → **CLIP ô-biên `polygon-clipping`** (mép sạch như cut C1); live-drag
+  → bỏ-ô nhanh (răng cưa tạm, né clip Martinez mỗi frame, `groundGeometry(.., clean=false)`). terrain tắt → path
+  phẳng cũ. Cỏ bám gò = Phase 2 (`heightAt` callback vào GrassBlades). Slider noise đầy đủ ở GUI (`buildTerrainControls`).
   **GOTCHA G0/grid:** `heightAt` BIAS FBM `[-1,1]→[0,1]` (`fbm·0.5+0.5`) = heightmap KHÔNG-âm + `Math.max(dy,0)` →
   Y = topY+Δy LUÔN ≥ topY (groundThick 10mm). FBM dao động ÂM → nền xấn dưới grid → **lỗ đen lộ void** (đã vấp).
   **PERF kéo slider:** terrain chỉ đụng ground geo → live-drag dùng **`_applyTerrainLive` SWAP geometry-only**
@@ -81,7 +93,8 @@ Local→world: `shapeToLocalPolygon` (mét, tâm gốc) + `offsetX/Z÷1000`. Sha
 - `2026-06-07` — **add/cut mảng FORM TỰ DO** (Free bezier): `groundFormRow`+`Free`, seed blob `rectBezierPoints` (chung hồ), **GroundTool** (`interaction/groundDrag.ts`) nắn đỉnh+tay-cầm 3D (mirror waterDrag; outline-khi-kéo, commit-khi-buông; body-drag giữ Lab). Render contour cong đã sẵn từ `2026-06-06`
 - `2026-06-07` — **+cobblestone** vào ground surface (GroundMaterialKey + GROUND_TEX_KEYS + GROUND_PRESETS #626263 + GROUND_TEX_SPEC + GROUND_OPTS) — nhân bản pattern texture (PhotoGround world-XZ, ktx2). Đá cobblestone lát sân/lối.
 - `2026-06-07` — **G rỗng** (`site.groundLevels` count tường minh): `＋`G = +1 tầng RỖNG (bỏ auto-Z1) + **`✕ Remove G`** (xoá tầng + dồn level + clear active); editor enumerate `groundEditorLevels(1..N)`, render KHÔNG đổi (derive layers). Parse migrate `?? max(level)`, không bump schema
-- `2026-06-07` — **TERRAIN Phase 1** (nền lồi-lõm sân vườn): `terrain.ts` (height-field 1-điểm-lan-truyền: value-noise FBM + domain-warp + Σ gò + mask rect, PURE) + `site.terrain` (TerrainConfig optional + parseTerrain, backward-compat) + `buildGround` lưới displaced (`griddedGroundGeometry`, đục lỗ hồ point-in-poly) + `opts.buildingFootprint` (mask pad nhà) + GUI section "🏔️ Terrain" tab Ground (10 slider: amplitude/frequency/octaves/lacunarity/gain/warp/seed/resolution/padMargin/edgeFlat, live-rebuild). mask=0 ở pad/hồ/viền → móng/hồ/rào không đổi. Phase 2 = cỏ bám gò; Phase 3 = nặn gò tay; Phase 4 = detail-normal. **Gaea = defer** (sai scale + phá live-edit; `heightAt` chừa cửa cộng heightmapSample). Mặc định TẮT (opt-in)
+- `2026-06-07` — **TERRAIN Phase 1** (nền lồi-lõm sân vườn): `terrain.ts` (height-field 1-điểm-lan-truyền: value-noise FBM + domain-warp + Σ gò + mask rect, PURE) + `site.terrain` (TerrainConfig optional + parseTerrain, backward-compat) + `buildGround` lưới displaced (`griddedGroundGeometry`) + `opts.buildingFootprint` (mask pad nhà) + GUI section "🏔️ Terrain" tab Ground (10 slider: amplitude/frequency/octaves/lacunarity/gain/warp/seed/resolution/padMargin/edgeFlat, live-rebuild). mask=0 ở pad/hồ/viền → móng/hồ/rào không đổi. Phase 2 = cỏ bám gò; Phase 3 = nặn gò tay; Phase 4 = detail-normal. **Gaea = defer** (sai scale + phá live-edit; `heightAt` chừa cửa cộng heightmapSample). Mặc định TẮT (opt-in)
+- `2026-06-07` — **Khoét lỗ hồ trên gò = THỐNG NHẤT** (xem bảng §2 "Khoét lỗ hồ"): (a) đổi nguồn lỗ gò `allWaterCarvePolygons`→**`waterPolygons`** = KHỚP path phẳng/editor (hết thủng-dưới-coping + puddle-lơ-lửng); (b) thay bỏ-nguyên-ô (răng cưa) bằng **CLIP ô-biên `polygon-clipping` + `ShapeUtils.triangulateShape`** (mép sạch như cut C1, `groundGeometry(.., clean)`); (c) `+heightAt` clamp `Math.max(dy,0)` né xấn-grid + G0-grid-floor. 1 nguồn duy nhất = `pondWorldXZ`
 
 ## 6. Liên hệ
 
