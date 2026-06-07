@@ -150,11 +150,14 @@ function moundsHeightMm(hf: HeightField, x: number, z: number): number {
 
 // ── API chính ────────────────────────────────────────────────────────────────────
 
-// Cao-độ Δy (MÉT) tại (x,z) world. = mask · (amplitude·FBM + Σgò) ÷1000. terrain tắt → 0 (caller giữ path phẳng).
+// Cao-độ Δy (MÉT) tại (x,z) world. = mask · (amplitude·noise + Σgò) ÷1000. terrain tắt → 0 (caller giữ path phẳng).
+// FBM bias [-1,1]→[0,1]: nền gò = HEIGHTMAP KHÔNG-ÂM (dune nhú LÊN từ base, KHÔNG dip xuống) ⇒ Y = topY + Δy
+// LUÔN ≥ topY (= groundThick 10mm) → **G0 KHÔNG xấn xuống grid** (hết lỗ đen lộ void). amplitude = cao đỉnh trên base.
 export function heightAt(hf: HeightField, x: number, z: number): number {
   if (!hf.t.enabled) return 0
   const mask = groundHeightMask(hf, x, z)
   if (mask <= 0) return 0
-  const rawMm = hf.t.amplitude * fbm(hf.t, x, z) + moundsHeightMm(hf, x, z)
-  return (mask * rawMm) / 1000
+  const noiseMm = hf.t.amplitude * (fbm(hf.t, x, z) * 0.5 + 0.5) // [0, amplitude] — heightmap dương
+  const dy = (mask * (noiseMm + moundsHeightMm(hf, x, z))) / 1000
+  return Math.max(dy, 0) // chốt sàn: gò ÂM (mound dip Phase 3) cũng không thủng xuống dưới base/grid
 }
