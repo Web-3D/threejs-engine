@@ -37,9 +37,10 @@ three `ReflectorBaseNode.updateBefore` (bounces=false) dùng **biến MODULE-GLO
 
 ## 4. Sửa như thế nào
 
-**Cho mặt nước KHÔNG xuất hiện trong pass phản chiếu** (`67050c5`, archplan ArchPlanLab):
-- Mặt nước → layer riêng `WATER_REFLECT_LAYER=1` (`x.surf.getMesh().layers.set(1)` mỗi `_rebuildSite`). virtual-camera reflector (layer 0 mặc định) → KHÔNG render mặt nước khác → hết render-lẫn-nhau → hết chen `_inReflector`.
-- Camera chính + raycaster `_ray` (pick + water-drag raycast mesh thật) **`.layers.enable(1)`** (cộng dồn, vẫn hit layer 0) → vẫn THẤY + click/kéo được hồ.
+**Cho mặt nước KHÔNG xuất hiện trong pass phản chiếu** (commit `67050c5` + `fa562b5`/`f66bddf`):
+- Mặt nước → layer riêng `WATER_REFLECT_LAYER=1` (`x.surf.getMesh().layers.set(1)` mỗi `_rebuildSite`).
+- Camera chính + raycaster `_ray` (pick + water-drag raycast mesh THẬT) **`.layers.enable(1)`** (cộng dồn, vẫn hit layer 0) → vẫn THẤY + click/kéo được hồ.
+- ⚠️ **MẤU CHỐT (fix đầu thiếu bước này → vẫn đơ):** `getVirtualCamera` = **`camera.clone()`** ([ReflectorNode.js:323]) → virtualCamera **COPY `layers` của camera chính** (đã bật layer 1) ⇒ virtualCamera VẪN render mặt nước. Phải **`virtualCamera.layers.disable(1)` MỖI FRAME** (sau khi nó được tạo ở render đầu): `WaterSurface.excludeReflectionLayer(1)` → `setTime` disable trên `_reflector.virtualCameras.get(_camera)`.
 - Hệ quả: mất "nước-phản-chiếu-nước" (vốn không cần + né đệ quy reflector).
 
 ## 5. Phòng tái phạm
