@@ -186,6 +186,8 @@ export interface SiteState {
   groundThick: number // mm — dày slab nền 10..100 (1..10cm); ≥10 để mặt trên cao hơn grid → hết z-fight
   ground: GroundMaterialKey
   groundLayers?: GroundLayer[] // TẦNG surface chồng lên base (xếp lớp 3D). Optional → backward-compat (cũ = [])
+  groundLevels?: number // SỐ G-level tường minh (G1..GN) — cho phép tầng RỖNG (chưa có zone/cut). Optional →
+  // migrate = max(level layers) (backward-compat). Editor enumerate tab theo số này; render vẫn derive từ layers.
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
@@ -255,6 +257,7 @@ export function defaultSiteState(): SiteState {
     groundThick: GROUND_THICK_MIN,
     ground: 'grass',
     groundLayers: [], // chưa có tầng chồng (thêm qua ＋ ở GUI)
+    groundLevels: 0, // chưa có G-level nào (chỉ G0 base); ＋ tăng dần
     grass3d: {
       enabled: true,
       density: 100,
@@ -540,15 +543,25 @@ export function parseSite(raw: unknown): SiteState {
     waters?: unknown
     water?: Partial<WaterConfig> // legacy: design cũ lưu 1 hồ đơn → migrate trong parseWaters
   }
+  const groundLayers = parseGroundLayers(o.groundLayers)
   return {
     show: typeof o.show === 'boolean' ? o.show : d.show,
     lotWidth: num(o.lotWidth, d.lotWidth),
     lotDepth: num(o.lotDepth, d.lotDepth),
     groundThick: clamp(num(o.groundThick, d.groundThick), GROUND_THICK_MIN, GROUND_THICK_MAX),
     ground: parseGround(o.ground, d.ground),
-    groundLayers: parseGroundLayers(o.groundLayers),
+    groundLayers,
+    groundLevels: parseGroundLevels(o.groundLevels, groundLayers),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
     waters: parseWaters(o.waters, o.water),
     fences: parseFences(o.fences, o.fence, d.fences[0]),
   }
+}
+
+// Số G-level tường minh. Thiếu (design cũ) → max(level) của layers (mọi level đang có layer đều hiện). Luôn ≥
+// max(level) để KHÔNG ẩn tầng đang có zone/cut. clamp 0..99.
+function parseGroundLevels(raw: unknown, layers: GroundLayer[]): number {
+  const maxLv = layers.reduce((m, l) => Math.max(m, l.level ?? 1), 0)
+  const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.floor(raw) : maxLv
+  return clamp(Math.max(n, maxLv), 0, 99)
 }
