@@ -63,8 +63,11 @@ grass.dispose() // geometry + NodeMaterial + gỡ mesh
 | `contactRadius` | number | 0.07 | Bề rộng ngang vệt tiếp đất (m) — độ dài do `setSun` (góc nắng). **LIVE** (`setContactRadius`) |
 | _(sun)_ | — | — | Hướng + độ dài vệt theo mặt trời qua **`setSun(x,y,z)`** (vector tới sun). Caller gọi khi sun đổi. Không persist (lấy từ scene) |
 | `exclude` | `GrassExcludeRect[]` | `[]` | Rect (m, world XZ) cỏ **né** — lá rơi trong rect bị bỏ. Vd footprint foundation ("nơi có nhà thì không mọc cỏ"). `{cx,cz,halfW,halfD,rot}` |
+| `heightAt` | `(x,z)=>number` | _(none)_ | 🏔️ Δy nền (m) tại (x,z) world (= grass-local) — gốc lá **+ vệt tiếp đất bám gò terrain**. Thiếu = nền phẳng. Sample ở **tâm cụm** (bụi ~4cm → bỏ qua chênh trong cụm) |
 
 > **`exclude`** dùng buffer cấp theo `planned` rồi đặt `mesh.count` = số lá thực còn lại (≤ planned) — 1 draw, không tốn slot. `getCount()` trả số thực. Test rect đối xứng nên dấu xoay không ảnh hưởng với `rot ∈ {0,90,180,270}`.
+>
+> **`heightAt`** (cỏ bám gò) chỉ chạy lúc **rải** (build-time), KHÔNG per-frame → 0 cost runtime. Caller (site-kit) bơm closure `(x,z)=>heightAt(hf,x,z)` dùng **chung height-field với nền** ⇒ gốc lá ngồi khít mặt nền displaced. Đổi terrain → re-scatter (structural sig).
 
 ## Budget (luật tier-B — bắt buộc)
 

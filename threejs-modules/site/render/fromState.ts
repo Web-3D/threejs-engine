@@ -551,6 +551,13 @@ function buildVegetation(
 export function buildSiteGrass(site: SiteState, exclude: GrassExcludeRect[]): GrassBlades | null {
   if (!site.grass3d.enabled) return null // độc lập surface — bất kỳ nền nào cũng rải được
   const g = site.grass3d
+  // 🏔️ Cỏ bám gò: height-field DÙNG CHUNG maskRects với nền — exclude (foundation+hồ) ≡ buildHeightField
+  // (buildingFootprint+hồ, cùng _foundationRects()+waterRect) ⇒ gốc lá khớp ĐÚNG mặt nền displaced. Tắt → null.
+  const terr = site.terrain
+  const hf =
+    terr && terr.enabled
+      ? makeHeightField(terr, exclude, site.lotWidth / 2000, site.lotDepth / 2000)
+      : null
   const blades = new GrassBlades({
     width: site.lotWidth / 1000,
     depth: site.lotDepth / 1000,
@@ -575,6 +582,7 @@ export function buildSiteGrass(site: SiteState, exclude: GrassExcludeRect[]): Gr
     shadowSpan: g.shadowSpan,
     contactDark: g.contactDark, // luôn dựng contact mesh nếu >0 → toggle live cả 2 chiều
     contactRadius: g.contactRadius,
+    heightAt: hf ? (x, z) => heightAt(hf, x, z) : undefined, // 🏔️ gốc lá bám gò (null → cỏ phẳng như cũ)
     exclude,
   })
   if (!g.contactOn) blades.setContactDark(0) // tắt vệt = uniform 0 (mesh vẫn có, bật lại live được)
@@ -610,6 +618,7 @@ export function grassBuildSig(site: SiteState, exclude: GrassExcludeRect[]): str
     g.clumpRadius,
     g.clumpSplay,
     g.contactDark > 0,
+    site.terrain && site.terrain.enabled ? site.terrain : null, // 🏔️ terrain đổi → cỏ rải lại bám gò mới
     exclude,
   ])
 }

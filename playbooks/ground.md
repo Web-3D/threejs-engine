@@ -53,7 +53,8 @@ cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc 
   smoothstep →1 ở garden ⇒ **móng/hồ/rào/lot-edge GIỮ PHẲNG, không đổi**. Đục lỗ hồ = `waterPolygons` (KHỚP path
   phẳng — xem bảng "Khoét lỗ hồ" dưới): commit → **CLIP ô-biên `polygon-clipping`** (mép sạch như cut C1); live-drag
   → bỏ-ô nhanh (răng cưa tạm, né clip Martinez mỗi frame, `groundGeometry(.., clean=false)`). terrain tắt → path
-  phẳng cũ. Cỏ bám gò = Phase 2 (`heightAt` callback vào GrassBlades). Slider noise đầy đủ ở GUI (`buildTerrainControls`).
+  phẳng cũ. **Cỏ bám gò = Phase 2 ✅** (`heightAt` closure vào GrassBlades — gốc lá + vệt tiếp đất nâng theo gò;
+  height-field DÙNG CHUNG maskRects với nền vì `exclude` cỏ ≡ `buildHeightField` → cỏ ngồi khít; xem §5). Slider noise đầy đủ ở GUI (`buildTerrainControls`).
   **GOTCHA G0/grid:** `heightAt` BIAS FBM `[-1,1]→[0,1]` (`fbm·0.5+0.5`) = heightmap KHÔNG-âm + `Math.max(dy,0)` →
   Y = topY+Δy LUÔN ≥ topY (groundThick 10mm). FBM dao động ÂM → nền xấn dưới grid → **lỗ đen lộ void** (đã vấp).
   **PERF kéo slider:** terrain chỉ đụng ground geo → live-drag dùng **`_applyTerrainLive` SWAP geometry-only**
@@ -95,6 +96,7 @@ Local→world: `shapeToLocalPolygon` (mét, tâm gốc) + `offsetX/Z÷1000`. Sha
 - `2026-06-07` — **G rỗng** (`site.groundLevels` count tường minh): `＋`G = +1 tầng RỖNG (bỏ auto-Z1) + **`✕ Remove G`** (xoá tầng + dồn level + clear active); editor enumerate `groundEditorLevels(1..N)`, render KHÔNG đổi (derive layers). Parse migrate `?? max(level)`, không bump schema
 - `2026-06-07` — **TERRAIN Phase 1** (nền lồi-lõm sân vườn): `terrain.ts` (height-field 1-điểm-lan-truyền: value-noise FBM + domain-warp + Σ gò + mask rect, PURE) + `site.terrain` (TerrainConfig optional + parseTerrain, backward-compat) + `buildGround` lưới displaced (`griddedGroundGeometry`) + `opts.buildingFootprint` (mask pad nhà) + GUI section "🏔️ Terrain" tab Ground (10 slider: amplitude/frequency/octaves/lacunarity/gain/warp/seed/resolution/padMargin/edgeFlat, live-rebuild). mask=0 ở pad/hồ/viền → móng/hồ/rào không đổi. Phase 2 = cỏ bám gò; Phase 3 = nặn gò tay; Phase 4 = detail-normal. **Gaea = defer** (sai scale + phá live-edit; `heightAt` chừa cửa cộng heightmapSample). Mặc định TẮT (opt-in)
 - `2026-06-07` — **Khoét lỗ hồ trên gò = THỐNG NHẤT** (xem bảng §2 "Khoét lỗ hồ"): (a) đổi nguồn lỗ gò `allWaterCarvePolygons`→**`waterPolygons`** = KHỚP path phẳng/editor (hết thủng-dưới-coping + puddle-lơ-lửng); (b) thay bỏ-nguyên-ô (răng cưa) bằng **CLIP ô-biên `polygon-clipping` + `ShapeUtils.triangulateShape`** (mép sạch như cut C1, `groundGeometry(.., clean)`); (c) `+heightAt` clamp `Math.max(dy,0)` né xấn-grid + G0-grid-floor. 1 nguồn duy nhất = `pondWorldXZ`
+- `2026-06-07` — **TERRAIN Phase 2** (cỏ bám gò): `GrassBlades` +option `heightAt?: (x,z)=>number` → `_scatter` nâng gốc lá `gy = baseY + heightAt` + `_emitContacts` vệt tiếp đất nâng theo (sample TÂM cụm). `buildSiteGrass` dựng `makeHeightField(terrain, exclude, ...)` — **`exclude` (foundation+hồ) ≡ maskRects nền** (cùng `_foundationRects`+`waterRect`) ⇒ cỏ ngồi KHÍT mặt nền displaced; bơm closure `heightAt: hf?(x,z)=>heightAt(hf,x,z):undefined`. `grassBuildSig` +terrain → đổi terrain RE-SCATTER (chỉ lúc commit/buông, KHÔNG per-frame: terrain drag = `_applyTerrainLive` ground-only, cỏ giữ tới buông). 0 cost runtime (sample build-time). Module vẫn ĐỘC LẬP (caller bơm closure). Phase 3 = nặn gò tay; Phase 4 = detail-normal
 
 ## 6. Liên hệ
 

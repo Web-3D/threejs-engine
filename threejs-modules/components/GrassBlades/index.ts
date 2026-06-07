@@ -126,6 +126,9 @@ export interface GrassBladesOptions {
   contactRadius?: number
   /** Rect loại trừ (m, world XZ) — cỏ né các vùng này (vd footprint foundation). Default [] */
   exclude?: GrassExcludeRect[]
+  /** Cao-độ nền Δy (m) tại (x,z) world (= grass-local, siteGroup ở gốc) — gốc lá + vệt tiếp đất BÁM GÒ terrain.
+   *  Thiếu = nền phẳng (Δy=0). Sample ở TÂM cụm (bụi nhỏ ~4cm → bỏ qua chênh-cao trong cụm). */
+  heightAt?: (x: number, z: number) => number
 }
 
 export class GrassBlades {
@@ -149,6 +152,7 @@ export class GrassBlades {
   private readonly uSunDz: ReturnType<typeof uniform> // hướng bóng — world Z
   private readonly uSunLen: ReturnType<typeof uniform> // độ dài vệt (m) = cao_lá / tan(góc cao sun)
   private readonly bladeH: number // cao lá (m) — tính độ dài vệt theo góc sun
+  private readonly heightAt: ((x: number, z: number) => number) | null // 🏔️ Δy nền (m) → gốc lá bám gò terrain
   private contactBaseDark = 0 // đậm vệt NỀN (slider) trước khi nhân hệ số góc-cao-sun
   private contactElevK = 1 // hệ số đậm theo góc cao sun (đỉnh→đậm, thấp→nhạt); uContactDark = base × hệ số
 
@@ -171,6 +175,7 @@ export class GrassBlades {
     this.uSunLen = uniform(o.bladeHeight * 0.7)
     this.bladeH = o.bladeHeight
     this.contactBaseDark = o.contactDark // base; đậm hiệu lực = base × hệ số góc sun (setSun cập nhật)
+    this.heightAt = opts.heightAt ?? null // 🏔️ closure caller bơm (site-kit) → null = nền phẳng (cỏ Y=baseY)
 
     this.geo = this._buildClumpGeo(o, k) // K=1 → 1 lá; K>1 → bụi K lá gộp 1 geometry
 
@@ -438,10 +443,11 @@ export class GrassBlades {
       const pz = -o.depth / 2 + (r + Math.random()) * cd
       if (inExcluded(px, pz, exclude)) continue // dưới foundation → không mọc cỏ
       const yaw = Math.random() * 6.283
-      p.set(px, o.baseY, pz)
+      const gy = o.baseY + (this.heightAt ? this.heightAt(px, pz) : 0) // 🏔️ gốc bám gò terrain (Δy ở tâm cụm)
+      p.set(px, gy, pz)
       q.setFromAxisAngle(up, yaw)
       mesh.setMatrixAt(w, m.compose(p, q, s))
-      if (this.contactMesh) ci = this._emitContacts(px, pz, yaw, o.baseY, ci) // k vệt khớp gốc lá + hướng ngả
+      if (this.contactMesh) ci = this._emitContacts(px, pz, yaw, gy, ci) // k vệt khớp gốc lá + nâng theo gò
       w++
     }
     mesh.instanceMatrix.needsUpdate = true
