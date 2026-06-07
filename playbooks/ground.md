@@ -6,6 +6,7 @@ tier: —
 modules:
   - threejs-modules/site/render/fromState.ts
   - threejs-modules/site/state.ts
+  - threejs-modules/site/terrain.ts
 issues:
   - KI-011
 updated: 2026-06-07
@@ -35,6 +36,12 @@ cong/xóa hết) → **lộ lớp ngay dưới** (zone level thấp hơn hoặc 
   = instance `Z1|Z2|＋` / `C1|C2|＋`. Cut highlight xám hiện CHỈ khi layer active (chọn tab GUI / click 3D / Move-drag)
   qua `ctx.setActiveGroundLayer` → Lab toggle `.visible` (raycaster vẫn pick dù ẩn). Tab G enumerate `1..groundLevels`
   (`groundEditorLevels`) → **`＋` G = +1 tầng RỖNG** (KHÔNG tự sinh Z1); **`✕ Remove G`** = xoá tầng + dồn level trên xuống.
+- **Terrain (nền lồi-lõm, Phase 1)** (`terrain.ts` + `buildGround`): `site.terrain` (optional) bật → base ground =
+  LƯỚI `resolution²` displaced Y bằng `heightAt(hf,x,z)` = **mask · (FBM noise nền + Σ gò)** ÷1000. **mask=0** ở
+  pad nhà (`opts.buildingFootprint` = `_foundationRects`) ∪ quanh hồ (waterRect+edge) ∪ viền lô (`edgeFlat` band) →
+  smoothstep →1 ở garden ⇒ **móng/hồ/rào/lot-edge GIỮ PHẲNG, không đổi**. Đục lỗ hồ = BỎ tam-giác có tâm trong
+  `allWaterCarvePolygons` (point-in-poly; mép răng-cưa nằm dưới coping nên khuất). terrain tắt → path phẳng cũ. Cỏ
+  bám gò = Phase 2 (`heightAt` callback vào GrassBlades). Slider noise đầy đủ ở GUI tab Ground (`buildTerrainControls`).
 - **Form** zone/cut: `Rect | Tròn | Ellipse | Free (bezier)` (`groundFormRow`). Đổi → Free: seed blob 8-điểm
   (`rectBezierPoints`, DÙNG CHUNG với hồ) từ `length×width`. **Nắn 3D** (`interaction/groundDrag.ts` GroundTool, mirror
   waterDrag): Move + layer free active → overlay đỉnh (vàng) + 2 tay-cầm bezier in/out (cyan) + line; kéo đỉnh/tay-cầm
@@ -69,10 +76,11 @@ Local→world: `shapeToLocalPolygon` (mét, tâm gốc) + `offsetX/Z÷1000`. Sha
 - `2026-06-07` — **add/cut mảng FORM TỰ DO** (Free bezier): `groundFormRow`+`Free`, seed blob `rectBezierPoints` (chung hồ), **GroundTool** (`interaction/groundDrag.ts`) nắn đỉnh+tay-cầm 3D (mirror waterDrag; outline-khi-kéo, commit-khi-buông; body-drag giữ Lab). Render contour cong đã sẵn từ `2026-06-06`
 - `2026-06-07` — **+cobblestone** vào ground surface (GroundMaterialKey + GROUND_TEX_KEYS + GROUND_PRESETS #626263 + GROUND_TEX_SPEC + GROUND_OPTS) — nhân bản pattern texture (PhotoGround world-XZ, ktx2). Đá cobblestone lát sân/lối.
 - `2026-06-07` — **G rỗng** (`site.groundLevels` count tường minh): `＋`G = +1 tầng RỖNG (bỏ auto-Z1) + **`✕ Remove G`** (xoá tầng + dồn level + clear active); editor enumerate `groundEditorLevels(1..N)`, render KHÔNG đổi (derive layers). Parse migrate `?? max(level)`, không bump schema
+- `2026-06-07` — **TERRAIN Phase 1** (nền lồi-lõm sân vườn): `terrain.ts` (height-field 1-điểm-lan-truyền: value-noise FBM + domain-warp + Σ gò + mask rect, PURE) + `site.terrain` (TerrainConfig optional + parseTerrain, backward-compat) + `buildGround` lưới displaced (`griddedGroundGeometry`, đục lỗ hồ point-in-poly) + `opts.buildingFootprint` (mask pad nhà) + GUI section "🏔️ Terrain" tab Ground (10 slider: amplitude/frequency/octaves/lacunarity/gain/warp/seed/resolution/padMargin/edgeFlat, live-rebuild). mask=0 ở pad/hồ/viền → móng/hồ/rào không đổi. Phase 2 = cỏ bám gò; Phase 3 = nặn gò tay; Phase 4 = detail-normal. **Gaea = defer** (sai scale + phá live-edit; `heightAt` chừa cửa cộng heightmapSample). Mặc định TẮT (opt-in)
 
 ## 6. Liên hệ
 
-- **Modules:** [fromState.ts](../threejs-modules/site/render/fromState.ts) · [state.ts](../threejs-modules/site/state.ts) · [shapes.ts](../threejs-modules/site/shapes.ts) (tessellate rect/circle/ellipse/free)
+- **Modules:** [fromState.ts](../threejs-modules/site/render/fromState.ts) · [state.ts](../threejs-modules/site/state.ts) · [shapes.ts](../threejs-modules/site/shapes.ts) (tessellate rect/circle/ellipse/free) · [terrain.ts](../threejs-modules/site/terrain.ts) (height-field gò: noise FBM + mask + Σ gò)
 - **Editor:** archplan `gui/site.ts` (nested-tabs + Form + cut highlight) · `interaction/groundDrag.ts` (GroundTool nắn đỉnh/tay-cầm free) · `ArchPlanLab.ts` (`_applyCutVisibility` + `_activeLayerIdx` + `_layerDrag` body)
-- **Deferred:** WYSIWYG live-rebuild geometry khi kéo (hiện chỉ outline) · cut "lộ lớp riêng từng level" (hiện lộ-xuyên theo stacking) · offsetPolygon concave gắt tự-cắt (lib offset robust)
+- **Deferred:** WYSIWYG live-rebuild geometry khi kéo (hiện chỉ outline) · cut "lộ lớp riêng từng level" (hiện lộ-xuyên theo stacking) · offsetPolygon concave gắt tự-cắt (lib offset robust) · **Terrain P2-4** (cỏ bám gò / nặn gò tay 3D / detail-normal) · **Gaea heightmap import** ([deferred/systems/terrain-gaea-heightmap.md](../deferred/systems/terrain-gaea-heightmap.md)) · zone/layer phẳng nổi trên gò (san phẳng cục bộ) · terrain ground skirt (hiện mặt-trên-đơn)
 - **KI:** KI-011 (cần polygon-boolean) · KI-004 · KI-005

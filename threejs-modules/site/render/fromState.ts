@@ -36,9 +36,11 @@ import {
   renderPuddles,
   renderWaters,
   type SiteState,
+  type TerrainConfig,
   type WaterConfig,
   type WaterMaterialKey,
 } from '../state'
+import { heightAt, type HeightField, makeHeightField, type MaskRect } from '../terrain' // 🏔️ height-field gò
 
 // Resource caller sở hữu — renderer build vào đây, KHÔNG dispose (giống building BuildRenderCtx).
 // shaders: vật liệu procedural (vd GrassGround) có dispose() riêng (ngoài mats phẳng).
@@ -88,6 +90,9 @@ export interface SiteRenderOpts {
   // LOD rào lúc KÉO: stone (12k verts đỉnh-gợn) → dùng box mỏng rẻ (material vẫn cached, triplanar lo texture)
   // → kéo cổng/slider mượt; buông (false) → stone thật. Default false.
   fenceLodBox?: boolean
+  // 🏔️ Footprint nhà (m, world XZ, rect có xoay) — terrain GIỮ PHẲNG pad dưới nhà (mask=0). Caller bơm
+  // `_foundationRects()` (= GrassExcludeRect, khớp MaskRect). Thiếu → không pad nhà (chỉ pad hồ + viền lô).
+  buildingFootprint?: MaskRect[]
 }
 
 // Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0). Trả handle (grass) cho live-tune.
@@ -613,19 +618,100 @@ export function grassBuildSig(site: SiteState, exclude: GrassExcludeRect[]): str
 // cỏ" ở mép hồ (cut-face của slab cũ cao = groundThick, càng dày càng lộ). Vách basin tự chạy rim→đáy.
 function buildGround(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
   const t = site.groundThick / 1000
-  let geo: THREE.BufferGeometry
-  if (renderWaters(site).length > 0) {
-    geo = new THREE.ShapeGeometry(lotShape(site)) // phẳng (1 mặt) — không cut-face để hở màu cỏ
-    geo.rotateX(-Math.PI / 2) // shape XY → nằm ngang XZ (normal +Y, nhìn từ trên)
-    geo.translate(0, t, 0) // nâng lên mặt nền (rim = top slab cũ)
-  } else {
-    geo = new THREE.BoxGeometry(site.lotWidth / 1000, t, site.lotDepth / 1000)
-    geo.translate(0, t / 2, 0) // box tâm → đáy y=0
-  }
+  const terr = site.terrain
+  // terrain bật → lưới displaced (gò); tắt/thiếu → path phẳng cũ (ShapeGeometry có lỗ hồ / Box).
+  const geo =
+    terr && terr.enabled ? griddedGroundGeometry(site, opts, terr, t) : flatGroundGeometry(site, t)
   const mesh = new THREE.Mesh(geo, groundMaterial(site, ctx, opts))
   mesh.receiveShadow = true
   ctx.geos.push(geo)
   ctx.group.add(mesh)
+}
+
+// Nền PHẲNG (terrain tắt) — giữ nguyên hành vi cũ: có hồ → ShapeGeometry 1 mặt (lỗ hồ, hở màu cỏ); không hồ → Box dày.
+function flatGroundGeometry(site: SiteState, t: number): THREE.BufferGeometry {
+  if (renderWaters(site).length > 0) {
+    const geo = new THREE.ShapeGeometry(lotShape(site)) // phẳng (1 mặt) — không cut-face để hở màu cỏ
+    geo.rotateX(-Math.PI / 2) // shape XY → nằm ngang XZ (normal +Y, nhìn từ trên)
+    geo.translate(0, t, 0) // nâng lên mặt nền (rim = top slab cũ)
+    return geo
+  }
+  const geo = new THREE.BoxGeometry(site.lotWidth / 1000, t, site.lotDepth / 1000)
+  geo.translate(0, t / 2, 0) // box tâm → đáy y=0
+  return geo
+}
+
+// 🏔️ Nền GÒ (terrain bật): lưới res×res trên bbox lô, đẩy Y = topY + heightAt(hf). BỎ ô có tâm trong polygon hồ
+// (đục lỗ xấp xỉ theo grid — mask→0 quanh hồ nên mép ở cao-độ-phẳng → mượt). Mặt trên ĐƠN (như path hồ cũ, không
+// skirt: viền lô phẳng + rào che). Material sample positionWorld.xz → texture tự bám gò, không cần uv chuẩn.
+function griddedGroundGeometry(
+  site: SiteState,
+  opts: SiteRenderOpts,
+  terrain: TerrainConfig,
+  topY: number
+): THREE.BufferGeometry {
+  const res = terrain.resolution
+  const hw = site.lotWidth / 2000
+  const hd = site.lotDepth / 2000
+  const hf = buildHeightField(site, opts, terrain)
+  const holes = allWaterCarvePolygons(site) // polygon hồ (chính xác) → đục lỗ bằng bỏ tam-giác
+  const nx = res + 1
+  const pos: number[] = []
+  const uv: number[] = []
+  for (let j = 0; j <= res; j++) {
+    for (let i = 0; i <= res; i++) {
+      const x = -hw + (i / res) * 2 * hw
+      const z = -hd + (j / res) * 2 * hd
+      pos.push(x, topY + heightAt(hf, x, z), z)
+      uv.push(i / res, j / res)
+    }
+  }
+  const idx: number[] = []
+  for (let j = 0; j < res; j++) {
+    for (let i = 0; i < res; i++) {
+      const cx = -hw + ((i + 0.5) / res) * 2 * hw
+      const cz = -hd + ((j + 0.5) / res) * 2 * hd
+      if (insideWaterHole(cx, cz, holes)) continue // ô tâm trong hồ → bỏ (lỗ nền)
+      const a = j * nx + i
+      idx.push(a, a + nx, a + 1, a + 1, a + nx, a + nx + 1) // winding → normal +Y
+    }
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+  geo.setIndex(idx)
+  geo.computeVertexNormals()
+  return geo
+}
+
+// Height-field gò: maskRects giữ-phẳng = footprint nhà (opts) + bbox MỌI hồ/vũng (waterRect, đã nở edgeWidth).
+function buildHeightField(
+  site: SiteState,
+  opts: SiteRenderOpts,
+  terrain: TerrainConfig
+): HeightField {
+  const rects: MaskRect[] = [...(opts.buildingFootprint ?? [])]
+  for (const w of renderWaters(site)) rects.push(waterRect(w))
+  for (const w of renderPuddles(site)) rects.push(waterRect(w))
+  return makeHeightField(terrain, rects, site.lotWidth / 2000, site.lotDepth / 2000)
+}
+
+// Tâm ô có nằm trong polygon hồ nào không (point-in-polygon ray-cast) → đục lỗ nền.
+function insideWaterHole(x: number, z: number, holes: { x: number; z: number }[][]): boolean {
+  for (const poly of holes) if (pointInPolygon(x, z, poly)) return true
+  return false
+}
+
+// Ray-cast point-in-polygon (mặt phẳng XZ). poly = {x,z}[] (không lặp đỉnh cuối).
+function pointInPolygon(x: number, z: number, poly: { x: number; z: number }[]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]
+    const b = poly[j]
+    const cross = a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x
+    if (cross) inside = !inside
+  }
+  return inside
 }
 
 // Shape lô (XY: x=worldX, y=−worldZ) + 1 lỗ MỖI pool đang bật cho ExtrudeGeometry nền.

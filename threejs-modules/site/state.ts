@@ -191,6 +191,35 @@ export interface GroundLayer {
   level?: number // G-LEVEL (1-based) — gom GUI thành G1/G2…; cut level N khoét add-layer level≥N (lộ level N−1). Optional → 1
 }
 
+// 🏔️ GÒ NẶN-TAY (Phase 3): bump radial trên height-field. x/z = tâm (mm, local so tâm lô); radius = bán kính
+// ảnh hưởng (mm); height = cao đỉnh (+gò / −lõm, mm); falloff = mềm rìa 0..1 (1 = mượt, →0 = đỉnh phẳng rộng).
+export interface TerrainMound {
+  x: number
+  z: number
+  radius: number
+  height: number
+  falloff?: number
+}
+
+// 🏔️ TERRAIN — nền sân vườn lồi-lõm (height-field). enabled=false → nền PHẲNG như cũ (opt-in, perf). Sinh gò bằng
+// FBM noise nền + Σ gò nặn-tay; mask GIỮ PHẲNG ở pad nhà / quanh hồ / viền lô → móng/hồ/rào không đổi. Structural →
+// rebuild geometry (debounced). Chi tiết thuật toán: ./terrain.ts. Sample cao-độ qua heightAt (geometry + cỏ).
+export interface TerrainConfig {
+  enabled: boolean // bật nền gò (tắt = phẳng tuyệt đối, path cũ)
+  amplitude: number // mm — biên độ gò tổng (0..2000); cao nhất của nhấp nhô
+  frequency: number // 1/m — tần số noise nền (0.02..1.0); thấp = gò TO/thưa, cao = gợn nhỏ
+  octaves: number // số lớp FBM (1..8); nhiều = chi tiết nhiều cấp
+  lacunarity: number // × tần số mỗi octave (1.5..3.0; mặc định 2.0)
+  gain: number // × biên độ mỗi octave / persistence (0.2..0.8; cao = ráp)
+  warp: number // domain warp 0..1 (méo miền cho gò tự nhiên; 0 = tắt)
+  seed: number // đổi layout gò (0..9999; cùng seed = tái lập)
+  resolution: number // mật độ lưới grid base ground (32..128) — geometry cost (check-perf)
+  padMargin: number // mm — vành smoothstep quanh nhà/hồ về phẳng (mềm rìa pad; 0..3000)
+  edgeFlat: number // mm — bề rộng band phẳng ở viền lô (rào/skirt; 0..3000)
+  detail: number // cường độ normal chi tiết bề mặt 0..1 (Phase 4; 0 = tắt) — chưa dùng ở Phase 1
+  mounds: TerrainMound[] // gò nặn-tay (Phase 3); Phase 1 = []
+}
+
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
   lotWidth: number // mm — bề ngang lô (trục X)
@@ -200,6 +229,7 @@ export interface SiteState {
   groundLayers?: GroundLayer[] // TẦNG surface chồng lên base (xếp lớp 3D). Optional → backward-compat (cũ = [])
   groundLevels?: number // SỐ G-level tường minh (G1..GN) — cho phép tầng RỖNG (chưa có zone/cut). Optional →
   // migrate = max(level layers) (backward-compat). Editor enumerate tab theo số này; render vẫn derive từ layers.
+  terrain?: TerrainConfig // 🏔️ nền sân vườn lồi-lõm (height-field). Optional → backward-compat (cũ = phẳng/tắt)
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
@@ -253,6 +283,26 @@ export const GROUND_PRESETS: Record<GroundMaterialKey, { color: number; roughnes
   cobblestone: { color: 0x626263, roughness: 0.95 }, // đá cobblestone xám — fallback khi thiếu texture
 }
 
+// 🏔️ Terrain mặc định: TẮT (nền phẳng như cũ). Bật → gò ~25cm, freq 0.12 (gò ~8m, vài gò trên lô 15m), 4 octave,
+// pad mềm 1.5m + viền phẳng 0.8m. resolution 96 = lưới mịn vừa (~18k verts, trong budget). mounds rỗng (Phase 3).
+export function defaultTerrain(): TerrainConfig {
+  return {
+    enabled: false,
+    amplitude: 250,
+    frequency: 0.12,
+    octaves: 4,
+    lacunarity: 2.0,
+    gain: 0.5,
+    warp: 0.3,
+    seed: 1,
+    resolution: 96,
+    padMargin: 1500,
+    edgeFlat: 800,
+    detail: 0,
+    mounds: [],
+  }
+}
+
 export const GROUND_THICK_MIN = 10 // mm = 1cm — default, đáy ở y=0 → top cao hơn grid editor
 export const GROUND_THICK_MAX = 100 // mm = 10cm
 export const GROUND_LAYER_SIZE_MIN = 500 // mm = 0.5m — cạnh nhỏ nhất tấm layer chồng
@@ -271,6 +321,7 @@ export function defaultSiteState(): SiteState {
     ground: 'grass',
     groundLayers: [], // chưa có tầng chồng (thêm qua ＋ ở GUI)
     groundLevels: 0, // chưa có G-level nào (chỉ G0 base); ＋ tăng dần
+    terrain: defaultTerrain(), // 🏔️ nền lồi-lõm — mặc định TẮT (phẳng)
     grass3d: {
       enabled: true,
       density: 100,
@@ -388,6 +439,47 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       level: clamp(num(o.level, idx + 1), 1, 99), // thiếu level (design cũ) → migrate idx+1 (giữ tách G1/G2…)
     }
   })
+}
+
+// 🏔️ Gò nặn-tay: lọc phần tử hợp lệ (clamp ±50m tâm, bán kính 100..20000mm, cao ±2000mm), tối đa 24 gò. Sai → bỏ.
+function parseMounds(raw: unknown): TerrainMound[] {
+  if (!Array.isArray(raw)) return []
+  const out: TerrainMound[] = []
+  for (const r of raw) {
+    const o = (r ?? {}) as Partial<TerrainMound>
+    if (typeof o.x !== 'number' || typeof o.z !== 'number') continue
+    if (!Number.isFinite(o.x) || !Number.isFinite(o.z)) continue
+    const m: TerrainMound = {
+      x: clamp(o.x, -50000, 50000),
+      z: clamp(o.z, -50000, 50000),
+      radius: clamp(num(o.radius, 2000), 100, 20000),
+      height: clamp(num(o.height, 300), -2000, 2000),
+      falloff: clamp(num(o.falloff, 1), 0, 1),
+    }
+    out.push(m)
+    if (out.length >= 24) break
+  }
+  return out
+}
+
+// 🏔️ Terrain: default-fill mọi field (optional → backward-compat, KHÔNG bump schema). Clamp theo range GUI.
+function parseTerrain(raw: unknown, d: TerrainConfig): TerrainConfig {
+  const r = (raw ?? {}) as Partial<TerrainConfig>
+  return {
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    amplitude: clamp(num(r.amplitude, d.amplitude), 0, 2000),
+    frequency: clamp(num(r.frequency, d.frequency), 0.02, 1.0),
+    octaves: clamp(Math.round(num(r.octaves, d.octaves)), 1, 8),
+    lacunarity: clamp(num(r.lacunarity, d.lacunarity), 1.5, 3.0),
+    gain: clamp(num(r.gain, d.gain), 0.2, 0.8),
+    warp: clamp(num(r.warp, d.warp), 0, 1),
+    seed: clamp(Math.round(num(r.seed, d.seed)), 0, 9999),
+    resolution: clamp(Math.round(num(r.resolution, d.resolution)), 32, 128),
+    padMargin: clamp(num(r.padMargin, d.padMargin), 0, 3000),
+    edgeFlat: clamp(num(r.edgeFlat, d.edgeFlat), 0, 3000),
+    detail: clamp(num(r.detail, d.detail), 0, 1),
+    mounds: parseMounds(r.mounds),
+  }
 }
 
 function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): FenceConfig {
@@ -586,6 +678,7 @@ export function parseSite(raw: unknown): SiteState {
     ground: parseGround(o.ground, d.ground),
     groundLayers,
     groundLevels: parseGroundLevels(o.groundLevels, groundLayers),
+    terrain: parseTerrain(o.terrain, d.terrain ?? defaultTerrain()),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
     waters: parseWaters(o.waters, o.water),
     fences: parseFences(o.fences, o.fence, d.fences[0]),
