@@ -12,6 +12,7 @@ issues:
   - KI-006
   - KI-007
   - KI-008
+  - KI-012
 updated: 2026-06-07
 ---
 
@@ -92,10 +93,11 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 | Gương đứng hình VĨNH VIỄN sau khi camera chui dưới mặt nước 1 lần | bỏ `forceUpdate` → `_inReflector` kẹt true (bug three) | `known-issues/KI-008` — giữ forceUpdate + shader tắt gương khi dưới nước |
 | Gương mất ảnh khi xoay NGANG vượt 1 góc | shader fade dùng normal SÓNG (`dot(eye,n)`) → phụ-thuộc-azimuth | đổi phép thử sang `eye.y` (normal PHẲNG +Y); `KI-008` §5 |
 | Gương ĐƠ khi xoay camera **gần thẳng đỉnh** (top-down) | virtualCamera reflector suy biến (`lookAt ∥ up`) | shader fade `1−smoothstep(0.985,0.9995, |uViewDirY|)` theo HƯỚNG-camera (không eye.y per-fragment — pool lệch tâm) |
-| **2+ hồ** đang bật → gương 1 hồ ĐƠ | GIỚI HẠN three: reflector dùng chung cờ module `_inReflector` (`bounces:false`) — không exclude reflector khác khỏi nested-render | **Khuyến nghị 1 pool reflect**; pool thêm nên dùng nước rẻ (không RTT). Forum three: phải patch source. (Playbook §1 vốn ghi "1–2 hồ".) |
+| **2+ hồ** đang bật → gương 1 hồ ĐƠ mọi góc | three: reflector dùng chung cờ module `_inReflector`+temp (`bounces:false`) — hồ A render RTT lại render mặt nước hồ B → chen nested-render | **FIXED** `known-issues/KI-012` — đẩy mặt nước sang **layer riêng** mà virtual-camera reflector (layer 0) KHÔNG render (camera chính + raycaster enable layer đó). KHÔNG cần patch three; mất "nước-soi-nước" (vô hại). |
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-07` — **FIX 2+ hồ đơ gương** (KI-012): mặt nước → layer riêng (`WATER_REFLECT_LAYER`) mà virtual-camera reflector né → hết render-lẫn-nhau/`_inReflector` chen. Trước đây doc khuyến nghị "1 pool reflect"; nay đa-hồ phản chiếu OK (mất nước-soi-nước, vô hại). Camera/`_ray` enable layer (vẫn click/kéo hồ).
 - `2026-06-04` — tier B: reflect + refract (`viewportSharedTexture`) + Fresnel-blend + form tự do (kéo đỉnh) + kéo-thả 3D.
 - `2026-06-04` — đáy basin (vách+sàn) + khoét lỗ slab (`Shape.holes`) + config depthY/bottomColor/tint + GUI.
 - `2026-06-04` — fix gương đứng hình (`reflector.forceUpdate`); fix basin merge null + khoét backdrop + lưới (KI-004).
