@@ -662,7 +662,9 @@ function griddedGroundGeometry(
   const hw = site.lotWidth / 2000
   const hd = site.lotDepth / 2000
   const hf = buildHeightField(site, opts, terrain)
-  const holes = allWaterCarvePolygons(site) // polygon hồ (chính xác) → đục lỗ bằng bỏ tam-giác
+  // Lỗ nền = waterPolygons (pool/pond, WATER-SHAPE thuần) — KHỚP path phẳng (lotShape). KHÔNG dùng carve+edge
+  // (sẽ thủng dưới coping) và KHÔNG gồm puddle (puddle nằm TRÊN nền, không có basin → không khoét).
+  const holes = waterPolygons(site)
   const nx = res + 1
   const pos: number[] = []
   const uv: number[] = []
