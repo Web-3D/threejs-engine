@@ -115,6 +115,7 @@ export class WaterSurface {
   // virtualCameras/renderTargets = 2 WeakMap NỘI BỘ của ReflectorBaseNode (three 0.174) → dùng để dispose RTT.
   private _reflector: ReflectorBaseLike | null = null
   private _camera: THREE.Camera | null = null // view-camera → tra virtualCamera → RTT để dispose (né leak)
+  private _excludeReflectLayer: number | null = null // layer LOẠI khỏi RTT phản chiếu (đa-hồ né đơ gương, KI-012)
   private isDisposed = false
   private readonly _w: number // nhớ kích thước chữ nhật để fallback khi <3 đỉnh
   private readonly _d: number
@@ -190,6 +191,20 @@ export class WaterSurface {
     // sau lần đầu camera chui dưới nước. forceUpdate=true né nhánh 401 → luôn reset → không kẹt. Ảnh "từ dưới
     // lên" SAI lúc facing-away được TẮT ở shader (_buildColor: fres·smoothstep(dot(eye,n))) nên không lộ.
     if (this._reflector) this._reflector.forceUpdate = true
+    // 💧 ĐA-HỒ né đơ gương (KI-012): virtualCamera reflector = camera.clone() → copy `layers` của camera chính.
+    // Caller để mặt nước trên layer riêng + bật layer đó ở camera (để VẪN thấy/click) → virtualCamera vô tình
+    // cũng render mặt nước khác → chen `_inReflector` → đơ. Disable layer đó trên virtualCamera mỗi frame (sau khi
+    // nó được tạo ở lần render đầu) → reflector KHÔNG render mặt nước → hết chen. _excludeReflectLayer=null → bỏ qua.
+    if (this._excludeReflectLayer !== null && this._camera && this._reflector?.virtualCameras) {
+      const vc = this._reflector.virtualCameras.get(this._camera) as THREE.Camera | undefined
+      vc?.layers.disable(this._excludeReflectLayer)
+    }
+  }
+
+  /** Loại 1 layer khỏi RTT phản chiếu (mặt nước các hồ khác) → 2+ hồ hết đơ gương. Gọi 1 lần sau khi dựng. KI-012. */
+  excludeReflectionLayer(layer: number): void {
+    if (this.isDisposed) return
+    this._excludeReflectLayer = layer
   }
 
   /** Hướng mặt trời (vector tới sun, target ở gốc) — đốm nắng glint theo. */
