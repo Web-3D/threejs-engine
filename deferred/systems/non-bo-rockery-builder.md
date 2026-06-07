@@ -49,6 +49,40 @@ tái dùng 100% cái đã có. Đường (2)/(3) mới ra đá thật.
 - SDF/marching-cubes (3): lớn — chỉ khi non bộ là tâm điểm. Industry: Houdini/Gaea cho rock; game thường sculpt
   asset thay vì SDF realtime.
 
+## KẾ HOẠCH CHỐT (2026-06-08) — NgQuan duyệt 2 ngã rẽ
+
+**Quyết định:** (1) đá = **procedural rock-cluster** (KHÔNG asset sculpt, KHÔNG SDF); (2) **module-first** (làm đá độc lập → verify preview → mới ráp).
+
+### Phase A — Module `components/RockCluster` (mảnh thiếu, độc lập) ⭐ làm trước
+Thuật toán (mirror `stoneAt` nhưng dựng MỎM, không rải phẳng):
+```
+N viên đá faceted xếp thành MỎM (đế rộng→đỉnh hẹp), deterministic (hash+seed):
+  t=i/N (0 đế→1 đỉnh); ringR = footprint·(1−t); y = height·t^0.8
+  mỗi viên = Icosahedron(r, detail) + DISPLACE đỉnh theo normal × craggy·noise  (phá mặt nhẵn → lởm chởm)
+            + xoay/dẹt/lệch deterministic; r nhỏ dần lên đỉnh
+  mergeGeometries → 1 mesh, flatShading (facet = đá)
+```
+- **Props:** footprintRadius · height · rockCount · craggy(jitter) · seed · detail · color.
+- **Budget:** ~20–40 viên × icosa(80–320 tri) → ~2–6k tri, **1 draw** (merged), dispose đầy đủ.
+- **Material MVP:** flatShading faceted (như `pondStoneGeos`, 0 texture). **Polish C:** triplanar rock-texture (reuse đá icelandic/coal/rock sẵn).
+- **4 file** (index/example/meta/README) + `node validate.js`. Verify: preview xoay-ngắm.
+
+### Phase B — Ráp non bộ trong archplan
+RockCluster trên **mound** (đế) + **hồ** sát chân + **rêu** (GrassBlades màu rêu) quanh đế/khe. GUI tune (count/height/craggy/seed + vị trí). Có thể thành **preset 1-nút "Non bộ"**.
+
+### Phase C — Polish (sau)
+Triplanar texture đá · rêu bám khe theo slope · vệt nước mép đá · ánh sáng.
+
+### Trade-off chốt
+- KHÔNG overhang/hang thật (đá xếp chồng → craggy + khe, không đục hang). MVP chấp nhận.
+- flatShading trước, texture sau (đọc ra "đá" ngay bằng facet).
+- Budget: merged 1 draw; nhiều cụm/lô → cap count.
+
+### Files
+**A:** `threejs-modules/components/RockCluster/` (mới, 4 file). **B:** archplan GUI + assembly. **C:** triplanar + moss-slope.
+
+> Trạng thái: plan DUYỆT, CHƯA bắt tay (đang quay lại hoàn tất terrain trước — zone-trên-gò). Khi làm: Phase A trước, trình trade-off chi tiết rồi code.
+
 ## Liên hệ
 - Lõi: `threejs-modules/site/terrain.ts` · `components/WaterSurface` · `components/GrassBlades` · `stoneAt`.
 - Pivot: [[character-terrain-follow]] (cùng giới hạn height-field 1-Y). Asset đá → Factory pipeline (DCC tools).
