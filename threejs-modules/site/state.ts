@@ -25,6 +25,10 @@ export type GroundMaterialKey =
   | 'rough-asphalt'
   | 'worn-pavement'
   | 'roman-stone-floor'
+  | 'artificial-turf'
+  | 'grass-o'
+  | 'thai-beach-sand-2k'
+  | 'thai-beach-sand-4k'
 
 // Ground key dùng TEXTURE ảnh (PhotoGround) — caller (archplan) bơm opts.groundTextures theo key. Thiếu
 // texture → fallback màu phẳng GROUND_PRESETS. 'grass'(procedural)/'soil'/'gravel' KHÔNG ở đây (màu/shader).
@@ -36,6 +40,10 @@ const GROUND_TEX_KEYS = new Set<GroundMaterialKey>([
   'rough-asphalt',
   'worn-pavement',
   'roman-stone-floor',
+  'artificial-turf',
+  'grass-o',
+  'thai-beach-sand-2k',
+  'thai-beach-sand-4k',
 ])
 export function isGroundTexKey(k: GroundMaterialKey): boolean {
   return GROUND_TEX_KEYS.has(k)
@@ -151,8 +159,9 @@ export interface WaterConfig {
 }
 
 // Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural
-// checker + grout, UV baked vào geometry, áp floor/wall riêng). Thêm stone/concrete… sau. edgeMaterial: chỉ 'none'.
-export type WaterMaterialKey = 'none' | 'tile'
+// checker + grout); GroundMaterialKey texture (cát/cỏ) = PhotoGround world-XZ lát đáy (đáy basin uv=world-XZ →
+// khớp). Áp floor/wall riêng. edgeMaterial: chỉ 'none'. Texture đáy = material injected (groundMatByKey) caller-owned.
+export type WaterMaterialKey = 'none' | 'tile' | GroundMaterialKey
 
 // TẦNG SURFACE chồng (nghệ thuật xếp lớp 3D): mỗi layer = 1 lớp vật liệu phủ kín lô, dày RIÊNG, xếp CHỒNG
 // lên base ground (+ các layer trước). Top layer che layer dưới; KHOÉT lỗ 1 layer → lớp dưới lộ ra (carve =
@@ -223,6 +232,10 @@ export const GROUND_PRESETS: Record<GroundMaterialKey, { color: number; roughnes
   'rough-asphalt': { color: 0x4a4a4d, roughness: 0.95 }, // nhựa đường xám đậm
   'worn-pavement': { color: 0x8f8a82, roughness: 0.93 }, // vỉa hè mòn xám
   'roman-stone-floor': { color: 0xb0a48d, roughness: 0.85 }, // sàn đá La Mã be-rám
+  'artificial-turf': { color: 0x4a7d40, roughness: 0.88 }, // cỏ nhân tạo xanh — fallback khi thiếu texture
+  'grass-o': { color: 0x556b2b, roughness: 0.93 }, // cỏ tự nhiên (oeeb70) xanh-olive — fallback
+  'thai-beach-sand-2k': { color: 0xd6c5a0, roughness: 1.0 }, // cát biển Thái rám ấm — fallback
+  'thai-beach-sand-4k': { color: 0xd6c5a0, roughness: 1.0 }, // cát biển Thái 4K (cùng màu fallback)
 }
 
 export const GROUND_THICK_MIN = 10 // mm = 1cm — default, đáy ở y=0 → top cao hơn grid editor
@@ -457,9 +470,11 @@ function parseKind(v: unknown, fallback: WaterKind): WaterKind {
   return v === 'pool' || v === 'pond' || v === 'puddle' ? v : fallback
 }
 
-// Material hồ: 'none' | 'tile' (caro). Giá trị lạ → 'none' (forward-compat khi thêm stone/concrete…).
+// Material hồ: 'none' | 'tile' (caro) | GroundMaterialKey texture (cát/cỏ đáy hồ). Lạ → 'none' (forward-compat).
 function parseMat(v: unknown): WaterMaterialKey {
-  return v === 'tile' ? 'tile' : 'none'
+  if (v === 'tile') return 'tile'
+  if (typeof v === 'string' && v in GROUND_PRESETS) return v as GroundMaterialKey // texture/ground key
+  return 'none'
 }
 
 function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): WaterConfig {

@@ -103,7 +103,7 @@ export function renderSiteState(
   const grass = opts.skipGrass ? null : buildVegetation(site, ctx, exclude)
   // waters: hồ LÕM (pool/pond, có basin) TRƯỚC rồi VŨNG phẳng (puddle) SAU — caller zip theo ĐÚNG thứ tự
   // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
-  const waters = pools.map((w) => buildWater(w, site, ctx)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
+  const waters = pools.map((w) => buildWater(w, site, ctx, opts)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
   // Rào ĐA-LỚP: dựng mỗi lớp enabled (vòng đồng tâm ở inset riêng). skipFence → editor tự dựng (_syncFence)
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
@@ -158,8 +158,13 @@ function waterRect(w: WaterConfig): GrassExcludeRect {
 
 // 1 hồ phản chiếu (tier C — WaterSurface). Đặt tại offset trong lô, mặt nước trên slab nền (+5mm né
 // z-fight). push ctx.shaders → setTime mỗi frame (sóng) + dispose tự lo. Trả ref cho caller setSun + tune.
-function buildWater(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): WaterSurface {
-  buildBasin(w, site, ctx) // đáy hồ vẽ TRƯỚC (opaque) → nước (transparent) khúc xạ thấy đáy
+function buildWater(
+  w: WaterConfig,
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): WaterSurface {
+  buildBasin(w, site, ctx, opts) // đáy hồ vẽ TRƯỚC (opaque) → nước (transparent) khúc xạ thấy đáy
   buildPoolEdge(w, site, ctx) // dải coping/mép viền quanh hồ (rect-frame ở mặt nền)
   // points local (mét) cho MỌI shape ≠ rect (circle/ellipse/free → ShapeGeometry); rect → undefined (PlaneGeometry).
   const points = w.shape === 'rect' ? undefined : shapeToLocalPolygon(w)
@@ -263,16 +268,20 @@ function buildPoolEdge(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): voi
 // material ĐỘC LẬP (floorMaterial/wallMaterial). 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi.
 // Vách chạy từ MẶT NỀN (rim) xuống đáy → liền "thành hồ", KHÔNG lộ mặt-cắt slab (nền dựng PHẲNG khi có hồ).
 // KHÔNG merge (trước gộp 1 mesh để tiết draw call; nay tách → thoát luôn rủi ro mergeGeometries mixed-index, KI-004).
-function buildBasin(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): void {
+function buildBasin(
+  w: WaterConfig,
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): void {
   const rimY = site.groundThick / 1000 // mặt nền = đỉnh vách
   const yBot = rimY - w.depthY / 1000 // floor dưới rim depthY
   const pts = pondWorldXZ(w)
-  // 'tile' = NodeMaterial (compile shader): share 1 instance khi wall≡floor → né compile 2 lần (hồ bơi
-  // thường floor=wall=tile). Caller push ctx.mats (không push 2 lần khi share).
-  const floorMat = basinMaterial(w.floorMaterial, w)
-  const wallMat = w.wallMaterial === w.floorMaterial ? floorMat : basinMaterial(w.wallMaterial, w)
-  ctx.mats.push(floorMat)
-  if (wallMat !== floorMat) ctx.mats.push(wallMat)
+  // basinMaterial tự push ctx.mats nếu OWNED ('none'/'tile'); texture injected (groundMatByKey) = caller-owned,
+  // KHÔNG push. Share 1 instance khi wall≡floor (né compile tile 2 lần / né push trùng).
+  const floorMat = basinMaterial(w.floorMaterial, w, ctx, opts)
+  const wallMat =
+    w.wallMaterial === w.floorMaterial ? floorMat : basinMaterial(w.wallMaterial, w, ctx, opts)
   addBasinMesh(basinFloorGeometry(pts, yBot), floorMat, ctx)
   addBasinMesh(basinWallsGeometry(pts, rimY, yBot), wallMat, ctx)
 }
@@ -285,9 +294,20 @@ function addBasinMesh(geo: THREE.BufferGeometry, mat: THREE.Material, ctx: SiteR
   ctx.group.add(mesh)
 }
 
-// Material 1 mặt basin theo key. 'none' = MeshStandardMaterial màu phẳng (bottomColor); 'tile' = caro hồ bơi
-// (MeshStandardNodeMaterial — GIỮ PBR + nhận bóng, chỉ override colorNode). Caller push ctx.mats.
-function basinMaterial(key: WaterMaterialKey, w: WaterConfig): THREE.Material {
+// Material 1 mặt basin theo key. TEXTURE (GroundMaterialKey) + có material injected (groundMatByKey, PhotoGround
+// world-XZ — đáy basin uv=world-XZ → lát khớp) = DÙNG CHUNG caller-owned, KHÔNG push (caller dispose, như
+// resolveGroundMat). 'tile' = caro NodeMaterial (PBR + colorNode). 'none'/texture-chưa-load = màu phẳng bottomColor.
+// OWNED ('none'/'tile') → push ctx.mats; injected → không.
+function basinMaterial(
+  key: WaterMaterialKey,
+  w: WaterConfig,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): THREE.Material {
+  if (key !== 'none' && key !== 'tile') {
+    const cached = opts.groundMatByKey?.[key]
+    if (cached) return cached // texture đáy hồ injected — KHÔNG push (caller-owned, lab-lifetime)
+  }
   if (key === 'tile') {
     const mat = new MeshStandardNodeMaterial()
     mat.colorNode = poolTileColorNode(
@@ -298,13 +318,16 @@ function basinMaterial(key: WaterMaterialKey, w: WaterConfig): THREE.Material {
     mat.roughness = 0.6 // gạch men hơi bóng (thấp hơn nền 0.95) → bắt sáng nhẹ
     mat.metalness = 0
     mat.side = THREE.DoubleSide
+    ctx.mats.push(mat)
     return mat
   }
-  return new THREE.MeshStandardMaterial({
-    color: w.bottomColor,
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.bottomColor, // 'none' hoặc texture chưa load → màu phẳng tạm
     roughness: 0.95,
     side: THREE.DoubleSide,
   })
+  ctx.mats.push(mat)
+  return mat
 }
 
 // colorNode caro hồ bơi: ô vuông 2 màu xen kẽ (checker) + mạch vữa (grout) — đọc uv (mét) baked vào

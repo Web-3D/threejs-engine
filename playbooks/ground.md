@@ -58,6 +58,7 @@ Local→world: `shapeToLocalPolygon` (mét, tâm gốc) + `offsetX/Z÷1000`. Sha
 - `2026-06-05` — site-kit GROUND đa-tầng `groundLayers[]` (box độc lập, xếp chồng Y, đục lỗ nước) + G1+ kéo-được
 - `2026-06-06` — free-form shape (rect/circle/ellipse) + cut-reveal (clip-hole) + "bộ nền" phím tắt (Phase 2 inc 1)
 - `2026-06-07` — nested-tabs G-level `[Mảng add|Khoét cut]` + cut highlight xám-khi-chọn + **khoét = polygon-boolean** (hết viền/góc/wedge, KI-011)
+- `2026-06-07` — +4 texture surface (artificial_turf/grass_o/thai sand 2K+4K) → 3 hệ: ground surface + bộ nền (phím 5-7, `_photoEditorGround` share PhotoGround) + **water bottom** (texture đáy hồ, `basinMaterial` inject `groundMatByKey`); 4K né prefetch (chỉ tải khi chọn)
 
 ## 6. Liên hệ
 
