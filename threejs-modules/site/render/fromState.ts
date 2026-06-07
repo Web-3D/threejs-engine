@@ -556,7 +556,12 @@ export function buildSiteGrass(site: SiteState, exclude: GrassExcludeRect[]): Gr
   const terr = site.terrain
   const hf =
     terr && terr.enabled
-      ? makeHeightField(terr, exclude, site.lotWidth / 2000, site.lotDepth / 2000)
+      ? makeHeightField(
+          terr,
+          [...exclude, ...zoneRects(site)], // 🏔️ cỏ KHỚP nền: chừa phẳng dưới zones (như buildHeightField)
+          site.lotWidth / 2000,
+          site.lotDepth / 2000
+        )
       : null
   const blades = new GrassBlades({
     width: site.lotWidth / 1000,
@@ -618,7 +623,8 @@ export function grassBuildSig(site: SiteState, exclude: GrassExcludeRect[]): str
     g.clumpRadius,
     g.clumpSplay,
     g.contactDark > 0,
-    site.terrain && site.terrain.enabled ? site.terrain : null, // 🏔️ terrain đổi → cỏ rải lại bám gò mới
+    // 🏔️ terrain đổi → cỏ rải lại bám gò mới; KÈM groundLayers (zone đổi → mask phẳng-dưới-zone đổi → re-scatter)
+    site.terrain && site.terrain.enabled ? [site.terrain, site.groundLayers ?? []] : null,
     exclude,
   ])
 }
@@ -838,6 +844,7 @@ function buildHeightField(
   const rects: MaskRect[] = [...(opts.buildingFootprint ?? [])]
   for (const w of renderWaters(site)) rects.push(waterRect(w))
   for (const w of renderPuddles(site)) rects.push(waterRect(w))
+  rects.push(...zoneRects(site)) // 🏔️ gò chừa PHẲNG dưới zones G1/G2/z1/z2 (không cướp đất)
   return makeHeightField(terrain, rects, site.lotWidth / 2000, site.lotDepth / 2000)
 }
 
@@ -905,6 +912,38 @@ function layerWorldPolygon(layer: GroundLayer): { x: number; z: number }[] {
     points: layer.points ?? [],
   })
   return local.map((p) => ({ x: ox + p.x, z: oz + p.z }))
+}
+
+// 🏔️ BBox 1 ADD-zone (m, world XZ) cho terrain mask — gò GIỮ PHẲNG dưới zone → KHÔNG "cướp đất" của G1/G2/z1/z2
+// (zone = ExtrudeGeometry slab phẳng; nếu gò nhấp nhô dưới nó → nổi/lún mép). BBox axis-aligned (như waterRect):
+// non-rect/xoay → hơi rộng, chấp nhận. layerWorldPolygon đã gồm offset.
+function layerRect(layer: GroundLayer): MaskRect {
+  const poly = layerWorldPolygon(layer)
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const p of poly) {
+    minX = Math.min(minX, p.x)
+    maxX = Math.max(maxX, p.x)
+    minZ = Math.min(minZ, p.z)
+    maxZ = Math.max(maxZ, p.z)
+  }
+  return {
+    cx: (minX + maxX) / 2,
+    cz: (minZ + maxZ) / 2,
+    halfW: (maxX - minX) / 2,
+    halfD: (maxZ - minZ) / 2,
+    rot: 0,
+  }
+}
+
+// 🏔️ Rects giữ-phẳng terrain của MỌI ADD-zone (cut = lỗ, không surface để cướp → bỏ). DÙNG CHUNG nền (buildHeightField)
+// + cỏ (buildSiteGrass) → gò + cỏ KHỚP nhau dưới zone. Rỗng nếu không có zone.
+function zoneRects(site: SiteState): MaskRect[] {
+  const rects: MaskRect[] = []
+  for (const l of site.groundLayers ?? []) if (l.op !== 'cut') rects.push(layerRect(l))
+  return rects
 }
 
 // Pool/pond đục lỗ GỒM dải EDGE/coping: polygon hồ NỞ ra edgeWidth (offsetPolygon) — khớp đúng vành coping bo-cong
