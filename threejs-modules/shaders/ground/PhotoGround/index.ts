@@ -19,7 +19,15 @@
 import type * as THREE from 'three'
 import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
-import { float, positionWorld, texture, transformNormalToView, uniform, vec3 } from 'three/tsl'
+import {
+  float,
+  mx_noise_float,
+  positionWorld,
+  texture,
+  transformNormalToView,
+  uniform,
+  vec3,
+} from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 type TSLNode = ShaderNodeObject<Node>
@@ -44,6 +52,12 @@ export interface PhotoGroundOptions {
   normalScale?: number
   /** Nhân roughness map (>1 = mờ hơn). Default: 1 */
   roughnessScale?: number
+  /** Micro-relief PROCEDURAL [0..1] — perturbation normal noise tần-số-cao CỘNG lên normal map (phá vẻ "nhựa"
+   *  gò nhẵn). Truyền (kể cả 0) = BẬT khả năng (noise ~0.1ms luôn tính); bỏ trống = tắt hẳn (0 cost). LIVE qua
+   *  setDetail. Dùng cho `terrain.detail` (site-kit). Default: undefined (tắt) */
+  detail?: number
+  /** Tần số micro-relief (1/m world). Cao = sần mịn, thấp = gợn to. Đổi cần dựng lại material. Default: 4 */
+  detailScale?: number
 }
 
 export class PhotoGround {
@@ -53,12 +67,18 @@ export class PhotoGround {
   private readonly uInvTile: ReturnType<typeof uniform>
   private readonly uNormalScale: ReturnType<typeof uniform>
   private readonly uRoughScale: ReturnType<typeof uniform>
+  private readonly uDetail: ReturnType<typeof uniform> // cường độ micro-relief procedural — live
+  private readonly _detailOn: boolean // có dựng nhánh detail-noise không (option `detail` truyền vào)
+  private readonly _detailFreq: number // tần số micro-relief (1/m world)
 
   constructor(opts: PhotoGroundOptions) {
     const m = opts.maps
     this.uInvTile = uniform(1 / Math.max(0.01, opts.tileSizeMeters ?? 2))
     this.uNormalScale = uniform(opts.normalScale ?? 1)
     this.uRoughScale = uniform(opts.roughnessScale ?? 1)
+    this.uDetail = uniform(opts.detail ?? 0)
+    this._detailOn = opts.detail !== undefined
+    this._detailFreq = opts.detailScale ?? 4
 
     // UV theo world-XZ ÷ tile → lát đều, độc lập geometry UV (Box LẪN ShapeGeometry đều đúng).
     const uvw = positionWorld.xz.mul(this.uInvTile) as TSLNode
@@ -68,7 +88,8 @@ export class PhotoGround {
     if (m.roughness)
       mat.roughnessNode = texture(m.roughness, uvw).r.mul(this.uRoughScale) as TSLNode
     if (m.ao) mat.aoNode = texture(m.ao, uvw).r as TSLNode
-    if (m.normal) mat.normalNode = this._normalNode(m.normal, uvw)
+    // normal: map (nếu có) HOẶC +Y, rồi cộng micro-relief procedural (nếu bật detail). Bỏ qua nếu cả 2 đều không.
+    if (m.normal || this._detailOn) mat.normalNode = this._normalNode(m.normal, uvw)
     mat.metalness = 0
     this.material = mat
   }
@@ -91,6 +112,12 @@ export class PhotoGround {
     this.uRoughScale.value = Math.max(0, Math.min(3, v))
   }
 
+  /** Cường độ micro-relief procedural [0, 1] (0 = tắt visual). LIVE — chỉ hiệu lực nếu khởi tạo với option `detail`. */
+  setDetail(v: number): void {
+    if (this.isDisposed) return
+    this.uDetail.value = Math.max(0, Math.min(1, v))
+  }
+
   getMaterial(): MeshStandardNodeMaterial {
     if (!this.material) throw new Error('PhotoGround: already disposed')
     return this.material
@@ -104,11 +131,32 @@ export class PhotoGround {
     // Texture (opts.maps.*) KHÔNG dispose ở đây — caller sở hữu (giống TriplanarMapping).
   }
 
-  // GL tangent normal → world (ground phẳng +Y: T=+X, B=+Z, N=+Y) → view. Khớp world-uv (né TBN-default-uv của NormalMapNode).
-  private _normalNode(normalTex: THREE.Texture, uvw: TSLNode): TSLNode {
-    const n = texture(normalTex, uvw).xyz.mul(float(2)).sub(float(1)) // [-1,1]
-    const s = this.uNormalScale
-    const worldN = vec3(n.x.mul(s), n.z, n.y.mul(s)).normalize() // T→X, N(blue)→Y, B(green)→Z
+  // GL tangent normal → world (ground phẳng +Y: T=+X, B=+Z, N=+Y), CỘNG micro-relief procedural (nếu bật) → view.
+  // Map vắng → base = +Y thuần. Khớp world-uv (né TBN-default-uv của NormalMapNode).
+  private _normalNode(normalTex: THREE.Texture | undefined, uvw: TSLNode): TSLNode {
+    let worldN: TSLNode
+    if (normalTex) {
+      const n = texture(normalTex, uvw).xyz.mul(float(2)).sub(float(1)) // [-1,1]
+      const s = this.uNormalScale
+      worldN = vec3(n.x.mul(s), n.z, n.y.mul(s)).normalize() as TSLNode // T→X, N(blue)→Y, B(green)→Z
+    } else {
+      worldN = vec3(0, 1, 0) as TSLNode
+    }
+    if (this._detailOn) worldN = this._detailNormal(worldN)
     return transformNormalToView(worldN) as TSLNode
+  }
+
+  // Micro-relief PROCEDURAL: gradient mx_noise_float (finite-diff 3 mẫu, world-XZ × freq) tilt worldN.x/z.
+  // uDetail=0 → no-op (vẫn tính noise ~0.1ms). CỘNG lên normal map (không thay) → phá vẻ "nhựa" của gò nhẵn.
+  private _detailNormal(worldN: TSLNode): TSLNode {
+    const p = positionWorld.xz.mul(float(this._detailFreq)) as TSLNode
+    const e = float(0.4) // bước finite-diff (p-space)
+    const h0 = mx_noise_float(vec3(p.x, p.y, float(0)))
+    const hx = mx_noise_float(vec3(p.x.add(e), p.y, float(0)))
+    const hz = mx_noise_float(vec3(p.x, p.y.add(e), float(0)))
+    const k = this.uDetail.mul(float(2.5)) // slider 0..1 × hệ số nhìn-được
+    const gx = hx.sub(h0).mul(k)
+    const gz = hz.sub(h0).mul(k)
+    return vec3(worldN.x.sub(gx), worldN.y, worldN.z.sub(gz)).normalize() as TSLNode
   }
 }

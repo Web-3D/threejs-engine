@@ -1068,6 +1068,7 @@ function groundMaterial(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpt
     const photo = new PhotoGround({
       maps: opts.groundTextures,
       tileSizeMeters: opts.groundTileMeters ?? 2,
+      detail: site.terrain?.detail ?? 0, // 🏔️ Phase 4 micro-relief (bật khả năng; live qua setDetail)
     })
     ctx.shaders.push(photo)
     return photo.getMaterial()
