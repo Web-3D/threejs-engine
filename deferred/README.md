@@ -60,6 +60,8 @@ deferred/
 | [playbook-tier-ladder.md](systems/playbook-tier-ladder.md) | Thang tier A/B/C/D dùng chung cho playbooks (tổng quát hoá `material-roadmap`) + check `tier` hợp lệ | ≥4–5 playbook lệch nghĩa tier, hoặc plan mảng mới cần so tier |
 | [interior-decor-objects.md](systems/interior-decor-objects.md) | **DECIDED 2026-06-05** — hệ decor nội thất object (kệ/tranh/hốc/đèn) mặt TRONG tường (mirror Balcony); KHÁC DecorPanel relief mặt ngoài | NgQuan yêu cầu build (kiến trúc = object system) — MVP slice 'shelf' trước |
 | [shape-group-system.md](systems/shape-group-system.md) | **WANTED 2026-06-05** — gộp nhóm nhiều khối shape + kéo cả nhóm 1 lần (selection + multi-move, snap bbox union) | NgQuan yêu cầu build; chốt group bền vs ad-hoc khi bắt tay |
+| [terrain-gaea-heightmap.md](systems/terrain-gaea-heightmap.md) | Cắm output Gaea (heightmap erosion km-scale) vào `heightAt` qua term `heightmapSample` | Cần environment LỚN (city/ecosystem) — KHÔNG cho lô archviz (sai scale, phá live-edit) |
+| [character-terrain-follow.md](systems/character-terrain-follow.md) | **2026-06-08** — nhân vật đi-trên-đất-không-lún trên nền `heightAt` (single-source). Thiếu: surface-resolver khối-chồng + normal/slope + collision tường | Có character-controller thật (đừng pivot game sớm) |
 
 ---
 
