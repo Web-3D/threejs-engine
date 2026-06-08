@@ -1032,15 +1032,17 @@ function distPointSeg(
   return Math.hypot(px - (ax + t * dx), pz - (az + t * dz))
 }
 
-// 🏔️ Zone DISPLACED (drape G0 và/hoặc gò riêng zone): lưới (cỡ ô = cell) trên bbox zone, mỗi ô = (ô ∩ contour) −
-// holes → tam-giác-hoá → đỉnh Y. **MÉP HẠ THẤP TỰ NHIÊN**: `yAt` blend `top` về `below` theo khoảng-cách-tới-viền
-// (edge taper, KHÔNG váy vuông góc) → zone rủ mượt xuống chạm mặt-G-dưới ở mép (hết lơ lửng). band = edgeFlat zone
-// (cap ≤ 45% cạnh nhỏ). Mặt ĐƠN (bỏ thickness — chỉ dùng stacking). holes = nước+cut cùng level. Rỗng → null.
+// 🏔️ Zone DISPLACED (drape G0 và/hoặc gò riêng zone): lưới (cỡ ô = cell) trên bbox zone. **MÉP HẠ THẤP TỰ NHIÊN**:
+// `yAt` blend `top` về (`below + GAP`) theo khoảng-cách-tới-viền → rủ mượt xuống GẦN G-dưới (cách GAP, KHÔNG bằng
+// → né z-fight). band = edgeFlat (cap ≤45% cạnh nhỏ). **clean=true (commit):** clip ô-biên `polygonClipping`
+// (mép sạch). **clean=false (live drag):** bỏ-ô theo tâm-trong-contour (răng cưa tạm, KHÔNG clip Martinez → mượt
+// fps). holes = nước+cut cùng level. Rỗng → null.
 function drapedLayerGeometry(
   layer: GroundLayer,
   surf: { top: YFn; below: YFn },
   holes: { x: number; z: number }[][],
-  cell: number
+  cell: number,
+  clean: boolean
 ): THREE.BufferGeometry | null {
   const contour = layerWorldPolygon(layer)
   if (contour.length < 3) return null
@@ -1049,11 +1051,12 @@ function drapedLayerGeometry(
   const nz = Math.max(1, Math.ceil((bb.z1 - bb.z0) / cell))
   const minSide = Math.min(layer.length, layer.width) / 1000
   const band = Math.max(0.05, Math.min((layer.terrain?.edgeFlat ?? 800) / 1000, minSide * 0.45))
-  // yAt = below + smoothstep(dist→viền / band) · (top − below): 0 ở mép (chạm G dưới) → 1 trong lòng (gò đầy).
+  // yAt = (below+GAP) + smoothstep(dist→viền / band) · (top − below − GAP): mép = below+GAP (≠ G0), lòng = top.
   const yAt: YFn = (x, z) => {
+    const lo = surf.below(x, z) + ZONE_MIN_GAP
     const d = Math.min(distToPolyEdge(x, z, contour) / band, 1)
     const w = d * d * (3 - 2 * d)
-    return surf.below(x, z) + w * (surf.top(x, z) - surf.below(x, z))
+    return lo + w * (surf.top(x, z) - lo)
   }
   const g: GridEmit = { yAt, pos: [], uv: [], idx: [] }
   const contourRing = closeWaterRing(contour)
@@ -1061,16 +1064,15 @@ function drapedLayerGeometry(
   for (let jz = 0; jz < nz; jz++)
     for (let ix = 0; ix < nx; ix++) {
       const x0 = bb.x0 + ix * cell
+      const x1 = Math.min(bb.x1, x0 + cell)
       const z0 = bb.z0 + jz * cell
-      clipZoneCell(
-        g,
-        x0,
-        Math.min(bb.x1, x0 + cell),
-        z0,
-        Math.min(bb.z1, z0 + cell),
-        contourRing,
-        holeRings
+      const z1 = Math.min(bb.z1, z0 + cell)
+      if (clean) clipZoneCell(g, x0, x1, z0, z1, contourRing, holeRings)
+      else if (
+        pointInPolygon((x0 + x1) / 2, (z0 + z1) / 2, contour) &&
+        !insideWaterHole((x0 + x1) / 2, (z0 + z1) / 2, holes)
       )
+        emitZoneQuad(g, x0, x1, z0, z1) // live: bỏ-ô tâm-trong (răng cưa tạm, né clip)
     }
   if (g.idx.length === 0) return null
   const geo = new THREE.BufferGeometry()
@@ -1112,6 +1114,16 @@ function clipZoneCell(
   }
 }
 
+// Live (clean=false): 1 ô lưới zone TRỌN → 2 tam-giác (4 góc ở yAt) — KHÔNG clip (răng cưa mép tạm, mượt fps).
+function emitZoneQuad(g: GridEmit, x0: number, x1: number, z0: number, z1: number): void {
+  const a = new THREE.Vector2(x0, z0)
+  const b = new THREE.Vector2(x1, z0)
+  const c = new THREE.Vector2(x1, z1)
+  const d = new THREE.Vector2(x0, z1)
+  emitWorldTri(g, a, b, c)
+  emitWorldTri(g, a, c, d)
+}
+
 // Các G-LEVEL phân biệt (1-based, tăng dần) — gồm CẢ level chỉ-có-cut (cut-only). Xếp chồng Y theo level.
 function groundRenderLevels(layers: GroundLayer[]): number[] {
   const set = new Set<number>()
@@ -1129,10 +1141,14 @@ interface DrapeCtx {
 
 type YFn = (x: number, z: number) => number
 
-// 🏔️ 2 mặt Y cho zone DISPLACED — null nếu zone PHẲNG (không drape G0 + không gò riêng → slab). `top` = mặt zone
-// (baseY+5mm + gò-G0-nếu-drape + gò-RIÊNG-zone); `below` = mặt G NGAY DƯỚI (baseY + gò-G0, KHÔNG gò-zone/5mm) =
-// đáy VÁY (skirt) để mép rủ xuống chạm G dưới (hết lơ lửng). Gò-zone = height-field noise+mounds riêng (mask off →
-// fill cả zone, clip contour ở geometry). Math.max(dy,0) trong heightAt → gò dương.
+// 🏔️ Khoảng hở TỐI THIỂU zone↔G-dưới (m): Y zone LUÔN ≥ Y-G-dưới + GAP → **G1 KHÔNG BAO GIỜ bằng Y G0** theo chiếu
+// đứng (né z-fight + "không lơ lửng nhưng cũng không trùng"). Mép taper rủ về `below + GAP` (không tới below). 2cm
+// đủ trùm sai-số nội-suy lưới (curve-vs-chord) ở địa hình thường; gò dốc cực đoan có thể cần grid-align (defer).
+const ZONE_MIN_GAP = 0.02
+
+// 🏔️ 2 mặt Y cho zone DISPLACED — null nếu zone PHẲNG (không drape G0 + không gò riêng → slab). `below` = mặt G NGAY
+// DƯỚI (baseY + gò-G0) = MỐC để giữ khoảng hở; `top` = mặt zone đầy gò = below + GAP + gò-RIÊNG-zone. Gò-zone =
+// height-field noise+mounds riêng (mask off → fill cả zone, clip contour ở geometry). Math.max(dy,0) → gò dương.
 function zoneSurfaces(
   layer: GroundLayer,
   baseY: number,
@@ -1147,7 +1163,7 @@ function zoneSurfaces(
   const g0At: YFn = (x, z) => (g0 ? heightAt(g0, x, z) : 0)
   return {
     below: (x, z) => baseY + g0At(x, z),
-    top: (x, z) => baseY + 0.005 + g0At(x, z) + (zhf ? heightAt(zhf, x, z) : 0),
+    top: (x, z) => baseY + ZONE_MIN_GAP + g0At(x, z) + (zhf ? heightAt(zhf, x, z) : 0),
   }
 }
 
@@ -1165,12 +1181,13 @@ function addZoneMesh(
   holes: { x: number; z: number }[][],
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts,
-  drape: DrapeCtx | null
+  drape: DrapeCtx | null,
+  clean: boolean
 ): void {
   const surf = zoneSurfaces(layer, baseY, drape)
   let geo: THREE.BufferGeometry | null
   if (surf) {
-    geo = drapedLayerGeometry(layer, surf, holes, zoneCell(layer, drape)) // lưới displaced + váy (drape G0 + gò zone)
+    geo = drapedLayerGeometry(layer, surf, holes, zoneCell(layer, drape), clean) // lưới displaced (drape G0 + gò zone)
     if (!geo) return
   } else {
     geo = layerGeometry(layer, layer.thickness / 1000, holes) // slab phẳng
@@ -1193,7 +1210,8 @@ function buildLevelZones(
   water: { x: number; z: number }[][],
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts,
-  drape: DrapeCtx | null
+  drape: DrapeCtx | null,
+  clean: boolean
 ): number {
   // Vùng CUT cùng level → ĐỤC LỖ zones level này (difference). Phủ trọn → zone rỗng → addZoneMesh tự bỏ mesh.
   const cuts = layers
@@ -1202,7 +1220,7 @@ function buildLevelZones(
   let maxTh = 0
   layers.forEach((layer, idx) => {
     if (layer.op === 'cut' || (layer.level ?? 1) !== lv) return
-    addZoneMesh(layer, idx, baseY, [...water, ...cuts], ctx, opts, drape)
+    addZoneMesh(layer, idx, baseY, [...water, ...cuts], ctx, opts, drape, clean)
     maxTh = Math.max(maxTh, layer.thickness / 1000) // giữ stacking ổn định kể cả zone bị khoét sạch
   })
   return baseY + maxTh
@@ -1248,7 +1266,14 @@ function buildLevelCutPatches(
 
 // TẦNG surface đa G-level: zones CÙNG level = ĐỒNG PHẲNG (cùng baseY); level sau chồng lên (baseY += dày lớn
 // nhất). CUT cùng level = ĐỤC LỖ THẬT zones (lộ lớp dưới) + thêm mảng XÁM highlight-khi-chọn (ẩn mặc định).
-function buildGroundLayers(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): void {
+// clean=true (commit): zone displaced clip ô-biên sạch. clean=false (live drag zone slider): bỏ-ô nhanh (răng cưa
+// tạm) → né clip Martinez mỗi frame. EXPORT để Lab `_applyTerrainLive` rebuild zone-only LIVE (né water-RTT = tụt fps).
+export function buildGroundLayers(
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts,
+  clean = true
+): void {
   const layers = site.groundLayers
   if (!layers?.length) return
   const water = allWaterCarvePolygons(site) // nước (pool/pond+edge, puddle)
@@ -1259,7 +1284,7 @@ function buildGroundLayers(site: SiteState, ctx: SiteRenderCtx, opts: SiteRender
     : null
   let baseY = site.groundThick / 1000 // mặt base ground = đáy add-layer đầu
   for (const lv of groundRenderLevels(layers)) {
-    const top = buildLevelZones(layers, lv, baseY, water, ctx, opts, drape)
+    const top = buildLevelZones(layers, lv, baseY, water, ctx, opts, drape, clean)
     buildLevelCutPatches(layers, lv, top + 0.005, ctx) // mảng xám highlight (ẩn) trên zones đã khoét
     baseY = top
   }
