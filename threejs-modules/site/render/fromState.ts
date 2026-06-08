@@ -1137,6 +1137,40 @@ function groundRenderLevels(layers: GroundLayer[]): number[] {
 interface DrapeCtx {
   hf: HeightField
   cell: number
+  hw: number // m — nửa ngang lô (lưới G0) — để zone lấy cao-độ G0 MESH (facet) đúng, không lệch
+  hd: number // m — nửa sâu lô
+  res: number // độ phân giải lưới G0
+}
+
+// Cao-độ G0 MESH (m, KHÔNG kể topY) tại (x,z) = nội-suy TAM-GIÁC trên lưới G0 — khớp ĐÚNG mặt G0 render (pushGridQuad
+// chia 2 tam-giác, KHÔNG bilinear). Zone `below` dùng cái này (THAY heightAt true-curve) ⇒ below = mặt G0 mesh đúng ở
+// đỉnh zone → zone LUÔN cao hơn G0 đúng GAP (hết XUYÊN do lệch true-curve vs facet, lộ khi gò-zone thấp).
+function g0MeshHeightAt(
+  g0: HeightField,
+  x: number,
+  z: number,
+  hw: number,
+  hd: number,
+  res: number
+): number {
+  const cellX = (2 * hw) / res
+  const cellZ = (2 * hd) / res
+  const i = Math.max(0, Math.min(res - 1, Math.floor((x + hw) / cellX)))
+  const j = Math.max(0, Math.min(res - 1, Math.floor((z + hd) / cellZ)))
+  const x0 = -hw + (i / res) * 2 * hw
+  const z0 = -hd + (j / res) * 2 * hd
+  const x1 = -hw + ((i + 1) / res) * 2 * hw
+  const z1 = -hd + ((j + 1) / res) * 2 * hd
+  const fx = Math.max(0, Math.min(1, (x - x0) / cellX))
+  const fz = Math.max(0, Math.min(1, (z - z0) / cellZ))
+  const h00 = heightAt(g0, x0, z0)
+  const h10 = heightAt(g0, x1, z0)
+  const h01 = heightAt(g0, x0, z1)
+  const h11 = heightAt(g0, x1, z1)
+  // pushGridQuad: T1 (00,01,10) khi fx+fz≤1; T2 (11,10,01) khi fx+fz>1.
+  return fx + fz <= 1
+    ? h00 * (1 - fx - fz) + h10 * fx + h01 * fz
+    : h11 * (fx + fz - 1) + h10 * (1 - fz) + h01 * (1 - fx)
 }
 
 type YFn = (x: number, z: number) => number
@@ -1154,13 +1188,14 @@ function zoneSurfaces(
   baseY: number,
   drape: DrapeCtx | null
 ): { top: YFn; below: YFn } | null {
-  const g0 = drape && layer.drape ? drape.hf : null // bám gò G0
+  const dc = drape && layer.drape ? drape : null // ctx G0 nếu zone bám gò G0 (gồm lưới hw/hd/res)
   const zhf =
     layer.terrain && layer.terrain.enabled
       ? makeHeightField(layer.terrain, [], 1e6, 1e6) // gò riêng zone (lotHalf lớn → edge-mask ~1 khắp zone)
       : null
-  if (!g0 && !zhf) return null // phẳng → slab ExtrudeGeometry
-  const g0At: YFn = (x, z) => (g0 ? heightAt(g0, x, z) : 0)
+  if (!dc && !zhf) return null // phẳng → slab ExtrudeGeometry
+  // bám G0 = cao-độ G0 MESH (facet, g0MeshHeightAt) chứ KHÔNG true-curve → below khớp đúng mặt G0 render (hết xuyên).
+  const g0At: YFn = (x, z) => (dc ? g0MeshHeightAt(dc.hf, x, z, dc.hw, dc.hd, dc.res) : 0)
   return {
     below: (x, z) => baseY + g0At(x, z),
     top: (x, z) => baseY + ZONE_MIN_GAP + g0At(x, z) + (zhf ? heightAt(zhf, x, z) : 0),
@@ -1280,7 +1315,13 @@ export function buildGroundLayers(
   const terr = site.terrain
   // 🏔️ terrain bật → drape ctx (hf + cỡ ô) cho zone drape=true uốn theo gò; tắt → null (mọi zone slab phẳng).
   const drape: DrapeCtx | null = terr?.enabled
-    ? { hf: buildHeightField(site, opts, terr), cell: gridCell(site, terr) }
+    ? {
+        hf: buildHeightField(site, opts, terr),
+        cell: gridCell(site, terr),
+        hw: site.lotWidth / 2000,
+        hd: site.lotDepth / 2000,
+        res: terr.resolution,
+      }
     : null
   let baseY = site.groundThick / 1000 // mặt base ground = đáy add-layer đầu
   for (const lv of groundRenderLevels(layers)) {
