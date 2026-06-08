@@ -23,6 +23,7 @@ import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
 import { RockCluster } from '../../components/RockCluster'
+import { StoneScatter } from '../../components/StoneScatter'
 import { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { PhotoGround, type PhotoGroundMaps } from '../../shaders/ground/PhotoGround'
@@ -36,8 +37,10 @@ import {
   isGroundTexKey,
   renderPuddles,
   renderRocks,
+  renderStoneFields,
   renderWaters,
   type SiteState,
+  type StoneFieldConfig,
   type TerrainConfig,
   type WaterConfig,
   type WaterMaterialKey,
@@ -60,6 +63,7 @@ export interface SiteHandle {
   waters: WaterSurface[] // 1 WaterSurface mỗi hồ ĐANG BẬT (cùng thứ tự renderWaters(site)) — caller zip cfg↔surf
   ground: THREE.Mesh | null // mesh nền base (G0) — caller giữ ref để LIVE-rebuild geometry-only (terrain drag, né water-RTT)
   rocks: RockCluster[] // 🪨 1 RockCluster mỗi cụm đá ĐANG BẬT (cùng thứ tự renderRocks(site)) — caller zip cfg↔cluster
+  stoneFields: StoneScatter[] // 🪨 1 StoneScatter mỗi lối đi lát đá ĐANG BẬT (cùng thứ tự renderStoneFields) — caller zip cfg↔field
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -105,7 +109,7 @@ export function renderSiteState(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts = {}
 ): SiteHandle {
-  if (!site.show) return { grass: null, waters: [], ground: null, rocks: [] }
+  if (!site.show) return { grass: null, waters: [], ground: null, rocks: [], stoneFields: [] }
   const ground = buildGround(site, ctx, opts)
   buildGroundLayers(site, ctx, opts) // TẦNG surface chồng (xếp lớp 3D) lên base
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
@@ -122,7 +126,8 @@ export function renderSiteState(
   if (!opts.skipFence)
     for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
   const rocks = buildRocks(site, ctx, opts) // 🪨 hòn non bộ — cụm đá mỏm bám gò
-  return { grass, waters, ground, rocks }
+  const stoneFields = buildStoneFields(site, ctx, opts) // 🪨 lối đi lát đá — rải đá Poisson trên cỏ
+  return { grass, waters, ground, rocks, stoneFields }
 }
 
 // 🪨 Dựng cụm đá non bộ ĐANG BẬT. Mỗi cụm = 1 RockCluster (CPU displace+merge, 1 draw). Đặt tại offset trong lô,
@@ -165,8 +170,48 @@ export function buildRocks(
   })
 }
 
-// Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật. Export để
-// CALLER dùng đúng tập exclude này cho cả dirty-check (grassBuildSig) LẪN buildSiteGrass → khớp với lõi.
+// 🪨 Dựng lối đi lát đá ĐANG BẬT. Mỗi khuôn = 1 StoneScatter (Poisson-disk + InstancedMesh, 1 draw). Đặt tại offset
+// trong lô, BÁM cao-độ gò ở TÂM khuôn (sample heightAt 1 điểm — cả khuôn nằm trên cao-độ đó). mesh.userData.
+// stoneFieldIdx → editor live-rebuild stone-only (né water-RTT). push ctx.shaders (field.dispose lo geometry+material).
+// Texture đá triplanar DÙNG CHUNG cache border hồ (opts.borderMatByKey). EXPORT để editor rebuild stone-only.
+export function buildStoneFields(
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): StoneScatter[] {
+  const list = renderStoneFields(site)
+  if (list.length === 0) return []
+  const topY = site.groundThick / 1000
+  const t = site.terrain
+  const hf = t && t.enabled ? buildHeightField(site, opts, t) : null // bám gò ở tâm khuôn
+  return list.map((f, idx) => {
+    const x = f.offsetX / 1000
+    const z = f.offsetZ / 1000
+    const mat = f.material !== 'none' ? opts.borderMatByKey?.[f.material] : undefined
+    const field = new StoneScatter({
+      frameW: f.frameW / 1000,
+      frameD: f.frameD / 1000,
+      rMin: f.rMin / 1000,
+      rMax: f.rMax / 1000,
+      ellipseMin: f.ellipseMin,
+      gap: f.gap / 1000,
+      thickness: f.thickness / 1000,
+      seed: f.seed,
+      color: f.color,
+      material: mat,
+    })
+    const mesh = field.getMesh()
+    mesh.position.set(x, topY + (hf ? heightAt(hf, x, z) : 0), z)
+    mesh.userData.stoneFieldIdx = idx
+    ctx.group.add(mesh)
+    ctx.shaders.push(field) // dispose tự lo (field.dispose → geometry+material+gỡ parent)
+    return field
+  })
+}
+
+// Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật + KHUÔN mỗi
+// lối đi lát đá (cỏ-3D không mọc xuyên đá; khe-cỏ-tuft trong khuôn = polish sau). Export để CALLER dùng đúng tập
+// exclude này cho cả dirty-check (grassBuildSig) LẪN buildSiteGrass → khớp với lõi.
 export function siteGrassExclude(
   site: SiteState,
   foundation: GrassExcludeRect[]
@@ -174,7 +219,19 @@ export function siteGrassExclude(
   const exclude = [...foundation]
   for (const w of renderWaters(site)) exclude.push(waterRect(w))
   for (const w of renderPuddles(site)) exclude.push(waterRect(w)) // cỏ né cả vũng nước (không mọc xuyên mặt)
+  for (const f of renderStoneFields(site)) exclude.push(stoneFieldRect(f)) // 🪨 cỏ né khuôn lối đi đá
   return exclude
+}
+
+// 🪨 Rect 1 khuôn lối đi (m, world XZ) cho cỏ né — cỏ-3D KHÔNG mọc trong khuôn đá (blade cao đâm xuyên phiến dẹt).
+function stoneFieldRect(f: StoneFieldConfig): GrassExcludeRect {
+  return {
+    cx: f.offsetX / 1000,
+    cz: f.offsetZ / 1000,
+    halfW: f.frameW / 2000,
+    halfD: f.frameD / 2000,
+    rot: 0,
+  }
 }
 
 // Rect 1 hồ (m, world XZ) cho cỏ né — cỏ KHÔNG mọc xuyên mặt nước LẪN dải coping. Mở rộng halfW/D theo
