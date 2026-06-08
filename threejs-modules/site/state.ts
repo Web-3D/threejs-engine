@@ -189,6 +189,9 @@ export interface GroundLayer {
   points?: WaterPoint[] // đỉnh + tay-cầm bezier khi shape='free' — DÙNG CHUNG WaterPoint. Optional
   op?: 'add' | 'cut' // 'add' = mảng phủ material riêng; 'cut' = khoét add-layer cùng/cao level hơn → LỘ level dưới. Optional → 'add'
   level?: number // G-LEVEL (1-based) — gom GUI thành G1/G2…; cut level N khoét add-layer level≥N (lộ level N−1). Optional → 1
+  // 🏔️ DRAPE: true = zone UỐN theo gò terrain (lưới displaced bám heightAt — như nền G0); false/thiếu = slab PHẲNG
+  // (terrain GIỮ PHẲNG dưới nó qua mask = "phẳng pad"/patio). Chỉ hiệu lực khi terrain.enabled. Optional → false.
+  drape?: boolean
 }
 
 // 🏔️ GÒ NẶN-TAY (Phase 3): bump radial trên height-field. x/z = tâm (mm, local so tâm lô); radius = bán kính
@@ -437,6 +440,7 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       points: parsePoints(o.points), // dùng chung parse với hồ (đỉnh + tay-cầm bezier)
       op: o.op === 'cut' ? 'cut' : 'add',
       level: clamp(num(o.level, idx + 1), 1, 99), // thiếu level (design cũ) → migrate idx+1 (giữ tách G1/G2…)
+      drape: o.drape === true, // 🏔️ zone bám gò (lưới displaced) — thiếu = false (slab phẳng pad)
     }
   })
 }
