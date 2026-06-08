@@ -35,12 +35,11 @@ import {
   type GroundLayer,
   type GroundMaterialKey,
   isGroundTexKey,
+  makeStonePathParams,
   renderPuddles,
   renderRocks,
-  renderStoneFields,
   renderWaters,
   type SiteState,
-  type StoneFieldConfig,
   type TerrainConfig,
   type WaterConfig,
   type WaterMaterialKey,
@@ -63,7 +62,6 @@ export interface SiteHandle {
   waters: WaterSurface[] // 1 WaterSurface mỗi hồ ĐANG BẬT (cùng thứ tự renderWaters(site)) — caller zip cfg↔surf
   ground: THREE.Mesh | null // mesh nền base (G0) — caller giữ ref để LIVE-rebuild geometry-only (terrain drag, né water-RTT)
   rocks: RockCluster[] // 🪨 1 RockCluster mỗi cụm đá ĐANG BẬT (cùng thứ tự renderRocks(site)) — caller zip cfg↔cluster
-  stoneFields: StoneScatter[] // 🪨 1 StoneScatter mỗi lối đi lát đá ĐANG BẬT (cùng thứ tự renderStoneFields) — caller zip cfg↔field
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -109,7 +107,7 @@ export function renderSiteState(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts = {}
 ): SiteHandle {
-  if (!site.show) return { grass: null, waters: [], ground: null, rocks: [], stoneFields: [] }
+  if (!site.show) return { grass: null, waters: [], ground: null, rocks: [] }
   const ground = buildGround(site, ctx, opts)
   buildGroundLayers(site, ctx, opts) // TẦNG surface chồng (xếp lớp 3D) lên base
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
@@ -126,8 +124,7 @@ export function renderSiteState(
   if (!opts.skipFence)
     for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
   const rocks = buildRocks(site, ctx, opts) // 🪨 hòn non bộ — cụm đá mỏm bám gò
-  const stoneFields = buildStoneFields(site, ctx, opts) // 🪨 lối đi lát đá — rải đá Poisson trên cỏ
-  return { grass, waters, ground, rocks, stoneFields }
+  return { grass, waters, ground, rocks }
 }
 
 // 🪨 Dựng cụm đá non bộ ĐANG BẬT. Mỗi cụm = 1 RockCluster (CPU displace+merge, 1 draw). Đặt tại offset trong lô,
@@ -170,48 +167,9 @@ export function buildRocks(
   })
 }
 
-// 🪨 Dựng lối đi lát đá ĐANG BẬT. Mỗi khuôn = 1 StoneScatter (Poisson-disk + InstancedMesh, 1 draw). Đặt tại offset
-// trong lô, BÁM cao-độ gò ở TÂM khuôn (sample heightAt 1 điểm — cả khuôn nằm trên cao-độ đó). mesh.userData.
-// stoneFieldIdx → editor live-rebuild stone-only (né water-RTT). push ctx.shaders (field.dispose lo geometry+material).
-// Texture đá triplanar DÙNG CHUNG cache border hồ (opts.borderMatByKey). EXPORT để editor rebuild stone-only.
-export function buildStoneFields(
-  site: SiteState,
-  ctx: SiteRenderCtx,
-  opts: SiteRenderOpts
-): StoneScatter[] {
-  const list = renderStoneFields(site)
-  if (list.length === 0) return []
-  const topY = site.groundThick / 1000
-  const t = site.terrain
-  const hf = t && t.enabled ? buildHeightField(site, opts, t) : null // bám gò ở tâm khuôn
-  return list.map((f, idx) => {
-    const x = f.offsetX / 1000
-    const z = f.offsetZ / 1000
-    const mat = f.material !== 'none' ? opts.borderMatByKey?.[f.material] : undefined
-    const field = new StoneScatter({
-      frameW: f.frameW / 1000,
-      frameD: f.frameD / 1000,
-      rMin: f.rMin / 1000,
-      rMax: f.rMax / 1000,
-      ellipseMin: f.ellipseMin,
-      gap: f.gap / 1000,
-      thickness: f.thickness / 1000,
-      seed: f.seed,
-      color: f.color,
-      material: mat,
-    })
-    const mesh = field.getMesh()
-    mesh.position.set(x, topY + (hf ? heightAt(hf, x, z) : 0), z)
-    mesh.userData.stoneFieldIdx = idx
-    ctx.group.add(mesh)
-    ctx.shaders.push(field) // dispose tự lo (field.dispose → geometry+material+gỡ parent)
-    return field
-  })
-}
-
-// Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật + KHUÔN mỗi
-// lối đi lát đá (cỏ-3D không mọc xuyên đá; khe-cỏ-tuft trong khuôn = polish sau). Export để CALLER dùng đúng tập
-// exclude này cho cả dirty-check (grassBuildSig) LẪN buildSiteGrass → khớp với lõi.
+// Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật. (Path-zone rải
+// đá né cỏ qua `zoneRects` — zone add nằm trong groundLayers nên đã có sẵn.) Export để CALLER dùng đúng tập exclude
+// này cho cả dirty-check (grassBuildSig) LẪN buildSiteGrass → khớp với lõi.
 export function siteGrassExclude(
   site: SiteState,
   foundation: GrassExcludeRect[]
@@ -219,19 +177,7 @@ export function siteGrassExclude(
   const exclude = [...foundation]
   for (const w of renderWaters(site)) exclude.push(waterRect(w))
   for (const w of renderPuddles(site)) exclude.push(waterRect(w)) // cỏ né cả vũng nước (không mọc xuyên mặt)
-  for (const f of renderStoneFields(site)) exclude.push(stoneFieldRect(f)) // 🪨 cỏ né khuôn lối đi đá
   return exclude
-}
-
-// 🪨 Rect 1 khuôn lối đi (m, world XZ) cho cỏ né — cỏ-3D KHÔNG mọc trong khuôn đá (blade cao đâm xuyên phiến dẹt).
-function stoneFieldRect(f: StoneFieldConfig): GrassExcludeRect {
-  return {
-    cx: f.offsetX / 1000,
-    cz: f.offsetZ / 1000,
-    halfW: f.frameW / 2000,
-    halfD: f.frameD / 2000,
-    rot: 0,
-  }
 }
 
 // Rect 1 hồ (m, world XZ) cho cỏ né — cỏ KHÔNG mọc xuyên mặt nước LẪN dải coping. Mở rộng halfW/D theo
@@ -1328,6 +1274,39 @@ function zoneCell(layer: GroundLayer, drape: DrapeCtx | null): number {
   return Math.max(layer.length, layer.width) / 1000 / res
 }
 
+// 🪨 Zone LOẠI 'path' (zoneKind='path') = rải đá StoneScatter trong rect zone (Poisson, không chạm) thay lớp
+// surface. Khung = chính rect zone (length×width = frameW/D, offsetX/Z = vị trí); Y = baseY (mặt G-level — zone
+// nằm trong zoneRects → terrain phẳng pad dưới đá). userData.stonePath = ref StoneScatter → live-rebuild dispose
+// đúng (né double-dispose geo). Texture đá DÙNG CHUNG cache border hồ (opts.borderMatByKey). push ctx.shaders.
+function addStonePathMesh(
+  layer: GroundLayer,
+  idx: number,
+  baseY: number,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): void {
+  const p = layer.path ?? makeStonePathParams()
+  const mat = p.material !== 'none' ? opts.borderMatByKey?.[p.material] : undefined
+  const field = new StoneScatter({
+    frameW: layer.length / 1000,
+    frameD: layer.width / 1000,
+    rMin: p.rMin / 1000,
+    rMax: p.rMax / 1000,
+    ellipseMin: p.ellipseMin,
+    gap: p.gap / 1000,
+    thickness: p.thickness / 1000,
+    seed: p.seed,
+    color: p.color,
+    material: mat,
+  })
+  const mesh = field.getMesh()
+  mesh.position.set(layer.offsetX / 1000, baseY, layer.offsetZ / 1000)
+  mesh.userData.groundLayerIdx = idx // editor pick/Move/live-rebuild (như surface zone)
+  mesh.userData.stonePath = field // 🪨 ref StoneScatter → live-rebuild dispose qua field.dispose (né double-dispose)
+  ctx.group.add(mesh)
+  ctx.shaders.push(field) // dispose tự lo (field.dispose → geometry+material+gỡ parent)
+}
+
 function addZoneMesh(
   layer: GroundLayer,
   idx: number,
@@ -1338,6 +1317,7 @@ function addZoneMesh(
   drape: DrapeCtx | null,
   clean: boolean
 ): void {
+  if (layer.zoneKind === 'path') return addStonePathMesh(layer, idx, baseY, ctx, opts) // 🪨 rải đá thay surface
   const surf = zoneSurfaces(layer, baseY, drape)
   let geo: THREE.BufferGeometry | null
   if (surf) {
@@ -1375,7 +1355,7 @@ function buildLevelZones(
   layers.forEach((layer, idx) => {
     if (layer.op === 'cut' || (layer.level ?? 1) !== lv) return
     addZoneMesh(layer, idx, baseY, [...water, ...cuts], ctx, opts, drape, clean)
-    maxTh = Math.max(maxTh, layer.thickness / 1000) // giữ stacking ổn định kể cả zone bị khoét sạch
+    if (layer.zoneKind !== 'path') maxTh = Math.max(maxTh, layer.thickness / 1000) // path = rải đá, không tính dày stacking
   })
   return baseY + maxTh
 }

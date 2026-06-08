@@ -194,24 +194,18 @@ export interface RockConfig {
   material: BorderMaterialKey // 'none' = màu phẳng color; texture đá (triplanar) → DÙNG CHUNG cache border hồ (icelandic/coal/rock)
 }
 
-// 🪨 LỐI ĐI LÁT ĐÁ (StoneScatter) — rải mảng đá DẸT tròn/ellipse trong 1 KHUÔN VUÔNG VÔ HÌNH bằng Poisson-disk
-// (cách đều ngẫu nhiên, KHÔNG chạm nhau, chừa khe cỏ). Đa-instance; chỉ enabled mới render. Khuôn vô hình = chỉ
-// biên (offset + frameW/D), KHÔNG vẽ ra. Đặt trên cỏ G0; bám cao-độ gò ở TÂM khuôn (heightAt) khi terrain bật.
-// Props map thẳng StoneScatter (mm → m khi render). Material đá DÙNG CHUNG cache triplanar với border hồ/RockCluster.
-export interface StoneFieldConfig {
-  enabled: boolean
-  offsetX: number // mm — tâm khuôn lệch tâm lô (X)
-  offsetZ: number // mm — tâm khuôn lệch tâm lô (Z)
-  frameW: number // mm — bề ngang khuôn vuông vô hình (X) (500..20000)
-  frameD: number // mm — chiều sâu khuôn (Z) (500..20000)
+// 🪨 LỐI ĐI LÁT ĐÁ (path-zone) — tham số rải đá StoneScatter cho 1 zone có zoneKind='path' (LOẠI zone bên trong
+// G-level, KHÔNG còn tab riêng). KHUÔN = CHÍNH rect zone (length×width = frameW/D, offsetX/Z = vị trí). Đá tròn/
+// ellipse Poisson không chạm (chừa khe). Props map thẳng StoneScatter (mm → m). Material đá DÙNG CHUNG cache border hồ.
+export interface StonePathParams {
   rMin: number // mm — bán kính phiến nhỏ nhất (50..2000)
   rMax: number // mm — bán kính phiến lớn nhất = bán kính BAO → quyết định minDist (50..2000)
   ellipseMin: number // 0.1..1 — aspect ellipse tối thiểu (1 = tròn hết; <1 = dẹt)
   gap: number // mm — khe cỏ tối thiểu giữa 2 phiến mép-mép (0..1000)
   thickness: number // mm — dày phiến nhô trên cỏ (10..300)
   seed: number // 0..9999 — đổi layout + cỡ phiến (deterministic, tái lập)
-  color: number // màu đá khi material='none' (material NỘI BỘ flat, uniform live qua setColor)
-  material: BorderMaterialKey // 'none' = màu phẳng color; texture đá (triplanar) → DÙNG CHUNG cache border hồ
+  color: number // màu đá khi material='none' (StoneScatter material NỘI BỘ flat)
+  material: BorderMaterialKey // 'none' = màu phẳng; texture đá (triplanar) → DÙNG CHUNG cache border hồ
 }
 
 // TẦNG SURFACE chồng (nghệ thuật xếp lớp 3D): mỗi layer = 1 lớp vật liệu phủ kín lô, dày RIÊNG, xếp CHỒNG
@@ -234,6 +228,11 @@ export interface GroundLayer {
   // 🏔️ TERRAIN RIÊNG zone: noise + mounds của RIÊNG zone (độc lập G0). Bật → zone displaced theo gò riêng (cộng dồn
   // gò G0 nếu drape). Optional → undefined (zone không có gò riêng). Cấu hình = cùng TerrainConfig với G0.
   terrain?: TerrainConfig
+  // 🪨 LOẠI zone (chỉ op='add'): 'surface' (mặc định) = lớp vật liệu phủ; 'path' = rải đá StoneScatter trong rect
+  // zone (Poisson, không chạm). Optional → 'surface' (backward-compat). op='cut' bỏ qua field này.
+  zoneKind?: 'surface' | 'path'
+  // 🪨 Tham số rải đá khi zoneKind='path'. Khung = CHÍNH rect zone (length×width, offsetX/Z). Optional → makeStonePathParams.
+  path?: StonePathParams
 }
 
 // 🏔️ GÒ NẶN-TAY (Phase 3): bump radial trên height-field. x/z = tâm (mm, local so tâm lô); radius = bán kính
@@ -279,7 +278,6 @@ export interface SiteState {
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
   rocks?: RockConfig[] // 🪨 hòn non bộ (RockCluster) đa-instance — chỉ enabled mới render. Optional → backward-compat ([])
-  stoneFields?: StoneFieldConfig[] // 🪨 lối đi lát đá (StoneScatter) đa-instance — chỉ enabled mới render. Optional → backward-compat ([])
 }
 
 // Factory 1 tầng surface chồng. Default soil 1cm, tấm 10×10m — lớp mới mỏng tối thiểu, vật liệu khác base.
@@ -294,6 +292,7 @@ export function makeGroundLayer(overrides: Partial<GroundLayer> = {}): GroundLay
     shape: 'rect',
     op: 'add',
     level: 1,
+    zoneKind: 'surface', // 🪨 mặc định lớp vật liệu; đổi 'path' ở GUI để rải đá (path field init khi đổi)
     ...overrides,
   }
 }
@@ -303,11 +302,6 @@ export function makeGroundLayer(overrides: Partial<GroundLayer> = {}): GroundLay
 // 🪨 Cụm đá render được = rocks ĐANG BẬT. Dùng bởi renderer (dựng RockCluster) + editor (zip handle↔cfg).
 export function renderRocks(site: SiteState): RockConfig[] {
   return (site.rocks ?? []).filter((r) => r.enabled)
-}
-
-// 🪨 Lối đi lát đá render được = stoneFields ĐANG BẬT. Dùng bởi renderer (dựng StoneScatter) + editor (zip handle↔cfg).
-export function renderStoneFields(site: SiteState): StoneFieldConfig[] {
-  return (site.stoneFields ?? []).filter((f) => f.enabled)
 }
 
 export function renderWaters(site: SiteState): WaterConfig[] {
@@ -406,7 +400,6 @@ export function defaultSiteState(): SiteState {
     waters: defaultWaters(),
     fences: [makeFence()],
     rocks: [], // 🪨 chưa có cụm đá non bộ (thêm qua ＋ ở tab Rock)
-    stoneFields: [], // 🪨 chưa có lối đi lát đá (thêm qua ＋ ở tab Path)
   }
 }
 
@@ -435,15 +428,10 @@ export function makeRock(enabled = false): RockConfig {
   }
 }
 
-// 🪨 Factory 1 lối đi lát đá. enabled mặc định false (instance thêm-mới TẮT — như rock/water). seed NGẪU NHIÊN
-// → mỗi khuôn khác layout; lưu lại nên save/load tái lập. offsetZ +4m (trước nhà). Khuôn 4×4m, phiến 0.18..0.35m.
-export function makeStoneField(enabled = false): StoneFieldConfig {
+// 🪨 Factory tham số rải đá cho path-zone (zoneKind='path'). seed NGẪU NHIÊN → mỗi zone khác layout; lưu lại nên
+// save/load tái lập. Phiến 0.18..0.35m, khe 6cm. Khung = rect zone (length×width) → KHÔNG có ở đây.
+export function makeStonePathParams(): StonePathParams {
   return {
-    enabled,
-    offsetX: 0,
-    offsetZ: 4000,
-    frameW: 4000, // 4m khuôn vuông
-    frameD: 4000,
     rMin: 180, // 18cm phiến nhỏ
     rMax: 350, // 35cm phiến lớn (= bán kính bao)
     ellipseMin: 0.6, // aspect ellipse tối thiểu (1 = tròn hết)
@@ -537,8 +525,27 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       level: clamp(num(o.level, idx + 1), 1, 99), // thiếu level (design cũ) → migrate idx+1 (giữ tách G1/G2…)
       drape: o.drape === true, // 🏔️ zone bám gò (lưới displaced) — thiếu = false (slab phẳng pad)
       terrain: o.terrain !== undefined ? parseTerrain(o.terrain, defaultTerrain()) : undefined, // 🏔️ gò riêng zone
+      zoneKind: o.zoneKind === 'path' ? 'path' : 'surface', // 🪨 LOẠI zone — thiếu = 'surface' (backward-compat)
+      path: o.path !== undefined ? parseStonePathParams(o.path) : undefined, // 🪨 tham số rải đá khi zoneKind='path'
     }
   })
+}
+
+// 🪨 Tham số rải đá path-zone — clamp khớp slider GUI. rMin kẹp ≤ rMax. Thiếu → makeStonePathParams default.
+function parseStonePathParams(raw: unknown): StonePathParams {
+  const r = (raw ?? {}) as Partial<StonePathParams>
+  const d = makeStonePathParams()
+  const rMax = clamp(num(r.rMax, d.rMax), 50, 2000)
+  return {
+    rMin: Math.min(clamp(num(r.rMin, d.rMin), 50, 2000), rMax),
+    rMax,
+    ellipseMin: clamp(num(r.ellipseMin, d.ellipseMin), 0.1, 1),
+    gap: clamp(num(r.gap, d.gap), 0, 1000),
+    thickness: clamp(num(r.thickness, d.thickness), 10, 300),
+    seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
+    color: parseColor(r.color, d.color),
+    material: parseBorderMat(r.material),
+  }
 }
 
 // 🏔️ Gò nặn-tay: lọc phần tử hợp lệ (clamp ±50m tâm, bán kính 100..20000mm, cao ±2000mm), tối đa 24 gò. Sai → bỏ.
@@ -789,41 +796,6 @@ function parseRocks(raw: unknown): RockConfig[] {
   return out
 }
 
-// 🪨 1 lối đi lát đá — clamp khớp range slider GUI (save/load an toàn). int hoá seed. rMin kẹp ≤ rMax (giữ minDist hợp lệ).
-function parseStoneField(
-  raw: Partial<StoneFieldConfig> | undefined,
-  d: StoneFieldConfig
-): StoneFieldConfig {
-  const r = raw ?? {}
-  const rMax = clamp(num(r.rMax, d.rMax), 50, 2000)
-  return {
-    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
-    offsetX: clamp(num(r.offsetX, d.offsetX), -20000, 20000),
-    offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
-    frameW: clamp(num(r.frameW, d.frameW), 500, 20000),
-    frameD: clamp(num(r.frameD, d.frameD), 500, 20000),
-    rMin: Math.min(clamp(num(r.rMin, d.rMin), 50, 2000), rMax),
-    rMax,
-    ellipseMin: clamp(num(r.ellipseMin, d.ellipseMin), 0.1, 1),
-    gap: clamp(num(r.gap, d.gap), 0, 1000),
-    thickness: clamp(num(r.thickness, d.thickness), 10, 300),
-    seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
-    color: parseColor(r.color, d.color),
-    material: parseBorderMat(r.material), // dùng chung set texture đá với border hồ
-  }
-}
-
-// Mảng lối đi lát đá — tolerant (phần tử sai bỏ qua), tối đa 16. Optional → [] (backward-compat, không bump schema).
-function parseStoneFields(raw: unknown): StoneFieldConfig[] {
-  if (!Array.isArray(raw)) return []
-  const out: StoneFieldConfig[] = []
-  for (const f of raw) {
-    out.push(parseStoneField(f as Partial<StoneFieldConfig>, makeStoneField(false)))
-    if (out.length >= 16) break
-  }
-  return out
-}
-
 export function parseSite(raw: unknown): SiteState {
   const d = defaultSiteState()
   if (!raw || typeof raw !== 'object') return d
@@ -848,7 +820,6 @@ export function parseSite(raw: unknown): SiteState {
     waters: parseWaters(o.waters, o.water),
     fences: parseFences(o.fences, o.fence, d.fences[0]),
     rocks: parseRocks((o as { rocks?: unknown }).rocks),
-    stoneFields: parseStoneFields((o as { stoneFields?: unknown }).stoneFields),
   }
 }
 

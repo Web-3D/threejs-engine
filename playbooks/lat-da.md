@@ -1,6 +1,6 @@
 ---
 domain: lat-da
-title: Lối đi lát đá — rải đá tròn/ellipse Poisson (StoneScatter) trong khuôn vô hình
+title: Lối đi lát đá — path = 1 LOẠI zone trong G-level (StoneScatter Poisson)
 status: building
 tier: —
 modules:
@@ -14,56 +14,57 @@ updated: 2026-06-08
 
 # Playbook — Lối đi lát đá (stepping-stone / stone path)
 
-> **Ranh giới:** recipe + tầng/toạ độ + lịch sử của mảng "rải đá trong khuôn". Thuật toán Poisson + đĩa
-> instanced chi tiết → `components/StoneScatter/README.md`. v1 = đá RỜI có khe (KHÔNG Voronoi ghép-khít).
+> **Ranh giới:** recipe + tầng/toạ độ + lịch sử mảng "rải đá". Thuật toán Poisson + đĩa instanced →
+> `components/StoneScatter/README.md`. v1 = đá RỜI có khe (KHÔNG Voronoi ghép-khít).
 
 ## 1. Kết quả
 
-Mô hình **G0 cỏ → G1 khuôn VUÔNG VÔ HÌNH → rải mảng đá tròn/ellipse** random, cách đều, **không chạm nhau**
-(chừa khe cỏ). Như lối đi lát đá sân vườn. Đa-instance (tab Path: P1│P2│＋). **Đích xa** = Voronoi crazy-paving
-(ghép khít, đa giác) — `geometry/voronoi-applications.md`.
+Mô hình **G0 cỏ → tạo G-level (G1+) → mỗi zone add chọn LOẠI**: ① **Surface** (lớp vật liệu cũ) hoặc ②
+**Path** (rải đá tròn/ellipse Poisson, không chạm, chừa khe). **Path KHÔNG còn tab riêng** — là 1 zoneKind bên
+trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi crazy-paving (`geometry/voronoi-applications.md`).
 
 ## 2. Recipe dựng
 
-- **Module** (`StoneScatter`): Bridson Poisson-disk (blue-noise) trong rect → tâm cách đều; mỗi tâm gán
-  `r∈[rMin,rMax]` + aspect ellipse + xoay. `minDist=2·rMax+gap` ⇒ KHÔNG chạm (bounding-circle ≤ rMax). N phiến =
-  1 InstancedMesh = 1 draw. Material nội bộ flat / bơm material ngoài. Props mm→m.
-- **State** (`state.ts`): `StoneFieldConfig` (enabled + offsetX/Z + frameW/D + rMin/rMax + ellipseMin + gap +
-  thickness + seed + color + material) trong `SiteState.stoneFields?[]` (optional → backward-compat []).
-  `renderStoneFields` = enabled. `makeStoneField` (seed ngẫu nhiên) + `parseStoneField(s)` (clamp, rMin≤rMax).
-- **Render** (`fromState.ts` `buildStoneFields`, EXPORT): mỗi khuôn bật → `new StoneScatter` → mesh tại
-  `(offsetX/1000, topY + heightAt(hf,x,z), offsetZ/1000)` (BÁM gò ở TÂM khuôn). `userData.stoneFieldIdx`.
-  Cỏ né: `stoneFieldRect` (cả khuôn) vào `siteGrassExclude` → blade không đâm xuyên phiến.
-- **GUI** (archplan `gui/site.ts`): sub-tab **Path** (index 5) cạnh Rock — instance `P1│P2│＋`
-  (`buildStoneDomain`/`buildStoneTabs`/`buildStonePane` + `stoneSliderSpecs`). Pos X/Z + Color = **live**
-  (`tuneStoneField`); structural = kéo `applyStoneFieldsLive` (rebuild stone-only, né water-RTT) / buông `applySite`.
-- **Lab** (`ArchPlanLab.ts`): `_siteStoneFields` zip cfg↔field; `_tuneStoneField`, `_rebuildStoneFieldsLive`
-  (dispose field cũ + `buildStoneFields`) ← mirror `_rebuildRocksLive`. Texture đá dùng chung cache border hồ.
+- **Module** (`StoneScatter`): Bridson Poisson-disk (blue-noise) trong rect → tâm cách đều; mỗi tâm `r∈[rMin,rMax]`
+  + aspect ellipse + xoay. `minDist=2·rMax+gap` ⇒ KHÔNG chạm. N phiến = 1 InstancedMesh = 1 draw. Props mm→m.
+- **State** (`state.ts`): `GroundLayer.zoneKind?: 'surface'|'path'` (optional → 'surface' backward-compat) +
+  `path?: StonePathParams` (rMin/rMax/ellipseMin/gap/thickness/seed/color/material). `makeStonePathParams` (seed
+  ngẫu nhiên) + `parseStonePathParams` (clamp, rMin≤rMax). Khung = length/width/offset của CHÍNH zone (KHÔNG field riêng).
+- **Render** (`fromState.ts` `addZoneMesh`): `zoneKind==='path'` → `addStonePathMesh` dựng StoneScatter (frame=length/
+  width, Y=baseY level — zone trong `zoneRects` → terrain phẳng pad dưới đá) thay mesh surface. `userData.stonePath`
+  = ref StoneScatter (live-rebuild dispose đúng). `buildLevelZones`: path KHÔNG tính `maxTh` (không dày stacking).
+- **GUI** (archplan `gui/site.ts` `buildZonePane`): op='add' → `zoneKindRow` (selectRow **Type: Surface|Path**);
+  path → `buildPathZoneBody` (Frame W/D + `pathSliderSpecs` R min/max·Ellipse·Gap·Thick·Seed + Material + Color),
+  surface → `buildSurfaceZoneBody` (cũ). Đổi Type → `rebuild(flatIdx)` dựng lại pane + `applySite`.
+- **Lab** (`ArchPlanLab.ts`): path-zone edit route qua `applySite`/`_rebuildSite` như slider surface zone (KHÔNG
+  tune riêng). `_rebuildGroundLayersLive`: mesh có `userData.stonePath` → dispose QUA `field.dispose` + rút khỏi
+  siteShaders (né double-dispose geo). `_collectPathTexKeys` → texture đá DÙNG CHUNG cache border hồ/RockCluster.
 
 ## 3. Tầng & toạ độ
 
-- Vị trí: `offsetX/Z` mm lệch tâm lô (= world XZ /1000). Slider ±15m. Khuôn `frameW×D` 0.5..20m (vô hình).
-- Phiến: `rMin/rMax` 0.05..2m, `gap` 0..1m, `thickness` 1..30cm. Y = `groundThick/1000 + heightAt(gò)` ở TÂM.
-- Budget: khuôn 4×4m ≈ ~20 phiến × 64 tri ≈ 1.3k tri, **1 draw/khuôn**. Cap MAX_STONES=400 (module).
+- Path-zone sống trong `groundLayers` (op='add', level = G-level). Khung = length/width zone (0.5..40m), offset ±20m.
+- Phiến: `rMin/rMax` 0.05..2m, `gap` 0..1m, `thickness` 1..30cm. Y = baseY của G-level (đá trên pad phẳng).
+- Budget: khuôn 4×4m ≈ ~20 phiến × 64 tri ≈ 1.3k tri, **1 draw/zone**. Cap MAX_STONES=400 (module).
 
 ## 4. Lỗi thường gặp
 
-- **Phiến nhô khỏi khuôn ≤ rMax:** Poisson sinh tâm trong rect, đĩa bán kính r tràn mép (khuôn vô hình → OK).
-- **Đá float/lún khi kéo Pos trên gò:** Pos live chỉ dời X/Z (Y giữ) → buông (`applySite`) mới sample lại cao-độ.
-- **Cả khuôn nằm 1 cao-độ trên gò dốc:** bám gò ở TÂM (1 điểm) → khuôn lớn trên sườn sẽ lệch. Per-stone drape = polish.
-- **Cỏ-tuft trong khe giữa phiến:** v1 exclude CẢ khuôn (đá trên nền xanh phẳng) → chưa có cỏ mọc trong khe.
-  Polish: per-stone exclude (feed `getPlacements()` vào exclude) thay vì cả khuôn.
+- **Phiến nhô khỏi khung ≤ rMax:** Poisson sinh tâm trong rect, đĩa bán kính r tràn mép (khung vô hình → OK).
+- **Đá nằm pad phẳng (không bám gò):** path-zone vào `zoneRects` → terrain phẳng dưới nó. Bám-gò-zone = polish.
+- **Đổi Type mất focus tab:** `zoneKindRow` gọi `rebuild(flatIdx)` giữ focus zone đang sửa (đừng quên flatIdx).
+- **Cỏ-tuft trong khe phiến:** path-zone né cỏ CẢ khung (qua `zoneRects`) → đá trên nền phẳng, chưa cỏ trong khe.
+  Polish: per-stone exclude (feed `StoneScatter.getPlacements()` vào exclude) thay vì cả khung.
 
 ## 5. Lịch sử nâng cấp
 
-- **2026-06-08 — Phase A:** module `StoneScatter` (Poisson-disk Bridson + InstancedMesh đĩa, mulberry32 seed).
-  4 file + validate. v1 tròn/ellipse rời (Voronoi = đích xa).
-- **2026-06-08 — Phase B:** tab **Path** ráp archplan (state `stoneFields[]` + `buildStoneFields` bám gò + GUI
-  đa-instance P1│P2│＋ + live Pos/Color + rebuild stone-only + texture đá dùng chung cache border hồ + cỏ né khuôn).
-  Kéo-thả 3D đặt khuôn = hoãn (slider trước, như rock/mound). Chờ verify :3002.
+- **2026-06-08 — Phase A:** module `StoneScatter` (Poisson-disk Bridson + InstancedMesh đĩa, mulberry32 seed). v1
+  tròn/ellipse rời (Voronoi = đích xa).
+- **2026-06-08 — Phase B (tab Path):** ráp dạng `stoneFields[]` + tab Path riêng. **ĐÃ THAY** bằng tái cấu trúc dưới.
+- **2026-06-08 — TÁI CẤU TRÚC:** NgQuan "bỏ path vào bên trong G1 — mỗi zone z1 có 2 loại Surface|Path". Bỏ
+  `stoneFields[]`/tab Path → path = **zoneKind trong GroundLayer**. Edit route qua `applySite` (như surface zone),
+  KHÔNG live-tune riêng. `_rebuildGroundLayersLive` xử path-mesh (dispose qua StoneScatter). Chờ verify :3002.
 
 ## 6. Liên hệ
 
 - Module: `components/StoneScatter` (README Poisson/props) · cặp `RockCluster`/`WaterSurface`/`GrassBlades`.
-- Đích xa Voronoi ghép-khít: `deferred/geometry/voronoi-applications.md` · nền sân `deferred/systems/garden-ground-patches.md`.
-- Pattern live-rebuild né water-RTT: như `_rebuildRocksLive` — distilled `archplan-rebuild-dirty-check`.
+- Đích xa Voronoi: `deferred/geometry/voronoi-applications.md` · nền sân `deferred/systems/garden-ground-patches.md`.
+- Hệ G-level/zone: `playbooks/ground.md` · pattern live-rebuild zone: `_rebuildGroundLayersLive` (distilled `archplan-rebuild-dirty-check`).
