@@ -1032,6 +1032,24 @@ function distPointSeg(
   return Math.hypot(px - (ax + t * dx), pz - (az + t * dz))
 }
 
+// Hàm cao-độ Y zone cuối: loangLo (drape) → `surf.top` thẳng (dao động quanh G0). else → taper mép về `below+GAP`
+// (band = edgeFlat zone, cap ≤45% cạnh nhỏ). Tách giữ drapedLayerGeometry complexity ≤10.
+function zoneYAtFn(
+  surf: { top: YFn; below: YFn; loangLo: boolean },
+  contour: { x: number; z: number }[],
+  layer: GroundLayer
+): YFn {
+  if (surf.loangLo) return surf.top
+  const minSide = Math.min(layer.length, layer.width) / 1000
+  const band = Math.max(0.05, Math.min((layer.terrain?.edgeFlat ?? 800) / 1000, minSide * 0.45))
+  return (x, z) => {
+    const lo = surf.below(x, z) + ZONE_MIN_GAP
+    const d = Math.min(distToPolyEdge(x, z, contour) / band, 1)
+    const w = d * d * (3 - 2 * d)
+    return lo + w * (surf.top(x, z) - lo)
+  }
+}
+
 // 🏔️ Zone DISPLACED (drape G0 và/hoặc gò riêng zone): lưới (cỡ ô = cell) trên bbox zone. **MÉP HẠ THẤP TỰ NHIÊN**:
 // `yAt` blend `top` về (`below + GAP`) theo khoảng-cách-tới-viền → rủ mượt xuống GẦN G-dưới (cách GAP, KHÔNG bằng
 // → né z-fight). band = edgeFlat (cap ≤45% cạnh nhỏ). **clean=true (commit):** clip ô-biên `polygonClipping`
@@ -1039,7 +1057,7 @@ function distPointSeg(
 // fps). holes = nước+cut cùng level. Rỗng → null.
 function drapedLayerGeometry(
   layer: GroundLayer,
-  surf: { top: YFn; below: YFn },
+  surf: { top: YFn; below: YFn; loangLo: boolean },
   holes: { x: number; z: number }[][],
   cell: number,
   clean: boolean
@@ -1049,15 +1067,7 @@ function drapedLayerGeometry(
   const bb = polyBox(contour, 0)
   const nx = Math.max(1, Math.ceil((bb.x1 - bb.x0) / cell))
   const nz = Math.max(1, Math.ceil((bb.z1 - bb.z0) / cell))
-  const minSide = Math.min(layer.length, layer.width) / 1000
-  const band = Math.max(0.05, Math.min((layer.terrain?.edgeFlat ?? 800) / 1000, minSide * 0.45))
-  // yAt = (below+GAP) + smoothstep(dist→viền / band) · (top − below − GAP): mép = below+GAP (≠ G0), lòng = top.
-  const yAt: YFn = (x, z) => {
-    const lo = surf.below(x, z) + ZONE_MIN_GAP
-    const d = Math.min(distToPolyEdge(x, z, contour) / band, 1)
-    const w = d * d * (3 - 2 * d)
-    return lo + w * (surf.top(x, z) - lo)
-  }
+  const yAt = zoneYAtFn(surf, contour, layer)
   const g: GridEmit = { yAt, pos: [], uv: [], idx: [] }
   const contourRing = closeWaterRing(contour)
   const holeRings: MultiPolygon = holes.filter((h) => h.length >= 3).map((h) => [closeWaterRing(h)])
@@ -1180,25 +1190,33 @@ type YFn = (x: number, z: number) => number
 // đủ trùm sai-số nội-suy lưới (curve-vs-chord) ở địa hình thường; gò dốc cực đoan có thể cần grid-align (defer).
 const ZONE_MIN_GAP = 0.02
 
-// 🏔️ 2 mặt Y cho zone DISPLACED — null nếu zone PHẲNG (không drape G0 + không gò riêng → slab). `below` = mặt G NGAY
-// DƯỚI (baseY + gò-G0) = MỐC để giữ khoảng hở; `top` = mặt zone đầy gò = below + GAP + gò-RIÊNG-zone. Gò-zone =
-// height-field noise+mounds riêng (mask off → fill cả zone, clip contour ở geometry). Math.max(dy,0) → gò dương.
+// 🏔️ Mặt Y zone DISPLACED — null nếu zone PHẲNG (không drape + không gò riêng → slab). 2 CHẾ ĐỘ:
+//  • **DRAPE bật = LOANG LỔ** (`loangLo=true`): zone (cát) dao động QUANH mặt G0 (cỏ) theo gò CENTERED → chỗ chìm
+//    dưới G0 = G0 ló (cỏ), chỗ nổi = zone (cát) → "cát phủ loang lổ lên cỏ". bias = ½amplitude (gò [0,amp]→[±amp/2]).
+//    KHÔNG taper/min-gap (interpenetrate CHÍNH LÀ hiệu ứng). Không gò-riêng → +GAP (clean, bám G0).
+//  • **DRAPE tắt = ĐÈ TRỰC TIẾP** (`loangLo=false`): gò trên nền PHẲNG (G0 đã mask phẳng dưới), giữ TRÊN base +
+//    taper mép (clean pad). `below`=base, `top`=base+GAP+gò.
+// g0At = cao-độ G0 MESH (facet, khớp render). Gò-zone = height-field noise+mounds riêng (mask off → fill cả zone).
 function zoneSurfaces(
   layer: GroundLayer,
   baseY: number,
   drape: DrapeCtx | null
-): { top: YFn; below: YFn } | null {
+): { top: YFn; below: YFn; loangLo: boolean } | null {
   const dc = drape && layer.drape ? drape : null // ctx G0 nếu zone bám gò G0 (gồm lưới hw/hd/res)
-  const zhf =
-    layer.terrain && layer.terrain.enabled
-      ? makeHeightField(layer.terrain, [], 1e6, 1e6) // gò riêng zone (lotHalf lớn → edge-mask ~1 khắp zone)
-      : null
+  const zt = layer.terrain && layer.terrain.enabled ? layer.terrain : null // cấu hình gò riêng (nếu bật)
+  const zhf = zt ? makeHeightField(zt, [], 1e6, 1e6) : null // gò riêng (lotHalf lớn → edge-mask ~1 khắp zone)
   if (!dc && !zhf) return null // phẳng → slab ExtrudeGeometry
-  // bám G0 = cao-độ G0 MESH (facet, g0MeshHeightAt) chứ KHÔNG true-curve → below khớp đúng mặt G0 render (hết xuyên).
   const g0At: YFn = (x, z) => (dc ? g0MeshHeightAt(dc.hf, x, z, dc.hw, dc.hd, dc.res) : 0)
+  if (dc) {
+    const bias = zt ? zt.amplitude / 2000 : 0 // ½ amplitude (m) → gò centered quanh 0
+    const yAt: YFn = (x, z) =>
+      baseY + g0At(x, z) + (zhf ? heightAt(zhf, x, z) - bias : ZONE_MIN_GAP)
+    return { top: yAt, below: (x, z) => baseY + g0At(x, z), loangLo: true }
+  }
   return {
-    below: (x, z) => baseY + g0At(x, z),
-    top: (x, z) => baseY + ZONE_MIN_GAP + g0At(x, z) + (zhf ? heightAt(zhf, x, z) : 0),
+    below: () => baseY,
+    top: (x, z) => baseY + ZONE_MIN_GAP + (zhf ? heightAt(zhf, x, z) : 0),
+    loangLo: false,
   }
 }
 
