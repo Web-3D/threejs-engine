@@ -192,6 +192,9 @@ export interface GroundLayer {
   // 🏔️ DRAPE: true = zone UỐN theo gò terrain (lưới displaced bám heightAt — như nền G0); false/thiếu = slab PHẲNG
   // (terrain GIỮ PHẲNG dưới nó qua mask = "phẳng pad"/patio). Chỉ hiệu lực khi terrain.enabled. Optional → false.
   drape?: boolean
+  // 🏔️ TERRAIN RIÊNG zone: noise + mounds của RIÊNG zone (độc lập G0). Bật → zone displaced theo gò riêng (cộng dồn
+  // gò G0 nếu drape). Optional → undefined (zone không có gò riêng). Cấu hình = cùng TerrainConfig với G0.
+  terrain?: TerrainConfig
 }
 
 // 🏔️ GÒ NẶN-TAY (Phase 3): bump radial trên height-field. x/z = tâm (mm, local so tâm lô); radius = bán kính
@@ -441,6 +444,7 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       op: o.op === 'cut' ? 'cut' : 'add',
       level: clamp(num(o.level, idx + 1), 1, 99), // thiếu level (design cũ) → migrate idx+1 (giữ tách G1/G2…)
       drape: o.drape === true, // 🏔️ zone bám gò (lưới displaced) — thiếu = false (slab phẳng pad)
+      terrain: o.terrain !== undefined ? parseTerrain(o.terrain, defaultTerrain()) : undefined, // 🏔️ gò riêng zone
     }
   })
 }
