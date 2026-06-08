@@ -17,7 +17,11 @@ const rock = new RockCluster({ footprintRadius: 1.3, height: 1.7, rockCount: 22,
 scene.add(rock.getMesh())
 
 console.log(rock.getTriangleCount()) // verify budget
-rock.setColor(0x9a8f80)              // live đổi màu
+rock.setColor(0x9a8f80)              // live đổi màu (material nội bộ flat)
+
+// Texture triplanar đá (caller-owned, KHÔNG dispose ở module):
+const surf = new TexturedSurface({ maps, tileSizeMeters: 0.5 })
+const textured = new RockCluster({ footprintRadius: 1.3, height: 1.7, material: surf.getMaterial() })
 ```
 
 ## Options
@@ -31,7 +35,8 @@ rock.setColor(0x9a8f80)              // live đổi màu
 | `rockScale`       | number (×)                 | `1.0`      | Phóng/thu cỡ viên (khít ↔ hở)                                 |
 | `detail`          | number (1..3)              | `2`        | Subdiv icosa (1=80, 2=320, 3=1280 tri/viên)                    |
 | `seed`            | number                     | `0`        | Seed deterministic — đổi layout + hình đá                      |
-| `color`           | THREE.ColorRepresentation  | `0x8a8278` | Màu đá xám-nâu — live `setColor`                              |
+| `color`           | THREE.ColorRepresentation  | `0x8a8278` | Màu đá xám-nâu (material NỘI BỘ flat) — live `setColor`        |
+| `material`        | THREE.Material             | `undefined`| Material NGOÀI (caller-owned, vd TexturedSurface triplanar đá) → đá dùng nó thay flat; **KHÔNG** dispose ở module |
 
 ## API
 

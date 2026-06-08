@@ -38,6 +38,10 @@ Cảnh non bộ = **terrain mound (ĐẾ)** + **RockCluster (ĐÁ mỏm craggy)*
   structural (`rockSliderSpecs`) = kéo `ctx.applyRocksLive` (rebuild CHỈ rock, né water-RTT) / buông `applySite`.
 - **Lab** (`ArchPlanLab.ts`): `_siteRocks` zip cfg↔cluster; `_tuneRock` (live), `_rebuildRocksLive` (dispose cụm cũ
   khỏi siteShaders + `buildRocks` lại) ← mirror `_rebuildGroundLayersLive`.
+- **Texture đá** (như border hồ): `RockConfig.material: BorderMaterialKey` ('none' | icelandic/coal/rock).
+  RockCluster +option `material?: THREE.Material` (caller-owned, KHÔNG dispose) → bơm thì dùng thay flat. Render
+  `buildRocks` lấy `opts.borderMatByKey[r.material]` — **DÙNG CHUNG cache TexturedSurface triplanar với border hồ**
+  (`_usedBorderTexKeys` gồm cả rock → load 1 lần/key). GUI `selectRow('Material', ROCK_MAT_OPTS)` → applySite.
 
 ## 3. Tầng & toạ độ
 
@@ -58,6 +62,8 @@ Cảnh non bộ = **terrain mound (ĐẾ)** + **RockCluster (ĐÁ mỏm craggy)*
 - **2026-06-08 — Phase A:** module `RockCluster` (đá mỏm procedural, fbm3 tự-chứa). 4 file + validate.
 - **2026-06-08 — Phase B:** tab **Rock** ráp vào archplan (state `rocks[]` + `buildRocks` bám gò + GUI đa-instance
   R1│R2│＋ + live Pos/Color + rebuild rock-only). Kéo-thả 3D = hoãn (slider trước, như mound 3a→3b).
+- **2026-06-08 — Texture đá:** RockConfig.material + RockCluster option material (caller-owned) + GUI selectRow —
+  DÙNG CHUNG cache triplanar đá với border hồ (meta RockCluster 1.0→1.1). Đẩy 1 phần Phase C (texture) lên sớm.
 
 ## 6. Liên hệ
 

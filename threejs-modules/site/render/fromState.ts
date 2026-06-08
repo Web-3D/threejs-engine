@@ -142,6 +142,9 @@ export function buildRocks(
   return list.map((r, idx) => {
     const x = r.offsetX / 1000
     const z = r.offsetZ / 1000
+    // 🪨 Texture đá triplanar = DÙNG CHUNG cache border hồ (opts.borderMatByKey, caller-owned). Chưa load / 'none'
+    // → undefined → RockCluster rơi về material NỘI BỘ flat (color). Material ngoài KHÔNG dispose ở lõi (caller lo).
+    const mat = r.material !== 'none' ? opts.borderMatByKey?.[r.material] : undefined
     const cluster = new RockCluster({
       footprintRadius: r.footprintRadius / 1000,
       height: r.height / 1000,
@@ -151,6 +154,7 @@ export function buildRocks(
       detail: r.detail,
       seed: r.seed,
       color: r.color,
+      material: mat,
     })
     const mesh = cluster.getMesh()
     mesh.position.set(x, topY + (hf ? heightAt(hf, x, z) : 0), z)

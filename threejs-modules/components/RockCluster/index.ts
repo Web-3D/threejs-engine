@@ -111,28 +111,36 @@ export interface RockClusterOptions {
   detail?: number
   /** Seed deterministic (đổi layout+hình). Default 0 */
   seed?: number
-  /** Màu đá. Default 0x8a8278 — live setColor */
+  /** Màu đá (material NỘI BỘ flat). Default 0x8a8278 — live setColor */
   color?: THREE.ColorRepresentation
+  /** Material NGOÀI (caller-owned) — vd TexturedSurface triplanar đá. Bơm → đá dùng nó (bỏ qua color/flatShading);
+   *  KHÔNG dispose ở đây (caller sở hữu, cache lab-lifetime). Thiếu → material nội bộ flat theo color. */
+  material?: THREE.Material
 }
 
 export class RockCluster {
   private mesh: THREE.Mesh | null = null
   private geometry: THREE.BufferGeometry | null = null
-  private material: THREE.MeshStandardMaterial | null = null
+  // flatMat = material NỘI BỘ (flat color, OWNED → dispose). null khi caller bơm material ngoài (KHÔNG dispose).
+  private flatMat: THREE.MeshStandardMaterial | null = null
   private isDisposed = false
   private triCount = 0
 
   constructor(opts: RockClusterOptions = {}) {
     const o = { ...DEFAULTS, ...opts }
-    this.material = new THREE.MeshStandardMaterial({
-      color: o.color,
-      roughness: 0.92,
-      metalness: 0,
-      flatShading: true, // facet = đá (như pondStoneGeos); normal tính theo derivative, không cần geometry normal
-    })
+    let material = opts.material
+    if (!material) {
+      this.flatMat = new THREE.MeshStandardMaterial({
+        color: o.color,
+        roughness: 0.92,
+        metalness: 0,
+        flatShading: true, // facet = đá (như pondStoneGeos); normal theo derivative, không cần geometry normal
+      })
+      material = this.flatMat
+    }
     this.geometry = this.build(o)
     this.triCount = this.geometry.attributes.position.count / 3
-    this.mesh = new THREE.Mesh(this.geometry, this.material)
+    this.mesh = new THREE.Mesh(this.geometry, material)
     this.mesh.castShadow = true
     this.mesh.receiveShadow = true
   }
@@ -176,10 +184,10 @@ export class RockCluster {
     return merged
   }
 
-  /** Đổi màu đá. Live — tức thì. */
+  /** Đổi màu đá (CHỈ material NỘI BỘ flat). Live — tức thì. No-op khi dùng material ngoài (texture). */
   setColor(color: THREE.ColorRepresentation): void {
-    if (this.isDisposed || !this.material) return
-    this.material.color.set(color)
+    if (this.isDisposed || !this.flatMat) return
+    this.flatMat.color.set(color)
   }
 
   getMesh(): THREE.Mesh {
@@ -196,10 +204,10 @@ export class RockCluster {
     if (this.isDisposed) return
     this.mesh?.parent?.remove(this.mesh)
     this.geometry?.dispose()
-    this.material?.dispose()
+    this.flatMat?.dispose() // CHỈ material NỘI BỘ; material ngoài (caller-owned, cache) KHÔNG đụng
     this.mesh = null
     this.geometry = null
-    this.material = null
+    this.flatMat = null
     this.isDisposed = true
   }
 }

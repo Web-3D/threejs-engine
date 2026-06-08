@@ -190,7 +190,8 @@ export interface RockConfig {
   rockScale: number // × — phóng/thu cỡ viên 0.3..3 (khít ↔ hở)
   detail: number // 1..3 — subdiv icosa (1=80, 2=320, 3=1280 tri/viên)
   seed: number // 0..9999 — đổi layout + hình đá (deterministic, tái lập)
-  color: number // màu đá (uniform live qua setColor)
+  color: number // màu đá khi material='none' (material NỘI BỘ flat, uniform live qua setColor)
+  material: BorderMaterialKey // 'none' = màu phẳng color; texture đá (triplanar) → DÙNG CHUNG cache border hồ (icelandic/coal/rock)
 }
 
 // TẦNG SURFACE chồng (nghệ thuật xếp lớp 3D): mỗi layer = 1 lớp vật liệu phủ kín lô, dày RIÊNG, xếp CHỒNG
@@ -403,6 +404,7 @@ export function makeRock(enabled = false): RockConfig {
     detail: 2,
     seed: Math.floor(Math.random() * 1000),
     color: 0x8a8278, // xám-nâu đá
+    material: 'none', // mặc định màu phẳng; chọn texture đá ở GUI (dùng chung cache border hồ)
   }
 }
 
@@ -725,6 +727,7 @@ function parseRock(raw: Partial<RockConfig> | undefined, d: RockConfig): RockCon
     detail: Math.round(clamp(num(r.detail, d.detail), 1, 3)),
     seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
     color: parseColor(r.color, d.color),
+    material: parseBorderMat(r.material), // dùng chung set texture đá với border hồ
   }
 }
 
