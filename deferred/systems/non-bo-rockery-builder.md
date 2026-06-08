@@ -53,7 +53,12 @@ tái dùng 100% cái đã có. Đường (2)/(3) mới ra đá thật.
 
 **Quyết định:** (1) đá = **procedural rock-cluster** (KHÔNG asset sculpt, KHÔNG SDF); (2) **module-first** (làm đá độc lập → verify preview → mới ráp).
 
-### Phase A — Module `components/RockCluster` (mảnh thiếu, độc lập) ⭐ làm trước
+### Phase A — Module `components/RockCluster` (mảnh thiếu, độc lập) ✅ XONG 2026-06-08
+> Build `threejs-modules/components/RockCluster/` (4 file). value-noise 3D fbm tự-chứa (~45 dòng, 0 dep) +
+> icosaRock displace + xếp mỏm xoắn-ốc + merge 1 mesh flatShading. Gate: validate/tsc/eslint/check-perf xanh;
+> fbm3 ∈ [-0.93,0.92] (0 NaN, deterministic); budget detail=2 × 22 viên = 7040 tri, 1 draw. Preview xoay-ngắm
+> qua `example.ts` (WebGPU). **Phase B chờ ráp.**
+
 Thuật toán (mirror `stoneAt` nhưng dựng MỎM, không rải phẳng):
 ```
 N viên đá faceted xếp thành MỎM (đế rộng→đỉnh hẹp), deterministic (hash+seed):
@@ -81,7 +86,8 @@ Triplanar texture đá · rêu bám khe theo slope · vệt nước mép đá ·
 ### Files
 **A:** `threejs-modules/components/RockCluster/` (mới, 4 file). **B:** archplan GUI + assembly. **C:** triplanar + moss-slope.
 
-> Trạng thái: plan DUYỆT, CHƯA bắt tay (đang quay lại hoàn tất terrain trước — zone-trên-gò). Khi làm: Phase A trước, trình trade-off chi tiết rồi code.
+> Trạng thái: **Phase A ✅ XONG (2026-06-08)** — module RockCluster build + verify. Phase B (ráp archplan) +
+> Phase C (polish triplanar) CHƯA bắt tay; mỗi phase trình trade-off chi tiết rồi code.
 
 ## Liên hệ
 - Lõi: `threejs-modules/site/terrain.ts` · `components/WaterSurface` · `components/GrassBlades` · `stoneAt`.

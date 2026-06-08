@@ -1,0 +1,24 @@
+{
+  "name": "RockCluster",
+  "category": "components",
+  "version": "1.0.0",
+  "description": "Đá mỏm procedural (non bộ Phase A) — N viên Icosahedron displace craggy (value-noise 3D fbm) xếp thành MỎM đế-rộng→đỉnh-hẹp, merge 1 mesh flatShading faceted. Deterministic theo seed. Mảnh đá núi THIẾU của cảnh non bộ (terrain làm đế, đây làm đá). KHÔNG overhang/hang thật (đá xếp chồng → khe+craggy)",
+  "tags": ["rock", "đá", "non-bộ", "rockery", "procedural", "icosahedron", "noise", "merged", "site-kit", "environment"],
+  "complexity": "low",
+  "performance-cost": "low",
+  "performance": "Merged → 1 DRAW. rockCount × icosa(detail): detail=2 (320 tri) × 20 viên ≈ 6.4k tri; detail=1 ≈ 1.6k. Cap rockCount 60 + detail 3 = trần ~76k (1 cụm cận cảnh). Displace + merge = build-time (KHÔNG per-frame); setColor live = uniform-cheap. flatShading = facet đá (normal theo derivative, không cần geometry normal). Dùng cho vài cụm điểm nhấn, nhiều cụm/lô → giảm rockCount/detail.",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "footprintRadius", "type": "number",                    "default": "1.2",      "description": "Bán kính đế mỏm (m)" },
+    { "name": "height",          "type": "number",                    "default": "1.6",      "description": "Cao mỏm (m)" },
+    { "name": "rockCount",       "type": "number",                    "default": "20",       "description": "Số viên đá (budget — cap 60)" },
+    { "name": "craggy",          "type": "number",                    "default": "0.35",     "description": "Biên độ lởm chởm 0..1 (displace dọc bán kính viên theo fbm3 — vừa bướu vừa khe)" },
+    { "name": "rockScale",       "type": "number",                    "default": "1.0",      "description": "Hệ số phóng/thu cỡ viên (khít ↔ hở)" },
+    { "name": "detail",          "type": "number",                    "default": "2",        "description": "Subdiv icosa 1..3 (1=80, 2=320, 3=1280 tri/viên)" },
+    { "name": "seed",            "type": "number",                    "default": "0",        "description": "Seed deterministic — đổi layout + hình đá (tái lập)" },
+    { "name": "color",           "type": "THREE.ColorRepresentation", "default": "0x8a8278", "description": "Màu đá xám-nâu — live setColor" }
+  ],
+  "usage": "const r = new RockCluster({ footprintRadius: 1.3, height: 1.7, rockCount: 22, seed: 3 }); scene.add(r.getMesh())"
+}
