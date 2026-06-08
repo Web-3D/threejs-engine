@@ -1,7 +1,7 @@
 ---
 domain: non-bo
 title: Non bộ — cụm đá mỏm procedural (RockCluster) ráp vào sân vườn
-status: building
+status: seed
 tier: —
 modules:
   - threejs-modules/components/RockCluster
@@ -14,8 +14,12 @@ updated: 2026-06-08
 
 # Playbook — Non bộ (hòn non bộ / rockery)
 
+> **⏸️ DEFERRED (2026-06-08):** Phase A+B (module + tab + texture) đã build & commit (code dùng được), NHƯNG hình
+> **"chưa ra dáng"** (procedural merged-icosa = bướu tròn đều, thiếu vách dựng/đá-dẹt-xếp-tầng/khe sâu/overhang).
+> Dừng — quay lại = ĐỔI PARADIGM hình đá (sculpt asset / generator-tầng / SDF), KHÔNG polish bản cũ. Chi tiết +
+> 3 đường revisit → `deferred/systems/non-bo-rockery-builder.md`.
+>
 > **Ranh giới:** recipe + tầng/toạ độ + lịch sử. Đá craggy chi tiết → `components/RockCluster/README.md`.
-> Kế hoạch tổng (3 đường đá, vì sao terrain KHÔNG làm đá) → `deferred/systems/non-bo-rockery-builder.md`.
 
 ## 1. Kết quả "hoàn chỉnh"
 
@@ -64,6 +68,9 @@ Cảnh non bộ = **terrain mound (ĐẾ)** + **RockCluster (ĐÁ mỏm craggy)*
   R1│R2│＋ + live Pos/Color + rebuild rock-only). Kéo-thả 3D = hoãn (slider trước, như mound 3a→3b).
 - **2026-06-08 — Texture đá:** RockConfig.material + RockCluster option material (caller-owned) + GUI selectRow —
   DÙNG CHUNG cache triplanar đá với border hồ (meta RockCluster 1.0→1.1). Đẩy 1 phần Phase C (texture) lên sớm.
+- **2026-06-08 — ⏸️ DEFERRED:** NgQuan "nhìn chưa ra dáng" → dừng dự án (giữ code). Bài học: procedural
+  cầu-displace + flatShading ra **bướu tròn đều**, KHÔNG ra non bộ thật (cần đá-dẹt-xếp-tầng/vách/khe/overhang).
+  Quay lại = đổi paradigm hình đá, không polish bản cũ.
 
 ## 6. Liên hệ
 

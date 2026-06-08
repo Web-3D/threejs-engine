@@ -1,7 +1,16 @@
 # Hòn non bộ builder (rockery / miniature karst landscape)
 
-> **Trạng thái:** DEFERRED — ý tưởng ráp cảnh, KHÔNG làm ngay. NgQuan hỏi 2026-06-08 "xây non bộ bằng terrain
-> được không". Trả lời: terrain làm ĐẾ, KHÔNG làm ĐÁ.
+> **Trạng thái:** ⏸️ DEFERRED LẠI (2026-06-08, sau Phase A+B) — Phase A (module `RockCluster`) + Phase B (tab Rock
+> ráp archplan + texture đá) ĐÃ BUILD & commit (code giữ, dùng được), NHƯNG NgQuan đánh giá **"nhìn chưa ra dáng"**
+> → DỪNG ở đây, KHÔNG làm tiếp Phase C. **Vì sao chưa ra dáng (giả thuyết):** procedural merged-icosa displaced +
+> flatShading ra cụm **bướu tròn lởm chởm đều**, THIẾU chất non bộ thật: vách dựng đứng, đá DẸT xếp TẦNG
+> (stratification), khe sâu, overhang, rêu bám. MVP stylized rẻ ≠ karst thật (đã cảnh báo từ đầu, nay xác nhận bằng mắt).
+> **Revisit khi:** muốn non bộ ĐẸP thật → chọn đường **(1) asset đá sculpt** (Blender/ZBrush → GLTF, đẹp nhất) HOẶC
+> **(2′) nâng rock-generator** (đá dẹt xếp tầng + erosion/crevice + vách đứng, KHÔNG chỉ cầu-displace) HOẶC
+> **(3) SDF/marching-cubes** (overhang/hang thật). Texture+rêu-slope (Phase C cũ) chỉ polish — KHÔNG cứu được hình gốc.
+> NgQuan yêu cầu quay lại 2026-06-08.
+>
+> **Lịch sử ban đầu:** NgQuan hỏi 2026-06-08 "xây non bộ bằng terrain được không". Trả lời: terrain làm ĐẾ, KHÔNG làm ĐÁ.
 > **Tinh thần:** assembly nhiều bộ phận (đã có + thiếu đá), không phải 1 feature đơn.
 
 ## Vì sao terrain (height-field) KHÔNG làm được đá non bộ
@@ -72,11 +81,11 @@ N viên đá faceted xếp thành MỎM (đế rộng→đỉnh hẹp), determin
 - **Material MVP:** flatShading faceted (như `pondStoneGeos`, 0 texture). **Polish C:** triplanar rock-texture (reuse đá icelandic/coal/rock sẵn).
 - **4 file** (index/example/meta/README) + `node validate.js`. Verify: preview xoay-ngắm.
 
-### Phase B — Ráp non bộ trong archplan 🔵 ĐANG (tab Rock 2026-06-08)
+### Phase B — Ráp non bộ trong archplan ✅ XONG (tab Rock + texture, 2026-06-08) → rồi DEFERRED
 > **XONG:** tab **🪨 Rock** cạnh Water — state `rocks[]` + `buildRocks` (bám gò ở tâm) + GUI đa-instance R1│R2│＋
-> (`buildRockDomain`) + live Pos/Color (`tuneRock`) + rebuild rock-only (`applyRocksLive`, né water-RTT). Playbook
-> `playbooks/non-bo.md`. **CÒN:** preset 1-nút "Non bộ" (auto mound+hồ+rêu quanh đá) + kéo-thả 3D đặt cụm (hoãn,
-> slider trước như mound 3a→3b) + cỏ né footprint đá.
+> (`buildRockDomain`) + live Pos/Color (`tuneRock`) + rebuild rock-only (`applyRocksLive`, né water-RTT) + **texture
+> đá triplanar** (dùng chung cache border hồ). Playbook `playbooks/non-bo.md`.
+> **DỪNG (deferred):** visual "chưa ra dáng" → KHÔNG làm preset 1-nút / kéo-thả 3D / cỏ-né-đá / Phase C. Code giữ.
 
 RockCluster trên **mound** (đế) + **hồ** sát chân + **rêu** (GrassBlades màu rêu) quanh đế/khe. GUI tune (count/height/craggy/seed + vị trí). Có thể thành **preset 1-nút "Non bộ"**.
 
@@ -91,8 +100,9 @@ Triplanar texture đá · rêu bám khe theo slope · vệt nước mép đá ·
 ### Files
 **A:** `threejs-modules/components/RockCluster/` (mới, 4 file). **B:** archplan GUI + assembly. **C:** triplanar + moss-slope.
 
-> Trạng thái: **Phase A ✅ XONG (2026-06-08)** — module RockCluster build + verify. Phase B (ráp archplan) +
-> Phase C (polish triplanar) CHƯA bắt tay; mỗi phase trình trade-off chi tiết rồi code.
+> Trạng thái: **Phase A ✅ + Phase B ✅ (2026-06-08) → ⏸️ DEFERRED** — module RockCluster + tab Rock + texture build &
+> commit, NHƯNG hình "chưa ra dáng" nên DỪNG. Quay lại = đổi PARADIGM hình đá (sculpt / generator-tầng / SDF), không
+> phải polish thêm. Trade-off mỗi đường ở §"Mắt xích THIẾU" trên.
 
 ## Liên hệ
 - Lõi: `threejs-modules/site/terrain.ts` · `components/WaterSurface` · `components/GrassBlades` · `stoneAt`.

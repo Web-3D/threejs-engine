@@ -63,7 +63,7 @@ deferred/
 | [shape-group-system.md](systems/shape-group-system.md) | **WANTED 2026-06-05** — gộp nhóm nhiều khối shape + kéo cả nhóm 1 lần (selection + multi-move, snap bbox union) | NgQuan yêu cầu build; chốt group bền vs ad-hoc khi bắt tay |
 | [terrain-gaea-heightmap.md](systems/terrain-gaea-heightmap.md) | Cắm output Gaea (heightmap erosion km-scale) vào `heightAt` qua term `heightmapSample` | Cần environment LỚN (city/ecosystem) — KHÔNG cho lô archviz (sai scale, phá live-edit) |
 | [character-terrain-follow.md](systems/character-terrain-follow.md) | **2026-06-08** — nhân vật đi-trên-đất-không-lún trên nền `heightAt` (single-source). Thiếu: surface-resolver khối-chồng + normal/slope + collision tường | Có character-controller thật (đừng pivot game sớm) |
-| [non-bo-rockery-builder.md](systems/non-bo-rockery-builder.md) | **2026-06-08** — hòn non bộ: terrain làm ĐẾ, KHÔNG làm ĐÁ (height-field 1-Y → không overhang/hang). Đá craggy = MESH (asset sculpt / rock-gen / SDF). Ráp: mound+water+stone+grass | Làm cảnh non bộ — MVP stylized rẻ (ráp đồ có sẵn) trước, đá thật sau |
+| [non-bo-rockery-builder.md](systems/non-bo-rockery-builder.md) | **⏸️ 2026-06-08** — Phase A (module RockCluster) + Phase B (tab Rock + texture) ĐÃ BUILD nhưng **"chưa ra dáng"** (procedural merged-icosa = bướu tròn đều, thiếu vách/tầng/khe) → DEFERRED. Code giữ | Muốn non bộ ĐẸP → đổi paradigm hình đá: (1) asset sculpt HOẶC (2′) generator đá-dẹt-xếp-tầng+erosion HOẶC (3) SDF overhang. KHÔNG polish thêm bản cũ |
 
 ---
 
