@@ -1004,12 +1004,41 @@ function gridCell(site: SiteState, terrain: TerrainConfig): number {
   return Math.max(site.lotWidth / 1000, site.lotDepth / 1000) / terrain.resolution
 }
 
+// Khoảng cách (m) từ (x,z) tới VIỀN polygon (min qua mọi cạnh) — cho edge-taper zone (mép→0, trong→band).
+function distToPolyEdge(x: number, z: number, ring: { x: number; z: number }[]): number {
+  let min = Infinity
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % ring.length]
+    min = Math.min(min, distPointSeg(x, z, a.x, a.z, b.x, b.z))
+  }
+  return min
+}
+
+// Khoảng cách điểm→đoạn thẳng (2D XZ).
+function distPointSeg(
+  px: number,
+  pz: number,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number
+): number {
+  const dx = bx - ax
+  const dz = bz - az
+  const len2 = dx * dx + dz * dz
+  let t = len2 > 0 ? ((px - ax) * dx + (pz - az) * dz) / len2 : 0
+  t = Math.max(0, Math.min(1, t))
+  return Math.hypot(px - (ax + t * dx), pz - (az + t * dz))
+}
+
 // 🏔️ Zone DISPLACED (drape G0 và/hoặc gò riêng zone): lưới (cỡ ô = cell) trên bbox zone, mỗi ô = (ô ∩ contour) −
-// holes (cut/nước) → tam-giác-hoá → đỉnh Y = yAt(x,z) (caller tổ hợp baseY + gò-G0 + gò-zone). Mặt ĐƠN (thin sheet,
-// bỏ thickness — thickness chỉ dùng stacking level). holes = nước+cut cùng level. Rỗng → null.
+// holes → tam-giác-hoá → đỉnh Y. **MÉP HẠ THẤP TỰ NHIÊN**: `yAt` blend `top` về `below` theo khoảng-cách-tới-viền
+// (edge taper, KHÔNG váy vuông góc) → zone rủ mượt xuống chạm mặt-G-dưới ở mép (hết lơ lửng). band = edgeFlat zone
+// (cap ≤ 45% cạnh nhỏ). Mặt ĐƠN (bỏ thickness — chỉ dùng stacking). holes = nước+cut cùng level. Rỗng → null.
 function drapedLayerGeometry(
   layer: GroundLayer,
-  yAt: (x: number, z: number) => number,
+  surf: { top: YFn; below: YFn },
   holes: { x: number; z: number }[][],
   cell: number
 ): THREE.BufferGeometry | null {
@@ -1018,6 +1047,14 @@ function drapedLayerGeometry(
   const bb = polyBox(contour, 0)
   const nx = Math.max(1, Math.ceil((bb.x1 - bb.x0) / cell))
   const nz = Math.max(1, Math.ceil((bb.z1 - bb.z0) / cell))
+  const minSide = Math.min(layer.length, layer.width) / 1000
+  const band = Math.max(0.05, Math.min((layer.terrain?.edgeFlat ?? 800) / 1000, minSide * 0.45))
+  // yAt = below + smoothstep(dist→viền / band) · (top − below): 0 ở mép (chạm G dưới) → 1 trong lòng (gò đầy).
+  const yAt: YFn = (x, z) => {
+    const d = Math.min(distToPolyEdge(x, z, contour) / band, 1)
+    const w = d * d * (3 - 2 * d)
+    return surf.below(x, z) + w * (surf.top(x, z) - surf.below(x, z))
+  }
   const g: GridEmit = { yAt, pos: [], uv: [], idx: [] }
   const contourRing = closeWaterRing(contour)
   const holeRings: MultiPolygon = holes.filter((h) => h.length >= 3).map((h) => [closeWaterRing(h)])
@@ -1090,22 +1127,28 @@ interface DrapeCtx {
   cell: number
 }
 
-// 🏔️ Hàm cao-độ Y world cho zone DISPLACED — null nếu zone PHẲNG (không drape G0 + không gò riêng → slab). Tổ hợp:
-// baseY+5mm + (gò G0 nếu drape bật & terrain G0 bật) + (gò RIÊNG zone nếu layer.terrain bật). Gò zone = height-field
-// noise+mounds riêng (mask off → fill cả zone, clip theo contour ở geometry). Math.max(dy,0) trong heightAt → gò dương.
-function zoneYAt(
+type YFn = (x: number, z: number) => number
+
+// 🏔️ 2 mặt Y cho zone DISPLACED — null nếu zone PHẲNG (không drape G0 + không gò riêng → slab). `top` = mặt zone
+// (baseY+5mm + gò-G0-nếu-drape + gò-RIÊNG-zone); `below` = mặt G NGAY DƯỚI (baseY + gò-G0, KHÔNG gò-zone/5mm) =
+// đáy VÁY (skirt) để mép rủ xuống chạm G dưới (hết lơ lửng). Gò-zone = height-field noise+mounds riêng (mask off →
+// fill cả zone, clip contour ở geometry). Math.max(dy,0) trong heightAt → gò dương.
+function zoneSurfaces(
   layer: GroundLayer,
   baseY: number,
   drape: DrapeCtx | null
-): ((x: number, z: number) => number) | null {
+): { top: YFn; below: YFn } | null {
   const g0 = drape && layer.drape ? drape.hf : null // bám gò G0
   const zhf =
     layer.terrain && layer.terrain.enabled
       ? makeHeightField(layer.terrain, [], 1e6, 1e6) // gò riêng zone (lotHalf lớn → edge-mask ~1 khắp zone)
       : null
   if (!g0 && !zhf) return null // phẳng → slab ExtrudeGeometry
-  const lift = baseY + 0.005
-  return (x, z) => lift + (g0 ? heightAt(g0, x, z) : 0) + (zhf ? heightAt(zhf, x, z) : 0)
+  const g0At: YFn = (x, z) => (g0 ? heightAt(g0, x, z) : 0)
+  return {
+    below: (x, z) => baseY + g0At(x, z),
+    top: (x, z) => baseY + 0.005 + g0At(x, z) + (zhf ? heightAt(zhf, x, z) : 0),
+  }
 }
 
 // Cỡ ô lưới zone displaced: ưu tiên cell G0 (drape, khớp mật độ nền); else gò-riêng → zone-size / resolution-zone.
@@ -1124,10 +1167,10 @@ function addZoneMesh(
   opts: SiteRenderOpts,
   drape: DrapeCtx | null
 ): void {
-  const yAt = zoneYAt(layer, baseY, drape)
+  const surf = zoneSurfaces(layer, baseY, drape)
   let geo: THREE.BufferGeometry | null
-  if (yAt) {
-    geo = drapedLayerGeometry(layer, yAt, holes, zoneCell(layer, drape)) // lưới displaced (drape G0 + gò zone)
+  if (surf) {
+    geo = drapedLayerGeometry(layer, surf, holes, zoneCell(layer, drape)) // lưới displaced + váy (drape G0 + gò zone)
     if (!geo) return
   } else {
     geo = layerGeometry(layer, layer.thickness / 1000, holes) // slab phẳng
