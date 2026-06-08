@@ -193,7 +193,7 @@
 | Mục | Mô tả |
 | --- | ----- |
 | `site/state` | `SiteState` (nền + cỏ-3D + **hồ nước** + rào) + factory + `GROUND_PRESETS` + `coverageStats` (建ぺい率 đối chiếu nhà/lô) + `parseSite`. Lô mặc định 15×14.4m |
-| `site/render/fromState` | `renderSiteState(site, ctx)` headless — nền slab (có hồ → ExtrudeGeometry **khoét lỗ** `Shape.holes`) + **cỏ 3D** (`GrassBlades`, mọi nền, 2 màu mặt trong/ngoài) + **hồ nước** (`WaterSurface` reflect+refract + **basin** đáy vách+sàn theo polygon; cỏ né footprint) + hàng rào (merged) |
+| `site/render/fromState` | `renderSiteState(site, ctx)` headless — nền slab (có hồ → ExtrudeGeometry **khoét lỗ** `Shape.holes`) + **cỏ 3D** (`GrassBlades`, mọi nền, 2 màu mặt trong/ngoài) + **hồ nước** (`WaterSurface` reflect+refract + **basin** đáy vách+sàn theo polygon; cỏ né footprint) + hàng rào (merged) + **🪨 non bộ** (`buildRocks` → `RockCluster` đa-cụm, bám cao-độ gò ở tâm) |
 
 - **Phases:** G0 nền+rào ✅ · **G1a cỏ 3D `GrassBlades` — rebuild tăng dần (B0 lá phẳng+1 màu ✅; B1 thon → B9 đổ-bóng ⏳)** · G1b cây/bụi ⏳ · G2 đá triplanar ⏳ · **G3 hồ nước (tier C) `WaterSurface` — ✅ reflect+refract (nhìn xuyên đáy) + basin + form tự do; wired site/render + GUI archplan**.
 - **Coupling:** caller bật `site.show` → đôn building lên `groundThick` (foundation nằm trên mặt nền).

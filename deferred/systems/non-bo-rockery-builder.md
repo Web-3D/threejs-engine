@@ -72,7 +72,12 @@ N viên đá faceted xếp thành MỎM (đế rộng→đỉnh hẹp), determin
 - **Material MVP:** flatShading faceted (như `pondStoneGeos`, 0 texture). **Polish C:** triplanar rock-texture (reuse đá icelandic/coal/rock sẵn).
 - **4 file** (index/example/meta/README) + `node validate.js`. Verify: preview xoay-ngắm.
 
-### Phase B — Ráp non bộ trong archplan
+### Phase B — Ráp non bộ trong archplan 🔵 ĐANG (tab Rock 2026-06-08)
+> **XONG:** tab **🪨 Rock** cạnh Water — state `rocks[]` + `buildRocks` (bám gò ở tâm) + GUI đa-instance R1│R2│＋
+> (`buildRockDomain`) + live Pos/Color (`tuneRock`) + rebuild rock-only (`applyRocksLive`, né water-RTT). Playbook
+> `playbooks/non-bo.md`. **CÒN:** preset 1-nút "Non bộ" (auto mound+hồ+rêu quanh đá) + kéo-thả 3D đặt cụm (hoãn,
+> slider trước như mound 3a→3b) + cỏ né footprint đá.
+
 RockCluster trên **mound** (đế) + **hồ** sát chân + **rêu** (GrassBlades màu rêu) quanh đế/khe. GUI tune (count/height/craggy/seed + vị trí). Có thể thành **preset 1-nút "Non bộ"**.
 
 ### Phase C — Polish (sau)

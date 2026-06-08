@@ -175,6 +175,24 @@ export type WaterMaterialKey = 'none' | 'tile' | GroundMaterialKey
 // archplan bơm opts.borderMatByKey). Triplanar → áp được cả đá cuội (icosa) lẫn rào gỗ (box).
 export type BorderMaterialKey = 'none' | 'icelandic-jagged' | 'coal-stone' | 'rock-rough'
 
+// 🪨 Hòn non bộ (RockCluster) — cụm đá MỎM procedural đặt trong lô. Đa-instance; chỉ enabled mới render.
+// Đá = MESH thật (terrain height-field làm ĐẾ, KHÔNG làm đá — height-field 1-Y không tả overhang/hang).
+// Vị trí = offset so tâm lô; cụm BÁM cao-độ gò ở tâm (đứng trên mound). Geometry build CPU (displace+merge),
+// 1 draw mỗi cụm. Props map thẳng RockCluster (mm → m khi render).
+export interface RockConfig {
+  enabled: boolean
+  offsetX: number // mm — tâm cụm lệch tâm lô (X)
+  offsetZ: number // mm — tâm cụm lệch tâm lô (Z)
+  footprintRadius: number // mm — bán kính đế mỏm (300..6000)
+  height: number // mm — cao mỏm (300..5000)
+  rockCount: number // số viên đá (3..60) — budget, merged 1 draw
+  craggy: number // 0..1 — biên độ lởm chởm (displace dọc bán kính viên)
+  rockScale: number // × — phóng/thu cỡ viên 0.3..3 (khít ↔ hở)
+  detail: number // 1..3 — subdiv icosa (1=80, 2=320, 3=1280 tri/viên)
+  seed: number // 0..9999 — đổi layout + hình đá (deterministic, tái lập)
+  color: number // màu đá (uniform live qua setColor)
+}
+
 // TẦNG SURFACE chồng (nghệ thuật xếp lớp 3D): mỗi layer = 1 lớp vật liệu phủ kín lô, dày RIÊNG, xếp CHỒNG
 // lên base ground (+ các layer trước). Top layer che layer dưới; KHOÉT lỗ 1 layer → lớp dưới lộ ra (carve =
 // phase sau — chừa chỗ `holes?` để thêm). Đơn giản: material + thickness. lotShape (đã carve lỗ hồ) dùng chung.
@@ -239,6 +257,7 @@ export interface SiteState {
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
+  rocks?: RockConfig[] // 🪨 hòn non bộ (RockCluster) đa-instance — chỉ enabled mới render. Optional → backward-compat ([])
 }
 
 // Factory 1 tầng surface chồng. Default soil 1cm, tấm 10×10m — lớp mới mỏng tối thiểu, vật liệu khác base.
@@ -259,6 +278,11 @@ export function makeGroundLayer(overrides: Partial<GroundLayer> = {}): GroundLay
 
 // Hồ LÕM render được = pool & pond ĐANG BẬT (có basin đáy+vách + KHOÉT lỗ nền). Dùng bởi renderer (basin/
 // coping) + editor (khoét lỗ/lưới/drag). Pond "y như" pool (cùng WaterSurface) — phân hoá thông số sau.
+// 🪨 Cụm đá render được = rocks ĐANG BẬT. Dùng bởi renderer (dựng RockCluster) + editor (zip handle↔cfg).
+export function renderRocks(site: SiteState): RockConfig[] {
+  return (site.rocks ?? []).filter((r) => r.enabled)
+}
+
 export function renderWaters(site: SiteState): WaterConfig[] {
   return site.waters.filter((w) => (w.kind === 'pool' || w.kind === 'pond') && w.enabled)
 }
@@ -354,6 +378,7 @@ export function defaultSiteState(): SiteState {
     },
     waters: defaultWaters(),
     fences: [makeFence()],
+    rocks: [], // 🪨 chưa có cụm đá non bộ (thêm qua ＋ ở tab Rock)
   }
 }
 
@@ -361,6 +386,24 @@ export function defaultSiteState(): SiteState {
 // có sẵn 1 instance để hàng tab không rỗng; nút "＋" thêm tiếp (instance mới luôn enabled=false — perf).
 export function defaultWaters(): WaterConfig[] {
   return [makeWater('pool', true), makeWater('pond', false), makeWater('puddle', false)]
+}
+
+// 🪨 Factory 1 cụm đá non bộ. enabled mặc định false (instance thêm-mới TẮT — perf). seed NGẪU NHIÊN → mỗi
+// cụm khác hình; lưu lại nên save/load tái lập. offsetZ +5m (trước nhà, "cạnh building" như hồ).
+export function makeRock(enabled = false): RockConfig {
+  return {
+    enabled,
+    offsetX: 0,
+    offsetZ: 5000,
+    footprintRadius: 1300, // 1.3m đế
+    height: 1700, // 1.7m cao
+    rockCount: 22,
+    craggy: 0.35,
+    rockScale: 1,
+    detail: 2,
+    seed: Math.floor(Math.random() * 1000),
+    color: 0x8a8278, // xám-nâu đá
+  }
 }
 
 // Factory 1 hồ theo kind. enabled mặc định false (instance thêm-mới); chỉ pool đầu của defaultWaters bật.
@@ -667,6 +710,35 @@ function parseWaters(rawArr: unknown, legacy: unknown): WaterConfig[] {
   return defaultWaters()
 }
 
+// 🪨 1 cụm đá — clamp khớp range slider GUI (save/load an toàn). int hoá rockCount/detail/seed.
+function parseRock(raw: Partial<RockConfig> | undefined, d: RockConfig): RockConfig {
+  const r = raw ?? {}
+  return {
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    offsetX: clamp(num(r.offsetX, d.offsetX), -20000, 20000),
+    offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
+    footprintRadius: clamp(num(r.footprintRadius, d.footprintRadius), 300, 6000),
+    height: clamp(num(r.height, d.height), 300, 5000),
+    rockCount: Math.round(clamp(num(r.rockCount, d.rockCount), 3, 60)),
+    craggy: clamp(num(r.craggy, d.craggy), 0, 1),
+    rockScale: clamp(num(r.rockScale, d.rockScale), 0.3, 3),
+    detail: Math.round(clamp(num(r.detail, d.detail), 1, 3)),
+    seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
+    color: parseColor(r.color, d.color),
+  }
+}
+
+// Mảng cụm đá — tolerant (phần tử sai bỏ qua), tối đa 16. Optional → [] (backward-compat, không bump schema).
+function parseRocks(raw: unknown): RockConfig[] {
+  if (!Array.isArray(raw)) return []
+  const out: RockConfig[] = []
+  for (const r of raw) {
+    out.push(parseRock(r as Partial<RockConfig>, makeRock(false)))
+    if (out.length >= 16) break
+  }
+  return out
+}
+
 export function parseSite(raw: unknown): SiteState {
   const d = defaultSiteState()
   if (!raw || typeof raw !== 'object') return d
@@ -690,6 +762,7 @@ export function parseSite(raw: unknown): SiteState {
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
     waters: parseWaters(o.waters, o.water),
     fences: parseFences(o.fences, o.fence, d.fences[0]),
+    rocks: parseRocks((o as { rocks?: unknown }).rocks),
   }
 }
 
