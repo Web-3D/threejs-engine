@@ -1,0 +1,27 @@
+{
+  "name": "StoneScatter",
+  "category": "components",
+  "version": "1.0.0",
+  "description": "Rải mảng đá DẸT tròn/ellipse trong 1 khuôn chữ nhật VÔ HÌNH bằng Poisson-disk (Bridson 2007 → blue-noise): cách đều ngẫu nhiên, KHÔNG chạm nhau (luôn chừa khe cỏ). N phiến = 1 InstancedMesh = 1 DRAW. Deterministic theo seed. Material NỘI BỘ flat (color) HOẶC bơm material NGOÀI (TexturedSurface triplanar đá, caller-owned). Lối đi lát đá / bãi đá dăm sân vườn (stepping-stone v1). Voronoi ghép-khít (crazy-paving) = đích xa, KHÔNG ở v1",
+  "tags": ["stone", "đá", "scatter", "poisson", "blue-noise", "stepping-stone", "paving", "instanced", "procedural", "site-kit", "garden", "environment"],
+  "complexity": "low",
+  "performance-cost": "low",
+  "performance": "Poisson-disk (Bridson, lưới gia tốc O(n)) = build-time, KHÔNG per-frame. N phiến gộp 1 InstancedMesh → 1 DRAW. Đĩa radialSegments=16 ≈ 64 tri/phiến; 30 phiến ≈ 1.9k tri. Cap MAX_STONES=400 (trần ~26k tri @16-seg). setColor live = uniform-cheap. bounding-circle ≤ rMax + minDist=2·rMax+gap đảm bảo không chạm (kể cả ellipse xoay). Phiến mép có thể nhô khỏi khuôn ≤ rMax.",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "frameW",         "type": "number",                    "default": "4.0",      "description": "Bề ngang khuôn vô hình X (m)" },
+    { "name": "frameD",         "type": "number",                    "default": "4.0",      "description": "Chiều sâu khuôn vô hình Z (m)" },
+    { "name": "rMin",           "type": "number",                    "default": "0.18",     "description": "Bán kính phiến nhỏ nhất (m)" },
+    { "name": "rMax",           "type": "number",                    "default": "0.35",     "description": "Bán kính phiến lớn nhất = bán kính bao → quyết định minDist (m)" },
+    { "name": "ellipseMin",     "type": "number",                    "default": "0.6",      "description": "Aspect ellipse tối thiểu 0..1 (1 = tròn hết; <1 = dẹt thành ellipse)" },
+    { "name": "gap",            "type": "number",                    "default": "0.06",     "description": "Khe cỏ tối thiểu giữa 2 phiến mép-mép (m)" },
+    { "name": "thickness",      "type": "number",                    "default": "0.05",     "description": "Dày phiến nhô trên cỏ (m)" },
+    { "name": "radialSegments", "type": "number",                    "default": "16",       "description": "Độ mịn vành đĩa (≥6; tris ≈ ×4/phiến)" },
+    { "name": "seed",           "type": "number",                    "default": "0",        "description": "Seed deterministic — đổi layout + cỡ phiến (tái lập)" },
+    { "name": "color",          "type": "THREE.ColorRepresentation", "default": "0x9b948a", "description": "Màu đá (material NỘI BỘ) — live setColor" },
+    { "name": "material",       "type": "THREE.Material",            "default": "undefined", "description": "Material NGOÀI (caller-owned, vd TexturedSurface triplanar đá) → đá dùng nó thay màu phẳng; KHÔNG dispose ở module" }
+  ],
+  "usage": "const s = new StoneScatter({ frameW: 4, frameD: 4, seed: 1 }); scene.add(s.getMesh())"
+}
