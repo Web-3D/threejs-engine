@@ -35,11 +35,13 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
   = ref StoneScatter (live-rebuild dispose đúng). `buildLevelZones`: path KHÔNG tính `maxTh` (không dày stacking).
 - **GUI** (archplan `gui/site.ts` `buildZonePane`): op='add' → `zoneKindRow` (**Type: Surface|Path**); path →
   `buildPathZoneBody` (**Form Chữ-nhật|Tròn** `pathFormRow` reuse `GroundLayer.shape` + Frame W/D + `pathSliderSpecs`
-  R min/max·Ellipse·Gap·Thick·Seed·**Rotate°** + Material + Color). Đổi Type → `rebuild(flatIdx)` + reset shape→rect.
-- **Lab** (`ArchPlanLab.ts`): path edit route qua `applySite` như slider surface zone. `_rebuildGroundLayersLive`:
-  mesh `userData.stonePath` → dispose QUA `field.dispose` + rút siteShaders. `_collectPathTexKeys` → texture đá
-  dùng chung cache border hồ. **Move (body-drag)**: `_layerDrag` lưu `startMeshPos` → `position = gốc + Δ` (giữ Y
-  baseY của path; surface startMeshPos=0 = như cũ); `_commitLayerDrag` trừ startMeshPos (path khỏi cộng-đôi offset).
+  R min/max·Ellipse·Gap·Thick·Seed + **`pathRotRow` Rotate° LIVE** + Material + Color). Đổi Type → reset shape→rect.
+  **⚡ Perf:** slider structural KÉO = `applyZonesLive` (rebuild zone-only, NÉ water-RTT); Rotate° = `tunePathRotLive`
+  (chỉ `mesh.rotation.y`, 0 rebuild); buông = `applySite`. KHÔNG route `applySite(false)` (= tái-tạo water-RTT/frame = tụt fps).
+- **Lab** (`ArchPlanLab.ts`): `_rebuildGroundLayersLive` mesh `userData.stonePath` → dispose QUA `field.dispose`.
+  `_applyZonesLive` (rAF → `_rebuildGroundLayersLive`) + `_tunePathRotLive` (`_layerMeshByIdx` → set rotation.y).
+  `_collectPathTexKeys` → texture đá dùng chung cache border hồ. **Move (body-drag)**: `_layerDrag` lưu `startMeshPos`
+  → `position = gốc + Δ` (giữ Y baseY; surface startMeshPos=0 = cũ); `_commitLayerDrag` trừ startMeshPos (khỏi cộng-đôi).
 
 ## 3. Tầng & toạ độ
 
@@ -66,6 +68,9 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
   +option `shape:'rect'|'circle'` (circle = lọc tâm trong ellipse nội tiếp), reuse `GroundLayer.shape`. (2) **Rotate°**
   — `StonePathParams.rot` → `mesh.rotation.y`. (3) **Move body-drag** — fix `_layerDrag` (startMeshPos) để path dời
   đúng (trước = nhảy về gốc vì offset nằm ở mesh.position). Module 1.0→1.1.
+- **2026-06-09 — Fix TỤT FPS xoay (+ slider path):** xoay route `applySite(false)` → `_rebuildSite` tái-tạo water-RTT
+  + recompile NodeMaterial MỖI frame (bẫy PERFORMANCE.md). Fix: Rotate° = `tunePathRotLive` (transform thuần, 0
+  rebuild); slider structural path = `applyZonesLive` (rebuild zone-only, né water-RTT). Buông vẫn `applySite` commit.
 - **2026-06-08 — TÁI CẤU TRÚC:** NgQuan "bỏ path vào bên trong G1 — mỗi zone z1 có 2 loại Surface|Path". Bỏ
   `stoneFields[]`/tab Path → path = **zoneKind trong GroundLayer**. Edit route qua `applySite` (như surface zone),
   KHÔNG live-tune riêng. `_rebuildGroundLayersLive` xử path-mesh (dispose qua StoneScatter). Chờ verify :3002.
