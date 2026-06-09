@@ -204,6 +204,7 @@ export interface StonePathParams {
   gap: number // mm — khe cỏ tối thiểu giữa 2 phiến mép-mép (0..1000)
   thickness: number // mm — dày phiến nhô trên cỏ (10..300)
   seed: number // 0..9999 — đổi layout + cỡ phiến (deterministic, tái lập)
+  rot: number // độ — XOAY cả khung quanh Y (-180..180); xoay mesh, khung shape dùng GroundLayer.shape ('rect'|'circle')
   color: number // màu đá khi material='none' (StoneScatter material NỘI BỘ flat)
   material: BorderMaterialKey // 'none' = màu phẳng; texture đá (triplanar) → DÙNG CHUNG cache border hồ
 }
@@ -438,6 +439,7 @@ export function makeStonePathParams(): StonePathParams {
     gap: 60, // 6cm khe cỏ
     thickness: 50, // 5cm dày phiến
     seed: Math.floor(Math.random() * 1000),
+    rot: 0, // không xoay
     color: 0x9b948a, // xám-đá
     material: 'none', // mặc định màu phẳng; chọn texture đá ở GUI (dùng chung cache border hồ)
   }
@@ -543,6 +545,7 @@ function parseStonePathParams(raw: unknown): StonePathParams {
     gap: clamp(num(r.gap, d.gap), 0, 1000),
     thickness: clamp(num(r.thickness, d.thickness), 10, 300),
     seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
+    rot: clamp(num(r.rot, d.rot), -180, 180),
     color: parseColor(r.color, d.color),
     material: parseBorderMat(r.material),
   }

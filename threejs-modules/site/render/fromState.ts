@@ -1296,11 +1296,13 @@ function addStonePathMesh(
     gap: p.gap / 1000,
     thickness: p.thickness / 1000,
     seed: p.seed,
+    shape: layer.shape === 'circle' ? 'circle' : 'rect', // dùng chung GroundLayer.shape (path chỉ rect|circle)
     color: p.color,
     material: mat,
   })
   const mesh = field.getMesh()
   mesh.position.set(layer.offsetX / 1000, baseY, layer.offsetZ / 1000)
+  mesh.rotation.y = (p.rot * Math.PI) / 180 // 🪨 xoay cả khung quanh Y (exclude giữ bbox axis-aligned — chấp nhận)
   mesh.userData.groundLayerIdx = idx // editor pick/Move/live-rebuild (như surface zone)
   mesh.userData.stonePath = field // 🪨 ref StoneScatter → live-rebuild dispose qua field.dispose (né double-dispose)
   ctx.group.add(mesh)

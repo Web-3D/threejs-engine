@@ -41,6 +41,7 @@ const field = new StoneScatter({ frameW: 4, frameD: 4, material: stoneMat })
 | `thickness` | number (m) | 0.05 | Dày phiến nhô trên cỏ |
 | `radialSegments` | int ≥6 | 16 | Độ mịn vành đĩa (tris ≈ ×4/phiến) |
 | `seed` | int | 0 | Seed deterministic — đổi layout + cỡ phiến |
+| `shape` | `'rect'`\|`'circle'` | `'rect'` | Khung rải: chữ nhật `frameW×frameD` hoặc ellipse nội tiếp (loại phiến tâm ngoài) |
 | `color` | ColorRepresentation | 0x9b948a | Màu đá (material nội bộ) — live `setColor` |
 | `material` | THREE.Material | undefined | Material ngoài (caller-owned) → đá dùng thay màu phẳng |
 

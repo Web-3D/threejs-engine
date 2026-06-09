@@ -26,6 +26,7 @@ const DEFAULTS = {
   radialSegments: 16, // độ mịn vành đĩa (tris ≈ ×4/phiến)
   seed: 0, // int — đổi layout + cỡ phiến (deterministic, tái lập)
   color: 0x9b948a as THREE.ColorRepresentation, // xám-đá — live setColor
+  shape: 'rect' as 'rect' | 'circle', // khung rải: 'rect' = chữ nhật frameW×frameD; 'circle' = ellipse nội tiếp
 }
 
 const MAX_STONES = 400 // trần an toàn (budget + chặn Poisson loop dài khi khuôn lớn/phiến nhỏ)
@@ -145,6 +146,8 @@ export interface StoneScatterOptions {
   radialSegments?: number
   /** Seed deterministic (đổi layout + cỡ phiến). Default 0 */
   seed?: number
+  /** Khung rải: 'rect' (chữ nhật frameW×frameD) | 'circle' (ellipse nội tiếp — loại phiến tâm ngoài). Default 'rect' */
+  shape?: 'rect' | 'circle'
   /** Màu đá (material NỘI BỘ) — live setColor. Default 0x9b948a */
   color?: THREE.ColorRepresentation
   /** Material NGOÀI (caller-owned, vd TexturedSurface triplanar đá) → đá dùng nó thay màu phẳng;
@@ -194,11 +197,16 @@ export class StoneScatter {
     const hw = w / 2
     const hd = d / 2
     const eMin = Math.min(1, Math.max(0.1, o.ellipseMin))
-    return pts.map((p) => {
-      const r = rMin + (rMax - rMin) * rng()
-      const aspect = eMin + (1 - eMin) * rng()
-      return { x: p.x - hw, z: p.z - hd, rx: r, rz: r * aspect, rot: rng() * Math.PI * 2 }
-    })
+    const circle = o.shape === 'circle'
+    // map ALL pts (rng/phiến chạy đều → đổi rect↔circle giữ layout, chỉ bớt phiến); circle → lọc tâm trong ellipse
+    // nội tiếp (x/hw)²+(z/hd)²≤1. rng consume bằng nhau mọi shape ⇒ deterministic.
+    return pts
+      .map((p) => {
+        const r = rMin + (rMax - rMin) * rng()
+        const aspect = eMin + (1 - eMin) * rng()
+        return { x: p.x - hw, z: p.z - hd, rx: r, rz: r * aspect, rot: rng() * Math.PI * 2 }
+      })
+      .filter((pl) => !circle || (pl.x / hw) ** 2 + (pl.z / hd) ** 2 <= 1)
   }
 
   // N phiến → 1 InstancedMesh: mỗi instance = đĩa đơn-vị scale (rx, dày, rz) [rx≠rz = ellipse] + xoay Y + dời.

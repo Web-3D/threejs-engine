@@ -1,8 +1,8 @@
 {
   "name": "StoneScatter",
   "category": "components",
-  "version": "1.0.0",
-  "description": "Rải mảng đá DẸT tròn/ellipse trong 1 khuôn chữ nhật VÔ HÌNH bằng Poisson-disk (Bridson 2007 → blue-noise): cách đều ngẫu nhiên, KHÔNG chạm nhau (luôn chừa khe cỏ). N phiến = 1 InstancedMesh = 1 DRAW. Deterministic theo seed. Material NỘI BỘ flat (color) HOẶC bơm material NGOÀI (TexturedSurface triplanar đá, caller-owned). Lối đi lát đá / bãi đá dăm sân vườn (stepping-stone v1). Voronoi ghép-khít (crazy-paving) = đích xa, KHÔNG ở v1",
+  "version": "1.1.0",
+  "description": "Rải mảng đá DẸT tròn/ellipse trong 1 KHUÔN (chữ nhật HOẶC tròn = ellipse nội tiếp) bằng Poisson-disk (Bridson 2007 → blue-noise): cách đều ngẫu nhiên, KHÔNG chạm nhau (luôn chừa khe cỏ). N phiến = 1 InstancedMesh = 1 DRAW. Deterministic theo seed. Material NỘI BỘ flat (color) HOẶC bơm material NGOÀI (TexturedSurface triplanar đá, caller-owned). Lối đi lát đá / bãi đá dăm sân vườn (stepping-stone v1). Voronoi ghép-khít (crazy-paving) = đích xa, KHÔNG ở v1",
   "tags": ["stone", "đá", "scatter", "poisson", "blue-noise", "stepping-stone", "paving", "instanced", "procedural", "site-kit", "garden", "environment"],
   "complexity": "low",
   "performance-cost": "low",
@@ -20,6 +20,7 @@
     { "name": "thickness",      "type": "number",                    "default": "0.05",     "description": "Dày phiến nhô trên cỏ (m)" },
     { "name": "radialSegments", "type": "number",                    "default": "16",       "description": "Độ mịn vành đĩa (≥6; tris ≈ ×4/phiến)" },
     { "name": "seed",           "type": "number",                    "default": "0",        "description": "Seed deterministic — đổi layout + cỡ phiến (tái lập)" },
+    { "name": "shape",          "type": "'rect' | 'circle'",         "default": "'rect'",   "description": "Khung rải: 'rect' = chữ nhật frameW×frameD; 'circle' = ellipse nội tiếp (loại phiến tâm ngoài)" },
     { "name": "color",          "type": "THREE.ColorRepresentation", "default": "0x9b948a", "description": "Màu đá (material NỘI BỘ) — live setColor" },
     { "name": "material",       "type": "THREE.Material",            "default": "undefined", "description": "Material NGOÀI (caller-owned, vd TexturedSurface triplanar đá) → đá dùng nó thay màu phẳng; KHÔNG dispose ở module" }
   ],

@@ -33,12 +33,13 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
 - **Render** (`fromState.ts` `addZoneMesh`): `zoneKind==='path'` → `addStonePathMesh` dựng StoneScatter (frame=length/
   width, Y=baseY level — zone trong `zoneRects` → terrain phẳng pad dưới đá) thay mesh surface. `userData.stonePath`
   = ref StoneScatter (live-rebuild dispose đúng). `buildLevelZones`: path KHÔNG tính `maxTh` (không dày stacking).
-- **GUI** (archplan `gui/site.ts` `buildZonePane`): op='add' → `zoneKindRow` (selectRow **Type: Surface|Path**);
-  path → `buildPathZoneBody` (Frame W/D + `pathSliderSpecs` R min/max·Ellipse·Gap·Thick·Seed + Material + Color),
-  surface → `buildSurfaceZoneBody` (cũ). Đổi Type → `rebuild(flatIdx)` dựng lại pane + `applySite`.
-- **Lab** (`ArchPlanLab.ts`): path-zone edit route qua `applySite`/`_rebuildSite` như slider surface zone (KHÔNG
-  tune riêng). `_rebuildGroundLayersLive`: mesh có `userData.stonePath` → dispose QUA `field.dispose` + rút khỏi
-  siteShaders (né double-dispose geo). `_collectPathTexKeys` → texture đá DÙNG CHUNG cache border hồ/RockCluster.
+- **GUI** (archplan `gui/site.ts` `buildZonePane`): op='add' → `zoneKindRow` (**Type: Surface|Path**); path →
+  `buildPathZoneBody` (**Form Chữ-nhật|Tròn** `pathFormRow` reuse `GroundLayer.shape` + Frame W/D + `pathSliderSpecs`
+  R min/max·Ellipse·Gap·Thick·Seed·**Rotate°** + Material + Color). Đổi Type → `rebuild(flatIdx)` + reset shape→rect.
+- **Lab** (`ArchPlanLab.ts`): path edit route qua `applySite` như slider surface zone. `_rebuildGroundLayersLive`:
+  mesh `userData.stonePath` → dispose QUA `field.dispose` + rút siteShaders. `_collectPathTexKeys` → texture đá
+  dùng chung cache border hồ. **Move (body-drag)**: `_layerDrag` lưu `startMeshPos` → `position = gốc + Δ` (giữ Y
+  baseY của path; surface startMeshPos=0 = như cũ); `_commitLayerDrag` trừ startMeshPos (path khỏi cộng-đôi offset).
 
 ## 3. Tầng & toạ độ
 
@@ -53,12 +54,18 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
 - **Đổi Type mất focus tab:** `zoneKindRow` gọi `rebuild(flatIdx)` giữ focus zone đang sửa (đừng quên flatIdx).
 - **Cỏ-tuft trong khe phiến:** path-zone né cỏ CẢ khung (qua `zoneRects`) → đá trên nền phẳng, chưa cỏ trong khe.
   Polish: per-stone exclude (feed `StoneScatter.getPlacements()` vào exclude) thay vì cả khung.
+- **Move path phải click TRÚNG 1 viên đá** (raycast InstancedMesh, khe không bắt) — chưa có pick-plane khung. Chấp nhận v1.
+- **Xoay path: grass-exclude giữ bbox AXIS-ALIGNED** (`layerRect` rot:0) — xoay nhiều → cỏ hở góc nhẹ. Chấp nhận v1.
 
 ## 5. Lịch sử nâng cấp
 
 - **2026-06-08 — Phase A:** module `StoneScatter` (Poisson-disk Bridson + InstancedMesh đĩa, mulberry32 seed). v1
   tròn/ellipse rời (Voronoi = đích xa).
 - **2026-06-08 — Phase B (tab Path):** ráp dạng `stoneFields[]` + tab Path riêng. **ĐÃ THAY** bằng tái cấu trúc dưới.
+- **2026-06-09 — Shape + Xoay + Move:** NgQuan thêm 3 thứ cho path. (1) **Form Chữ-nhật|Tròn** — StoneScatter
+  +option `shape:'rect'|'circle'` (circle = lọc tâm trong ellipse nội tiếp), reuse `GroundLayer.shape`. (2) **Rotate°**
+  — `StonePathParams.rot` → `mesh.rotation.y`. (3) **Move body-drag** — fix `_layerDrag` (startMeshPos) để path dời
+  đúng (trước = nhảy về gốc vì offset nằm ở mesh.position). Module 1.0→1.1.
 - **2026-06-08 — TÁI CẤU TRÚC:** NgQuan "bỏ path vào bên trong G1 — mỗi zone z1 có 2 loại Surface|Path". Bỏ
   `stoneFields[]`/tab Path → path = **zoneKind trong GroundLayer**. Edit route qua `applySite` (như surface zone),
   KHÔNG live-tune riêng. `_rebuildGroundLayersLive` xử path-mesh (dispose qua StoneScatter). Chờ verify :3002.
