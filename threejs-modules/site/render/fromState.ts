@@ -177,6 +177,9 @@ export function siteGrassExclude(
   const exclude = [...foundation]
   for (const w of renderWaters(site)) exclude.push(waterRect(w))
   for (const w of renderPuddles(site)) exclude.push(waterRect(w)) // cỏ né cả vũng nước (không mọc xuyên mặt)
+  // 🪨 cỏ né KHUÔN path (mọi path-zone): flat path đã trong zoneRects nhưng bám-gò (drape) thì KHÔNG → cần ở đây.
+  for (const l of site.groundLayers ?? [])
+    if (l.op !== 'cut' && l.zoneKind === 'path') exclude.push(layerRect(l))
   return exclude
 }
 
@@ -1274,16 +1277,40 @@ function zoneCell(layer: GroundLayer, drape: DrapeCtx | null): number {
   return Math.max(layer.length, layer.width) / 1000 / res
 }
 
+// 🪨 BÁM GÒ: dời Y MỖI viên đá theo cao-độ gò tại vị-trí-thế-giới của nó. Instance Y (mesh-local) += heightAt;
+// mesh.rotation.y giữ Y nên world Y dời đúng. worldXZ = offset + xoay(local) theo rot (Three Y-rot: x'=x·c+z·s, z'=−x·s+z·c).
+function drapeStonesToTerrain(
+  field: StoneScatter,
+  hf: HeightField,
+  offX: number,
+  offZ: number,
+  rotRad: number
+): void {
+  const mesh = field.getMesh()
+  const pls = field.getPlacements()
+  const m = new THREE.Matrix4()
+  const c = Math.cos(rotRad)
+  const s = Math.sin(rotRad)
+  for (let i = 0; i < pls.length; i++) {
+    mesh.getMatrixAt(i, m)
+    const pl = pls[i]
+    m.elements[13] += heightAt(hf, offX + (pl.x * c + pl.z * s), offZ + (-pl.x * s + pl.z * c))
+    mesh.setMatrixAt(i, m)
+  }
+  mesh.instanceMatrix.needsUpdate = true
+}
+
 // 🪨 Zone LOẠI 'path' (zoneKind='path') = rải đá StoneScatter trong rect zone (Poisson, không chạm) thay lớp
-// surface. Khung = chính rect zone (length×width = frameW/D, offsetX/Z = vị trí); Y = baseY (mặt G-level — zone
-// nằm trong zoneRects → terrain phẳng pad dưới đá). userData.stonePath = ref StoneScatter → live-rebuild dispose
-// đúng (né double-dispose geo). Texture đá DÙNG CHUNG cache border hồ (opts.borderMatByKey). push ctx.shaders.
+// surface. Khung = chính rect zone (length×width = frameW/D, offsetX/Z = vị trí). Y = baseY (mặt G-level). BÁM GÒ
+// khi layer.drape (= ngoài zoneRects → gò giữ nhấp nhô): dời Y mỗi viên theo heightAt. userData.stonePath = ref
+// StoneScatter → live-rebuild dispose đúng (né double-dispose geo). Texture đá DÙNG CHUNG cache border hồ.
 function addStonePathMesh(
   layer: GroundLayer,
   idx: number,
   baseY: number,
   ctx: SiteRenderCtx,
-  opts: SiteRenderOpts
+  opts: SiteRenderOpts,
+  drape: DrapeCtx | null
 ): void {
   const p = layer.path ?? makeStonePathParams()
   const mat = p.material !== 'none' ? opts.borderMatByKey?.[p.material] : undefined
@@ -1301,8 +1328,12 @@ function addStonePathMesh(
     material: mat,
   })
   const mesh = field.getMesh()
-  mesh.position.set(layer.offsetX / 1000, baseY, layer.offsetZ / 1000)
-  mesh.rotation.y = (p.rot * Math.PI) / 180 // 🪨 xoay cả khung quanh Y (exclude giữ bbox axis-aligned — chấp nhận)
+  const offX = layer.offsetX / 1000
+  const offZ = layer.offsetZ / 1000
+  const rotRad = (p.rot * Math.PI) / 180
+  mesh.position.set(offX, baseY, offZ)
+  mesh.rotation.y = rotRad // 🪨 xoay cả khung quanh Y (exclude giữ bbox axis-aligned — chấp nhận)
+  if (layer.drape && drape) drapeStonesToTerrain(field, drape.hf, offX, offZ, rotRad) // 🏔️ bám gò (per-viên)
   mesh.userData.groundLayerIdx = idx // editor pick/Move/live-rebuild (như surface zone)
   mesh.userData.stonePath = field // 🪨 ref StoneScatter → live-rebuild dispose qua field.dispose (né double-dispose)
   ctx.group.add(mesh)
@@ -1319,7 +1350,7 @@ function addZoneMesh(
   drape: DrapeCtx | null,
   clean: boolean
 ): void {
-  if (layer.zoneKind === 'path') return addStonePathMesh(layer, idx, baseY, ctx, opts) // 🪨 rải đá thay surface
+  if (layer.zoneKind === 'path') return addStonePathMesh(layer, idx, baseY, ctx, opts, drape) // 🪨 rải đá thay surface
   const surf = zoneSurfaces(layer, baseY, drape)
   let geo: THREE.BufferGeometry | null
   if (surf) {

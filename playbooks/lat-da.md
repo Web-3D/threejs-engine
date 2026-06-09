@@ -31,8 +31,10 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
   `path?: StonePathParams` (rMin/rMax/ellipseMin/gap/thickness/seed/color/material). `makeStonePathParams` (seed
   ngẫu nhiên) + `parseStonePathParams` (clamp, rMin≤rMax). Khung = length/width/offset của CHÍNH zone (KHÔNG field riêng).
 - **Render** (`fromState.ts` `addZoneMesh`): `zoneKind==='path'` → `addStonePathMesh` dựng StoneScatter (frame=length/
-  width, Y=baseY level — zone trong `zoneRects` → terrain phẳng pad dưới đá) thay mesh surface. `userData.stonePath`
-  = ref StoneScatter (live-rebuild dispose đúng). `buildLevelZones`: path KHÔNG tính `maxTh` (không dày stacking).
+  width, Y=baseY) thay mesh surface. `userData.stonePath` = ref. `buildLevelZones`: path KHÔNG tính `maxTh`. **🏔️ BÁM
+  GÒ** (`layer.drape`, dùng chung field surface-drape): drape zone NGOÀI `zoneRects` → terrain giữ gò dưới nó →
+  `drapeStonesToTerrain` dời Y MỖI viên `+= heightAt(worldXZ)` (worldXZ = offset + xoay local theo rot). Cỏ vẫn né
+  khuôn: `siteGrassExclude` +rect MỌI path-zone (vì bám-gò ngoài zoneRects → phải thêm tay; KHÔNG ăn vào mask terrain).
 - **GUI** (archplan `gui/site.ts` `buildZonePane`): op='add' → `zoneKindRow` (**Type: Surface|Path**); path →
   `buildPathZoneBody` (**Form Chữ-nhật|Tròn** `pathFormRow` reuse `GroundLayer.shape` + Frame W/D + `pathSliderSpecs`
   R min/max·Ellipse·Gap·Thick·Seed + **`pathRotRow` Rotate° LIVE** + Material + Color). Đổi Type → reset shape→rect.
@@ -52,7 +54,9 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
 ## 4. Lỗi thường gặp
 
 - **Phiến nhô khỏi khung ≤ rMax:** Poisson sinh tâm trong rect, đĩa bán kính r tràn mép (khung vô hình → OK).
-- **Đá nằm pad phẳng (không bám gò):** path-zone vào `zoneRects` → terrain phẳng dưới nó. Bám-gò-zone = polish.
+- **Đá phẳng pad (mặc định):** path-zone vào `zoneRects` → terrain phẳng dưới. Muốn theo gò → bật **Bám gò** (drape).
+- **Bám gò: xoay LIVE lệch cao-độ tạm:** `tunePathRotLive` chỉ quay mesh, KHÔNG re-sample heightAt → đá lệch cao-độ
+  vài cm lúc kéo Rotate°, buông (`applySite`) re-drape đúng. Chấp nhận (gò thoải).
 - **Đổi Type mất focus tab:** `zoneKindRow` gọi `rebuild(flatIdx)` giữ focus zone đang sửa (đừng quên flatIdx).
 - **Cỏ-tuft trong khe phiến:** path-zone né cỏ CẢ khung (qua `zoneRects`) → đá trên nền phẳng, chưa cỏ trong khe.
   Polish: per-stone exclude (feed `StoneScatter.getPlacements()` vào exclude) thay vì cả khung.
@@ -71,6 +75,8 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
 - **2026-06-09 — Fix TỤT FPS xoay (+ slider path):** xoay route `applySite(false)` → `_rebuildSite` tái-tạo water-RTT
   + recompile NodeMaterial MỖI frame (bẫy PERFORMANCE.md). Fix: Rotate° = `tunePathRotLive` (transform thuần, 0
   rebuild); slider structural path = `applyZonesLive` (rebuild zone-only, né water-RTT). Buông vẫn `applySite` commit.
+- **2026-06-09 — Bám gò:** toggle **Bám gò** (reuse `layer.drape` → zoneRects loại → terrain giữ gò) + `drapeStonesToTerrain`
+  dời Y mỗi viên theo `heightAt`. Cỏ né khuôn qua `siteGrassExclude` (vì drape ngoài zoneRects). KHÔNG đổi state/module.
 - **2026-06-08 — TÁI CẤU TRÚC:** NgQuan "bỏ path vào bên trong G1 — mỗi zone z1 có 2 loại Surface|Path". Bỏ
   `stoneFields[]`/tab Path → path = **zoneKind trong GroundLayer**. Edit route qua `applySite` (như surface zone),
   KHÔNG live-tune riêng. `_rebuildGroundLayersLive` xử path-mesh (dispose qua StoneScatter). Chờ verify :3002.
