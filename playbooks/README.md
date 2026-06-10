@@ -72,7 +72,8 @@ Copy `_TEMPLATE.md` → `<slug>.md` → điền 6 mục → thêm 1 dòng vào i
 | Cỏ 3D | [grass.md](grass.md) | B | building | GrassBlades, GrassGround | KI-003, KI-005 |
 | Ground | [ground.md](ground.md) | — | building | fromState.ts, state.ts, terrain.ts | KI-011 |
 | Lối đi lát đá | [lat-da.md](lat-da.md) | — | building | StoneScatter, fromState.ts, state.ts, site.ts | — |
-| Hồ nước | [pond.md](pond.md) | B | building | WaterSurface, fromState | KI-004, KI-005, KI-006, KI-007, KI-008, KI-012 |
+| Hồ nước | [pond.md](pond.md) | B | building | WaterSurface, fromState | KI-004, KI-005, KI-006, KI-007, KI-008, KI-012, KI-014 |
+| Thác nước | [thac-nuoc.md](thac-nuoc.md) | B | building | Waterfall, waterfall-lab.ts, waterfall-preview.ts | KI-013, KI-014 |
 | Cửa sổ / lỗ mở | [window.md](window.md) | — | building | WallSingle, InstancedBrickWall, WoodSidingStrip, WoodSidingWall | KI-001, KI-003 |
 <!-- /AUTO:index -->
 

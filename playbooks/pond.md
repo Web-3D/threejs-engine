@@ -13,7 +13,8 @@ issues:
   - KI-007
   - KI-008
   - KI-012
-updated: 2026-06-07
+  - KI-014
+updated: 2026-06-10
 ---
 
 # Playbook — Hồ nước
