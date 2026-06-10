@@ -109,7 +109,7 @@ function assembleFrames(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void
       bucket = []
       ctx.buckets.set(key, bucket)
     }
-    for (const g of frameGeosLocal(op, place.w, place.depth, fr)) {
+    for (const g of frameGeosLocal(op, place.w, place.h, place.depth, fr)) {
       g.applyMatrix4(mtx)
       bucket.push(g) // bucket SỞ HỮU — mergeWalls dispose sau merge
     }
