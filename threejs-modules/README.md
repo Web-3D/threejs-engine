@@ -55,6 +55,7 @@
 | `AsphaltGround`      | Procedural asphalt/tar road — world-space XZ, no UV, worn patches + aggregate + LOD | asphalt, tar, road, ground, world-space, no-uv | ✅ in-use |
 | `GrassGround`        | Procedural bãi cỏ/lawn — world-space XZ, no UV, patch tươi/khô + clump + blade speckle + LOD | grass, lawn, cỏ, ground, world-space, no-uv | ✅ in-use |
 | `PhotoGround`        | Ground PBR từ texture ẢNH (scan) — map/normal/rough/ao, lát world-XZ ÷ tileSizeMeters (độc lập geometry UV); caller bơm texture | ground, pbr, texture, world-space, tiling | ✅ in-use |
+| `PhotoGroundMix`     | Ground MIX ≤5 texture (port bộ nền Lab → TSL): bombing per-ô (xoay/offset/jitter, normal xoay đúng) + 4 lớp mask fbm + height-lerp (lum proxy) + mask vẽ tay (kênh RGBA, uv zone-local) + macro/úa + trộn xa dual-scale; rough/ao của base. Plan: Factory/deferred/ground-mix-port-plan.md | ground, mix, anti-tiling, bombing, splat, height-lerp, tsl | 🆕 stage 1 (chưa wire site-kit) |
 | `TexturedSurface`    | Surface PBR **triplanar** (world-space) — đúng MỌI hướng (sàn/tường/đáy hồ/mái nghiêng), normal whiteout, no UV; "unified" cho slab/fence/roof | surface, pbr, texture, triplanar, any-orientation | ✅ in-use |
 
 ---
@@ -135,6 +136,24 @@
 | `SkyGradient` | Bầu trời gradient ngày↔đêm WebGPU qua `scene.backgroundNode` (KHÔNG mesh → luôn phủ, né "quả cầu từ ngoài") — zenith→horizon lerp theo độ-cao sun + quầng nắng/hoàng hôn. `setSun(dir)`→day-factor để mờ đèn fill/env | sky, environment, day-night, gradient, backgroundnode, tsl, webgpu | ✅ in-use |
 | `Waterfall` | Thác nước stylized (tier B, công thức RiME/Season — A2) — MÀN sheet cong (z=arc·√t) + TEXTURE VỆT (canvas 1 lần) cuộn 3 LỚP khác tốc + fresnel + KHÚC XẠ màn + lip/foot band + posterize + wobble; chân = MIST bốc + SPLASH ngang (sprite mềm). 0 RTT/0 asset, 3 draw; tune ở Lab tab 🌊 Thác | water, waterfall, thác, foam, mist, splash, fresnel, refraction, tsl, site-kit, tier-b | 🆕 module |
 | `StoneScatter` | Rải mảng đá DẸT tròn/ellipse trong khuôn vô hình bằng Poisson-disk (Bridson → blue-noise): cách đều ngẫu nhiên, KHÔNG chạm nhau (chừa khe cỏ). N phiến = 1 InstancedMesh = 1 draw, deterministic theo seed. Lối đi lát đá sân vườn (stepping-stone v1). Voronoi ghép-khít = đích xa | stone, đá, scatter, poisson, stepping-stone, paving, instanced, site-kit | 🆕 module |
+
+---
+
+## Ops
+
+> **HÀM THUẦN kiểu Houdini SOP — KHÔNG phải component** (không class/material/dispose): vào dữ liệu + tham
+> số → ra điểm/đỉnh/mesh, caller tự dựng geometry + dispose. Asset mới = TỔ HỢP op (mái đao = #1..#5 chồng
+> nhau). Nuôi trong archplan Lab Mái, tách kệ 2026-06-10 (NgQuan chốt scale ban công/tường/cửa). Chi tiết
+> từng op + quy ước `SurfacePoint`: [ops/README.md](ops/README.md). Catalog chọn op kế:
+> `Factory/deferred/houdini-algorithms.md`.
+
+| Tên | Mô tả | Tags | Status |
+| --- | ----- | ---- | ------ |
+| `ops/resample` | #1 — chia lại curve ĐỀU theo chiều dài thật (bảng arc-length 64 mẫu + binary search nghịch đảo): `arcLength` · `resampleCurve` | curve, arc-length, resample, houdini | ✅ in-use |
+| `ops/sweep` | #2 — quét tiết diện 2D dọc spine, frame parallel-transport (không xoắn), ramp scale/twist, caps: `sweepInto` · `rectProfile` | sweep, spine, parallel-transport, timber, houdini | ✅ in-use |
+| `ops/copy-to-points` | #3 — 2 tầng: generator điểm trên mặt tham số (grid UV đều · rows đếm riêng hàng · cols song song nửa-bước) → `copyToPoints` InstancedMesh; interface chung `SurfacePoint` | instancing, copy-to-points, tile, brick, houdini | ✅ in-use |
+| `ops/bevel` | #4 — bevel-at-generation: `bevelProfile` bo góc TIẾT DIỆN 2D trước sweep + `filletSpine` bo góc SPINE 3D (2 thanh → 1 thân liền gối cong) | bevel, fillet, chamfer, profile, timber, houdini | ✅ in-use |
+| `ops/scatter` | #5 — rải điểm random trên mesh (wrap MeshSurfaceSampler) + seed mulberry32 + minDist hash-grid + mask → trả `SurfacePoint` (instancer #3 dùng lại) | scatter, random, poisson-ish, seed, environment, houdini | ✅ in-use |
 
 ---
 
