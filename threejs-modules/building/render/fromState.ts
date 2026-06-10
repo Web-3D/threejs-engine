@@ -110,8 +110,16 @@ function frameOf(op: OpeningState): { w: number; out: number; color: number } | 
   }
 }
 
+// C2 cánh cửa: resolve leaf→spec; none/undefined = không cánh (save cũ nguyên trạng).
+function leafOf(op: OpeningState): { double: boolean; open: number; color: number } | undefined {
+  const t = op.leafType
+  if (!t || t === 'none') return undefined
+  return { double: op.leafDouble ?? false, open: op.leafOpen ?? 0, color: op.leafColor ?? 0x7a5a3a }
+}
+
 // SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
-function segToSpec(seg: SegmentState): WallSpec {
+// keyBase = `${instId}:${segIdx}` (editor) → key per-opening cho live-tune cánh; headless bỏ trống.
+function segToSpec(seg: SegmentState, keyBase?: string): WallSpec {
   return {
     material: seg.material,
     colorIndex: seg.colorIndex,
@@ -123,7 +131,7 @@ function segToSpec(seg: SegmentState): WallSpec {
     woodReveal: seg.woodReveal / 1000,
     woodButt: seg.woodButt / 1000,
     woodStepTilt: seg.woodStepTilt,
-    openings: seg.openings.map((op) => ({
+    openings: seg.openings.map((op, i) => ({
       kind: op.kind,
       x: op.x / 1000,
       w: op.w / 1000,
@@ -131,6 +139,8 @@ function segToSpec(seg: SegmentState): WallSpec {
       yOffset: op.yOffset / 1000,
       round: op.round,
       frame: frameOf(op), // C1 khung bao — undefined = không khung
+      leaf: leafOf(op), // C2 cánh cửa — undefined = không cánh
+      key: keyBase ? `${keyBase}:${i}` : undefined,
     })),
     panels: seg.panels.map((p) => ({
       x: p.x / 1000,
@@ -211,7 +221,7 @@ class StateRenderer {
       if (hidden) continue // tầng ẩn → bỏ dựng (chiều cao maxLift/maxFloorH đã cộng ở trên cho stacking)
       if (this.filter && !this.filter(inst.id)) continue // split-render: instance bị lọc → bỏ dựng (chiều cao đã cộng)
       computeWallConfigs(inst, wallBase).forEach((cfg, si) => {
-        this.assembleFromConfig(cfg)
+        this.assembleFromConfig(cfg, `${inst.id}:${si}`)
         this.pushWallPick(cfg, inst.id, si)
         this.pushOpeningPicks(cfg, inst.id, si)
       })
@@ -239,7 +249,7 @@ class StateRenderer {
     return holes
   }
 
-  private assembleFromConfig(cfg: WallConfig): void {
+  private assembleFromConfig(cfg: WallConfig, keyBase: string): void {
     const place: WallPlace = {
       w: cfg.w,
       h: cfg.h,
@@ -249,7 +259,7 @@ class StateRenderer {
       zOffset: cfg.zOffset,
       yBase: cfg.yBase,
     }
-    let spec = segToSpec(cfg.seg)
+    let spec = segToSpec(cfg.seg, keyBase)
     // LOD live-drag: tường phẳng 'none' (giữ MÀU) + bỏ panel decor → KHÔNG dựng brick-3d/gỗ instanced
     // (per-brick matrices = thủ phạm CPU). Khúc xạ/khoét cửa vẫn giữ. Full chi tiết khi buông (rebuild thường).
     if (this.plainWalls) spec = { ...spec, material: 'none', panels: [] }

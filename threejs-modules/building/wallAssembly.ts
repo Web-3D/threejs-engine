@@ -22,7 +22,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { type BrickOpening, InstancedBrickWall } from '../components/InstancedBrickWall'
 import { WoodSidingStrip } from '../components/WoodSidingStrip'
 import { WoodSidingWall } from '../components/WoodSidingWall'
-import { frameGeosLocal } from './parts/Joinery'
+import { frameGeosLocal, leafGeoLocal } from './parts/Joinery'
 import {
   makePositionedWall,
   type PositionedOpening,
@@ -41,6 +41,8 @@ export interface AsmOpening {
   yOffset: number
   round?: boolean
   frame?: { w: number; out: number; color: number } // m — khung bao C1 (caller resolve style→spec); undefined = không khung
+  leaf?: { double: boolean; open: number; color: number } // C2 cánh gỗ — open 0–100% (100 = 110°)
+  key?: string // `${instId}:${segIdx}:${opIdx}` — editor live-tune cánh (tuneLeafLive); headless bỏ qua
 }
 export interface AsmPanel {
   x: number
@@ -85,6 +87,7 @@ export interface WallAsmCtx {
 // còn lại = mesh phẳng + material cache → bake vào bucket để merge sau (mergeWalls).
 export function assembleWall(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
   assembleFrames(place, spec, ctx) // khung opening TRƯỚC dispatch — mọi loại tường đều có khung
+  assembleLeaves(place, spec, ctx) // cánh cửa (C2) — mesh riêng trên pivot, không theo material tường
   if (spec.material === 'brick-3d') return assembleBrick3d(place, spec, ctx)
   if (spec.material === 'wood-3d') return assembleWood3d(place, spec, ctx)
   if (spec.material === 'wood-strip') return assembleWoodStrip(place, spec, ctx)
@@ -112,6 +115,52 @@ function assembleFrames(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void
     for (const g of frameGeosLocal(op, place.w, place.h, place.depth, fr)) {
       g.applyMatrix4(mtx)
       bucket.push(g) // bucket SỞ HỮU — mergeWalls dispose sau merge
+    }
+  }
+}
+
+// Cánh mở tối đa 110° (open=100%). Editor live-tune dùng CÙNG hằng số (xoay pivot trực tiếp).
+export const LEAF_MAX_RAD = (110 * Math.PI) / 180
+
+// CÁNH CỬA (C2 Joinery): mesh RIÊNG trên PIVOT tại trục bản lề — xoay live (transform thuần) nên
+// KHÔNG merge bucket. Material chung joinery DoubleSide (cache — per-color). Pivot mang userData
+// {leafKey, leafBase, leafSign} để editor kéo slider Mở xoay trực tiếp 0-rebuild (ctx.tuneLeafLive).
+// French đôi: cánh 0 bản lề má TRÁI (trải +X), cánh 1 bản lề má PHẢI (mirror, trải −X) — cùng mở vào trong.
+function assembleLeaves(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
+  const th = (place.rotationY * Math.PI) / 180
+  const cos = Math.cos(th)
+  const sin = Math.sin(th)
+  for (const op of spec.openings) {
+    const lf = op.leaf
+    if (!lf || op.round) continue
+    const y0 = Math.max(0, op.yOffset)
+    const lh = Math.min(place.h, op.yOffset + op.h) - y0 - 0.008 // khe trên/dưới
+    const n = lf.double ? 2 : 1
+    const lw = op.w / n
+    const mat = ctx.cache.ensureFrameMat(lf.color)
+    const hx0 = op.x - place.w / 2 // mép trái lỗ (local centered)
+    for (let i = 0; i < n; i++) {
+      const mirror = i === 1
+      const geo = leafGeoLocal(lw, lh, mirror)
+      if (!geo) continue
+      ctx.geos.push(geo)
+      const mesh = new THREE.Mesh(geo, mat)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      const pivot = new THREE.Group()
+      const hx = mirror ? hx0 + op.w : hx0 // trục bản lề: má trái / má phải
+      pivot.position.set(
+        place.xOffset + hx * cos,
+        place.yBase + y0 + 0.004,
+        place.zOffset - hx * sin
+      )
+      const sign = mirror ? -1 : 1 // cả 2 cánh mở VÀO TRONG (−Z local)
+      pivot.rotation.y = th + sign * (Math.min(100, Math.max(0, lf.open)) / 100) * LEAF_MAX_RAD
+      pivot.userData.leafKey = op.key ?? ''
+      pivot.userData.leafBase = th
+      pivot.userData.leafSign = sign
+      pivot.add(mesh)
+      ctx.group.add(pivot)
     }
   }
 }
