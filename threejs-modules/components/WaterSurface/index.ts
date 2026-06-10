@@ -242,10 +242,11 @@ export class WaterSurface {
     this.uRefract.value = Math.max(0, Math.min(2, v))
   }
 
-  /** Tần số gợn sóng (1/m) [0.5–20]. Thấp = sóng TO/thưa; cao = nhỏ/dày. */
+  /** Tần số gợn sóng (1/m) [0.05–20]. Thấp = sóng TO/thưa (phân số = chu kỳ tới ~13m — "Wave size" 24);
+   *  cao = nhỏ/dày. (Floor 0.5→0.05 — NgQuan 2026-06-10 "wave size tăng lên 24".) */
   setRippleScale(v: number): void {
     if (this.isDisposed) return
-    this.uSize.value = Math.max(0.5, Math.min(20, v))
+    this.uSize.value = Math.max(0.05, Math.min(20, v))
   }
 
   /** Phản chiếu gốc rf0 [0–1]. */
