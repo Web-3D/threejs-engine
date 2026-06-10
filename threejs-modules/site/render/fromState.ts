@@ -347,11 +347,13 @@ function stoneAt(
 ): THREE.BufferGeometry {
   const g = new THREE.IcosahedronGeometry(r, 1)
   if (jag > 0) jagVertices(g, jag, idx)
-  const s = 0.78 + hash01(idx, 1.7) * 0.4 // scale ngang 0.78..1.18
-  const sy = 0.7 + hash01(idx, 5.3) * 0.45 // hơi dẹt 0.7..1.15
+  // Dáng BÈ BÈ (NgQuan 2026-06-10): ngang nở 0.95..1.35, cao DẸT 0.42..0.56 (range hẹp = ít random
+  // chiều cao — đá nào cũng lùn đều, "bớt nguy hiểm"); scale Y áp SAU jag → góc cạnh cũng bẹp theo.
+  const s = 0.95 + hash01(idx, 1.7) * 0.4 // scale ngang 0.95..1.35 — bè ra
+  const sy = 0.42 + hash01(idx, 5.3) * 0.14 // dẹt 0.42..0.56
   const rot = new THREE.Matrix4().makeRotationY(hash01(idx, 9.1) * Math.PI * 2)
   g.applyMatrix4(rot.multiply(new THREE.Matrix4().makeScale(s, s * sy, s))) // scale rồi xoay
-  g.translate(px, topY + r * 0.4, pz)
+  g.translate(px, topY + r * 0.3, pz) // tâm hạ nhẹ (0.4→0.3) — đá dẹt ngồi sát coping hơn
   return g
 }
 
@@ -1694,8 +1696,7 @@ function stoneCornerPost(
 
 // 1 cạnh tường đá: profile (lat×y) = chữ nhật 2 mặt + cung tròn đỉnh (bán kính r=tk/2), extrude theo trục
 // edge với M trạm. ĐỈNH y gợn theo tổng-2-sin (deterministic theo seed → KHÔNG nhấp nháy mỗi rebuild;
-// rebuild ra y HỆT). Winding (a,b,d,b,c,d): mặt ngoài +lat, mặt trong −lat → pháp tuyến đúng (FrontSide).
-// computeVertexNormals làm mượt cung → đỉnh tròn ăn sáng. End-cap fan 2 đầu (ẩn ở góc, tránh thủng nếu lộ).
+// rebuild ra y HỆT). Tách verts/indices (Rule-50 + complexity) — code di nguyên văn, 0 đổi hành vi.
 function stoneWallEdge(
   cx: number,
   cz: number,
@@ -1714,37 +1715,64 @@ function stoneWallEdge(
   // ĐỈNH gợn: tổng 2 sin lệch pha theo seed → nhấp nhô mượt, lặp lại y hệt mỗi build.
   const topYAt = (t: number): number =>
     baseY + h + jit * (0.6 * Math.sin(2.3 * t + seed) + 0.4 * Math.sin(5.1 * t + seed * 1.7))
+  const { pos, uvs } = stoneWallVerts(cx, cz, axis, length, r, baseY, topYAt, { A, M, K })
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  g.setIndex(stoneWallIndices(M, K, axis === 'z'))
+  g.computeVertexNormals() // smooth (đỉnh cung tròn ăn sáng) — TRƯỚC toNonIndexed để giữ normal đã blend
+  // NON-INDEXED: cột góc (RoundedBoxGeometry) là non-indexed → trộn indexed/non-indexed = mergeGeometries NULL
+  // (mất hình, KI-004). Đồng bộ về non-indexed. computeVertexNormals chạy TRƯỚC nên normal mượt bake sẵn.
+  return g.toNonIndexed()
+}
+
+// Lưới đỉnh (profile K × trạm M+1) 1 cạnh tường đá. uv = placeholder (triplanar BỎ QUA uv, nhưng pipeline
+// WebGPU MeshStandardNodeMaterial CẦN attr này — thiếu là draw fail, KI-010).
+function stoneWallVerts(
+  cx: number,
+  cz: number,
+  axis: 'x' | 'z',
+  length: number,
+  r: number,
+  baseY: number,
+  topYAt: (t: number) => number,
+  d: { A: number; M: number; K: number }
+): { pos: number[]; uvs: number[] } {
   const pos: number[] = []
-  const uvs: number[] = [] // triplanar BỎ QUA uv, nhưng pipeline WebGPU (MeshStandardNodeMaterial) CẦN attr này
-  for (let i = 0; i <= M; i++) {
-    const f = i / M
+  const uvs: number[] = []
+  for (let i = 0; i <= d.M; i++) {
+    const f = i / d.M
     const along = -length / 2 + f * length
     const topY = topYAt(f * length)
-    for (let k = 0; k < K; k++) {
+    for (let k = 0; k < d.K; k++) {
       let lat: number
       let y: number
       if (k === 0) {
         lat = r // outer-bottom
         y = baseY
-      } else if (k === K - 1) {
+      } else if (k === d.K - 1) {
         lat = -r // inner-bottom
         y = baseY
       } else {
-        const a = (Math.PI * (k - 1)) / A // cung 0..π: outer-top → đỉnh → inner-top
+        const a = (Math.PI * (k - 1)) / d.A // cung 0..π: outer-top → đỉnh → inner-top
         lat = r * Math.cos(a)
         y = topY - r + r * Math.sin(a)
       }
       const x = axis === 'x' ? cx + along : cx + lat
       const z = axis === 'x' ? cz + lat : cz + along
       pos.push(x, y, z)
-      uvs.push(f, k / (K - 1)) // placeholder (không dùng — triplanar world-space)
+      uvs.push(f, k / (d.K - 1))
     }
   }
+  return { pos, uvs }
+}
+
+// Index mặt bên + end-cap fan 2 đầu (ẩn ở góc, tránh thủng nếu lộ). Winding (a,b,d,b,c,d): mặt ngoài +lat,
+// mặt trong −lat → pháp tuyến đúng (FrontSide). lat→z (trục X) thuận tay; lat→x (trục Z) ĐẢO handedness →
+// phải LẬT winding, nếu không mặt ngoài 2 cạnh vuông góc quay pháp tuyến vào trong → cull "mất 1 mặt" (KI-010).
+function stoneWallIndices(M: number, K: number, flip: boolean): number[] {
   const idx: number[] = []
   const vid = (i: number, k: number): number => i * K + k
-  // Winding: lat→z (trục X) thuận tay với (a,b,d); nhưng lat→x (trục Z) ĐẢO handedness → phải LẬT winding,
-  // nếu không mặt ngoài 2 cạnh vuông góc quay pháp tuyến vào trong → back-face cull → "mất 1 mặt".
-  const flip = axis === 'z'
   for (let i = 0; i < M; i++) {
     for (let k = 0; k < K - 1; k++) {
       const a = vid(i, k)
@@ -1766,14 +1794,7 @@ function stoneWallEdge(
       else idx.push(a, vid(i, k), vid(i, k + 1))
     }
   }
-  const g = new THREE.BufferGeometry()
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
-  g.setIndex(idx)
-  g.computeVertexNormals() // smooth (đỉnh cung tròn ăn sáng) — TRƯỚC toNonIndexed để giữ normal đã blend
-  // NON-INDEXED: cột góc (RoundedBoxGeometry) là non-indexed → trộn indexed/non-indexed = mergeGeometries NULL
-  // (mất hình, KI-004). Đồng bộ về non-indexed. computeVertexNormals chạy TRƯỚC nên normal mượt bake sẵn.
-  return g.toNonIndexed()
+  return idx
 }
 
 // 1 cạnh rào gỗ: cọc cách ~1.8m + 2 thanh ngang (box dài xoay theo cạnh). A→B trong XZ.
@@ -1834,50 +1855,61 @@ export function buildSiteFence(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts
 ): void {
-  const inset = fence.inset / 1000
   const h = fence.height / 1000
   const top = site.groundThick / 1000
-  const halfW = site.lotWidth / 2000 - inset
-  const halfD = site.lotDepth / 2000 - inset
+  const halfW = site.lotWidth / 2000 - fence.inset / 1000
+  const halfD = site.lotDepth / 2000 - fence.inset / 1000
   if (halfW <= 0 || halfD <= 0) return
-  const isWall = fence.type === 'wall'
   // CỔNG (chỉ type='wall'): khoét gap 1 cạnh + 2 cột. gateClamp lo kẹp halfGap/posAlong (gap luôn trong cạnh).
   const gate = gateClamp(fence, halfW, halfD) ?? undefined
-  // Đá (wallTex='stone') → geometry đỉnh-tròn-gợn + dày hơn (0.18), THEO LỰA CHỌN texture (không đợi load
-  // xong: đang load vẫn ra khối đá xám tạm). Cinder/plain → box phẳng mỏng (0.12). Gỗ → cọc + thanh ngang.
-  // fenceLodBox (đang kéo): stone tạm dùng box mỏng (rẻ) — material stone cached vẫn áp (triplanar lo).
-  const isStone = isWall && (fence.wallTex ?? 'plain') === 'stone' && !opts.fenceLodBox
-  const geos = !isWall
-    ? woodFenceGeos(halfW, halfD, h, top)
-    : isStone
-      ? stoneWallFenceGeos(halfW, halfD, h, top, 0.18, gate)
-      : wallFenceGeos(halfW, halfD, h, top, 0.12, gate)
+  const geos = fenceGeosFor(fence, { halfW, halfD, h, top }, gate, opts)
   const merged = mergeGeometries(geos, false)
   for (const g of geos) g.dispose()
   if (!merged) return
-  // Vật liệu MẶT tường: (1) fenceWallMat CACHED (editor — KHÔNG push shaders/mats, KHÔNG recompile mỗi rebuild
-  // → trị tụt fps kéo cổng); (2) fenceWallTextures → tạo TexturedSurface (headless, push shaders); (3) màu phẳng.
-  const wantTex = isWall && (fence.wallTex ?? 'plain') !== 'plain'
-  let mat: THREE.Material
-  if (wantTex && opts.fenceWallMat) {
-    mat = opts.fenceWallMat // cached — caller sở hữu dispose
-  } else if (wantTex && opts.fenceWallTextures) {
-    const surf = new TexturedSurface({
-      maps: opts.fenceWallTextures,
-      tileSizeMeters: opts.fenceWallTileMeters ?? 2,
-    })
-    mat = surf.getMaterial()
-    ctx.shaders.push(surf)
-  } else {
-    const flat = new THREE.MeshStandardMaterial(
-      isWall ? { color: 0x9a9690, roughness: 0.95 } : { color: 0x8a6a45, roughness: 0.85 }
-    )
-    ctx.mats.push(flat)
-    mat = flat
-  }
-  const mesh = new THREE.Mesh(merged, mat)
+  const mesh = new THREE.Mesh(merged, fenceMaterialFor(fence, ctx, opts))
   mesh.castShadow = true
   mesh.receiveShadow = true
   ctx.geos.push(merged)
   ctx.group.add(mesh)
+}
+
+// Đá (wallTex='stone') → geometry đỉnh-tròn-gợn + dày hơn (0.18), THEO LỰA CHỌN texture (không đợi load
+// xong: đang load vẫn ra khối đá xám tạm). Cinder/plain → box phẳng mỏng (0.12). Gỗ → cọc + thanh ngang.
+// fenceLodBox (đang kéo): stone tạm dùng box mỏng (rẻ) — material stone cached vẫn áp (triplanar lo).
+function fenceGeosFor(
+  fence: FenceConfig,
+  f: { halfW: number; halfD: number; h: number; top: number },
+  gate: GateSpec | undefined,
+  opts: SiteRenderOpts
+): THREE.BufferGeometry[] {
+  if (fence.type !== 'wall') return woodFenceGeos(f.halfW, f.halfD, f.h, f.top)
+  const isStone = (fence.wallTex ?? 'plain') === 'stone' && !opts.fenceLodBox
+  return isStone
+    ? stoneWallFenceGeos(f.halfW, f.halfD, f.h, f.top, 0.18, gate)
+    : wallFenceGeos(f.halfW, f.halfD, f.h, f.top, 0.12, gate)
+}
+
+// Vật liệu MẶT tường: (1) fenceWallMat CACHED (editor — KHÔNG push shaders/mats, KHÔNG recompile mỗi rebuild
+// → trị tụt fps kéo cổng); (2) fenceWallTextures → tạo TexturedSurface (headless, push shaders); (3) màu phẳng.
+function fenceMaterialFor(
+  fence: FenceConfig,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): THREE.Material {
+  const isWall = fence.type === 'wall'
+  const wantTex = isWall && (fence.wallTex ?? 'plain') !== 'plain'
+  if (wantTex && opts.fenceWallMat) return opts.fenceWallMat // cached — caller sở hữu dispose
+  if (wantTex && opts.fenceWallTextures) {
+    const surf = new TexturedSurface({
+      maps: opts.fenceWallTextures,
+      tileSizeMeters: opts.fenceWallTileMeters ?? 2,
+    })
+    ctx.shaders.push(surf)
+    return surf.getMaterial()
+  }
+  const flat = new THREE.MeshStandardMaterial(
+    isWall ? { color: 0x9a9690, roughness: 0.95 } : { color: 0x8a6a45, roughness: 0.85 }
+  )
+  ctx.mats.push(flat)
+  return flat
 }
