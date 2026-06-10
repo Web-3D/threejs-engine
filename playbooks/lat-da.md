@@ -85,6 +85,17 @@ Loại zone chốt LÚC TẠO theo tab giữa [Mảng add | Path đá | Sân g�
 - **2026-06-08 — TÁI CẤU TRÚC:** NgQuan "bỏ path vào bên trong G1 — mỗi zone z1 có 2 loại Surface|Path". Bỏ
   `stoneFields[]`/tab Path → path = **zoneKind trong GroundLayer**. Edit route qua `applySite` (như surface zone),
   KHÔNG live-tune riêng. `_rebuildGroundLayersLive` xử path-mesh (dispose qua StoneScatter). Chờ verify :3002.
+- **2026-06-11 — code1 (click-focus 3D) cho SÂN GẠCH + TƯỜNG CONG:** `BrickPaving`/`CurvedBrickWall` `getMesh()` trả
+  **THREE.Group** (viên = InstancedMesh con, `userData.groundLayerIdx` nằm trên Group) → raycast trúng viên con KHÔNG
+  có idx → `_tryClickLayer`/`_tryStartLayerDrag` (đọc `h.object.userData.groundLayerIdx` TRỰC TIẾP) bỏ sót → click
+  không focus tab + Move không grab. Fix: helper **`_layerObjOf(o)`** walk-up parent tới ancestor mang `groundLayerIdx`
+  (dừng ở siteGroup) + **`_pickLayer(hits)`** trả hit gần nhất resolve được. `_layerDrag.mesh` nới `THREE.Mesh`→`Object3D`
+  (Group hợp lệ, chỉ dùng `.position`). Path/surface không đổi (idx ngay trên mesh). **GỘP LUÔN (cùng gốc Group≠Mesh):**
+  (a) `_rebuildGroundLayersLive` bỏ lọc `instanceof Mesh` (lọc theo `groundLayerIdx !== undefined`) + tách helper
+  **`_disposeLayerField(o)`** dispose path/paving/wall QUA field (`stonePath ?? brickPaving ?? curvedWall`, rút khỏi
+  siteShaders) → hết **nhân-đôi lúc kéo slider terrain/zone**; (b) `_layerMeshByIdx` trả `Object3D` (bỏ lọc Mesh) →
+  `_tunePathRotLive` rotate-LIVE chạy cho paving/wall (Group có rotation.y). Bỏ import `StoneScatter` (hết dùng). Gate
+  tsc 0 + eslint 0.
 
 ## 6. Liên hệ
 
