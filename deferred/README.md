@@ -63,7 +63,8 @@ deferred/
 | [shape-group-system.md](systems/shape-group-system.md) | **WANTED 2026-06-05** — gộp nhóm nhiều khối shape + kéo cả nhóm 1 lần (selection + multi-move, snap bbox union) | NgQuan yêu cầu build; chốt group bền vs ad-hoc khi bắt tay |
 | [terrain-gaea-heightmap.md](systems/terrain-gaea-heightmap.md) | Cắm output Gaea (heightmap erosion km-scale) vào `heightAt` qua term `heightmapSample` | Cần environment LỚN (city/ecosystem) — KHÔNG cho lô archviz (sai scale, phá live-edit) |
 | [character-terrain-follow.md](systems/character-terrain-follow.md) | **2026-06-08** — nhân vật đi-trên-đất-không-lún trên nền `heightAt` (single-source). Thiếu: surface-resolver khối-chồng + normal/slope + collision tường | Có character-controller thật (đừng pivot game sớm) |
-| [non-bo-rockery-builder.md](systems/non-bo-rockery-builder.md) | **⏸️ 2026-06-08** — Phase A (module RockCluster) + Phase B (tab Rock + texture) ĐÃ BUILD nhưng **"chưa ra dáng"** (procedural merged-icosa = bướu tròn đều, thiếu vách/tầng/khe) → DEFERRED. Code giữ | Muốn non bộ ĐẸP → đổi paradigm hình đá: (1) asset sculpt HOẶC (2′) generator đá-dẹt-xếp-tầng+erosion HOẶC (3) SDF overhang. KHÔNG polish thêm bản cũ |
+| [non-bo-rockery-builder.md](systems/non-bo-rockery-builder.md) | **🗑️ 2026-06-10** — procedural "chưa ra dáng" (bướu tròn đều, giới hạn paradigm) → **CODE ĐÃ XÓA** (RockCluster + tab Rock + state/render; git history giữ). File giữ làm LESSON | Hồi sinh non bộ = **Houdini bake** ([houdini-bake-accents](systems/houdini-bake-accents.md)) — KHÔNG quay lại procedural |
+| [houdini-bake-accents.md](systems/houdini-bake-accents.md) | **📐 2026-06-09** — bản đồ chèn Houdini-bake cho ĐIỂM NHẤN: ①đá non bộ/vách thác ②viên đá variants (layout giữ TS) ③heightmap erosion gò hero ④bonsai; live-editable/animated GIỮ TSL. ⚠️ Apprentice khóa export → học/prototype; bake thật = Indie hoặc vòng Blender | Bắt tay vách đá thác (waterfall Phase B) / hồi sinh non bộ / Factory Phase E |
 
 ---
 

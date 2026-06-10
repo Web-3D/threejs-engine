@@ -1,5 +1,9 @@
 # Hòn non bộ builder (rockery / miniature karst landscape)
 
+> **🗑️ CODE ĐÃ XÓA (2026-06-10):** NgQuan duyệt "không khả thi thì xóa" — module `RockCluster` + tab Rock +
+> state/render/GUI/Lab integration GỠ HẾT khỏi code (khôi phục qua git history nếu cần). Đường đi tiếp DUY NHẤT
+> = **Houdini bake** → [[houdini-bake-accents]]. Phần dưới giữ làm LESSON (vì sao procedural fail + 3 đường cũ).
+>
 > **Trạng thái:** ⏸️ DEFERRED LẠI (2026-06-08, sau Phase A+B) — Phase A (module `RockCluster`) + Phase B (tab Rock
 > ráp archplan + texture đá) ĐÃ BUILD & commit (code giữ, dùng được), NHƯNG NgQuan đánh giá **"nhìn chưa ra dáng"**
 > → DỪNG ở đây, KHÔNG làm tiếp Phase C. **Vì sao chưa ra dáng (giả thuyết):** procedural merged-icosa displaced +
@@ -107,3 +111,4 @@ Triplanar texture đá · rêu bám khe theo slope · vệt nước mép đá ·
 ## Liên hệ
 - Lõi: `threejs-modules/site/terrain.ts` · `components/WaterSurface` · `components/GrassBlades` · `stoneAt`.
 - Pivot: [[character-terrain-follow]] (cùng giới hạn height-field 1-Y). Asset đá → Factory pipeline (DCC tools).
+- **Đường (1) asset-sculpt nay = Houdini bake** → kế hoạch + license + pipeline: [[houdini-bake-accents]] (2026-06-09).

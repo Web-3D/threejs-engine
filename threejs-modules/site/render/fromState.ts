@@ -22,7 +22,6 @@ import { float, floor, fract, min, mix, smoothstep, uv, vec3 } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
-import { RockCluster } from '../../components/RockCluster'
 import { StoneScatter } from '../../components/StoneScatter'
 import { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
@@ -37,7 +36,6 @@ import {
   isGroundTexKey,
   makeStonePathParams,
   renderPuddles,
-  renderRocks,
   renderWaters,
   type SiteState,
   type TerrainConfig,
@@ -61,7 +59,6 @@ export interface SiteHandle {
   grass: GrassBlades | null
   waters: WaterSurface[] // 1 WaterSurface mỗi hồ ĐANG BẬT (cùng thứ tự renderWaters(site)) — caller zip cfg↔surf
   ground: THREE.Mesh | null // mesh nền base (G0) — caller giữ ref để LIVE-rebuild geometry-only (terrain drag, né water-RTT)
-  rocks: RockCluster[] // 🪨 1 RockCluster mỗi cụm đá ĐANG BẬT (cùng thứ tự renderRocks(site)) — caller zip cfg↔cluster
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -107,7 +104,7 @@ export function renderSiteState(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts = {}
 ): SiteHandle {
-  if (!site.show) return { grass: null, waters: [], ground: null, rocks: [] }
+  if (!site.show) return { grass: null, waters: [], ground: null }
   const ground = buildGround(site, ctx, opts)
   buildGroundLayers(site, ctx, opts) // TẦNG surface chồng (xếp lớp 3D) lên base
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
@@ -123,48 +120,7 @@ export function renderSiteState(
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
   if (!opts.skipFence)
     for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
-  const rocks = buildRocks(site, ctx, opts) // 🪨 hòn non bộ — cụm đá mỏm bám gò
-  return { grass, waters, ground, rocks }
-}
-
-// 🪨 Dựng cụm đá non bộ ĐANG BẬT. Mỗi cụm = 1 RockCluster (CPU displace+merge, 1 draw). Đặt tại offset trong lô,
-// BÁM cao-độ gò ở tâm cụm (đứng trên mound — sample heightAt 1 điểm). mesh.userData.rockIdx → editor live-rebuild
-// rock-only (né water-RTT). push ctx.shaders (cluster.dispose lo geometry+material). Trả ref cho caller live-tune
-// (pos/màu) + zip cfg theo ĐÚNG thứ tự renderRocks. EXPORT để editor rebuild rock-only khi kéo slider structural.
-export function buildRocks(
-  site: SiteState,
-  ctx: SiteRenderCtx,
-  opts: SiteRenderOpts
-): RockCluster[] {
-  const list = renderRocks(site)
-  if (list.length === 0) return []
-  const topY = site.groundThick / 1000
-  const t = site.terrain
-  const hf = t && t.enabled ? buildHeightField(site, opts, t) : null // bám gò ở tâm cụm
-  return list.map((r, idx) => {
-    const x = r.offsetX / 1000
-    const z = r.offsetZ / 1000
-    // 🪨 Texture đá triplanar = DÙNG CHUNG cache border hồ (opts.borderMatByKey, caller-owned). Chưa load / 'none'
-    // → undefined → RockCluster rơi về material NỘI BỘ flat (color). Material ngoài KHÔNG dispose ở lõi (caller lo).
-    const mat = r.material !== 'none' ? opts.borderMatByKey?.[r.material] : undefined
-    const cluster = new RockCluster({
-      footprintRadius: r.footprintRadius / 1000,
-      height: r.height / 1000,
-      rockCount: r.rockCount,
-      craggy: r.craggy,
-      rockScale: r.rockScale,
-      detail: r.detail,
-      seed: r.seed,
-      color: r.color,
-      material: mat,
-    })
-    const mesh = cluster.getMesh()
-    mesh.position.set(x, topY + (hf ? heightAt(hf, x, z) : 0), z)
-    mesh.userData.rockIdx = idx
-    ctx.group.add(mesh)
-    ctx.shaders.push(cluster) // dispose tự lo (cluster.dispose → geometry+material+gỡ parent)
-    return cluster
-  })
+  return { grass, waters, ground }
 }
 
 // Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật. (Path-zone rải

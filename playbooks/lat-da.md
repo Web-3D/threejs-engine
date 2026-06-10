@@ -83,6 +83,6 @@ trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi
 
 ## 6. Liên hệ
 
-- Module: `components/StoneScatter` (README Poisson/props) · cặp `RockCluster`/`WaterSurface`/`GrassBlades`.
+- Module: `components/StoneScatter` (README Poisson/props) · cặp `WaterSurface`/`GrassBlades`.
 - Đích xa Voronoi: `deferred/geometry/voronoi-applications.md` · nền sân `deferred/systems/garden-ground-patches.md`.
 - Hệ G-level/zone: `playbooks/ground.md` · pattern live-rebuild zone: `_rebuildGroundLayersLive` (distilled `archplan-rebuild-dirty-check`).

@@ -4,8 +4,8 @@
  *            (Bridson 2007 → blue-noise): cách đều ngẫu nhiên, KHÔNG chạm nhau (luôn chừa khe cỏ).
  *            N phiến = 1 InstancedMesh = 1 DRAW. Lối đi lát đá / bãi đá dăm sân vườn. v1 stepping-stone.
  * LIÊN HỆ  — Ráp bởi site-kit/archplan (Phase B): khuôn = zone G-level vô hình trên nền cỏ G0; đá BÁM
- *            cao-độ gò (heightAt) khi terrain bật. Material đá dùng chung cache triplanar với border hồ/
- *            RockCluster. Voronoi ghép-khít (crazy-paving) = đích xa, KHÔNG ở v1 (đá xếp THƯA, có khe).
+ *            cao-độ gò (heightAt) khi terrain bật. Material đá dùng chung cache triplanar với border hồ.
+ *            Voronoi ghép-khít (crazy-paving) = đích xa, KHÔNG ở v1 (đá xếp THƯA, có khe).
  *
  * GIỚI HẠN: đá tròn/ellipse RỜI (không ghép khít). bounding-circle mỗi phiến ≤ rMax ⇒ minDist=2·rMax+gap
  *           đảm bảo không chạm (kể cả ellipse xoay). Phiến gần mép có thể nhô ra khỏi khuôn ≤ rMax (chấp nhận).
