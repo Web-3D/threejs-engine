@@ -1,0 +1,30 @@
+{
+  "name": "Waterfall",
+  "category": "components",
+  "version": "1.1.0",
+  "description": "Thác nước stylized (tier B) theo công thức industry RiME/Season — Phase A2: MÀN nước sheet cong (z=arc·√t, parabol nước rời mép, normals tính lại cho fresnel) + TEXTURE VỆT NƯỚC (Canvas 2D sinh 1 lần, 0 asset) cuộn xuống 3 LỚP khác tốc độ (lớp B đảo U, lớp C làm UV-distort) + fresnel + KHÚC XẠ màn (viewportSharedTexture méo theo vệt) + lip/foot band + posterize (look RiME) + vertex wobble mép; chân thác = MIST bốc lên + SPLASH bắn ngang (InstancedMesh quad + SpriteNodeMaterial billboard, đốm tròn mềm — KHÔNG THREE.Points: WebGPU point luôn 1px). KHÔNG reflector/RTT. Gốc group = TÂM MÉP TRÊN (lip) → đặt vào mép đổ. 3 draw call. Tune trong Lab tab 🌊 Thác (archplan).",
+  "tags": ["water", "waterfall", "thác", "nước", "foam", "mist", "splash", "fresnel", "refraction", "tsl", "canvas-texture", "site-kit", "garden", "environment", "tier-b"],
+  "complexity": "medium",
+  "performance-cost": "low",
+  "performance": "Sheet 16×40 segs = 1280 tri, 1 draw. Mist + splash = 2 draw instanced (cap 600 hạt/hệ; 2 tri/hạt billboard). 0 RTT (khúc xạ = sample backbuffer, +0 pass); texture vệt = CanvasTexture 256×512 sinh 1 LẦN build-time. 0 per-frame alloc — setTime chỉ ghi uniform; MỌI setter (flow/streak/tint/refract/posterize/wobble/opacity/màu/mist) = uniform-cheap, KHÔNG recompile. Sheet transparent depthWrite=true (như WaterSurface) — Phase B: vẽ SAU mặt hồ (renderOrder).",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "width",         "type": "number",                    "default": "2",        "description": "Bề ngang màn nước (m, X)" },
+    { "name": "height",        "type": "number",                    "default": "1.8",      "description": "Chiều cao rơi từ mép tới chân (m)" },
+    { "name": "arc",           "type": "number",                    "default": "0.28",     "description": "Dạt ra trước ở chân (m) — z = arc·√t; 0 = màn phẳng dán tường" },
+    { "name": "flow",          "type": "number",                    "default": "1.1",      "description": "Tốc độ chảy (cuộn sọc xuống) — live setFlow" },
+    { "name": "streakScale",   "type": "number",                    "default": "3",        "description": "Tần sọc foam ngang màn (sọc/m) — live setStreakScale" },
+    { "name": "waterColor",    "type": "THREE.ColorRepresentation", "default": "0xbfdde8", "description": "Màu nước nền (vùng trong/mỏng) — live setWaterColor" },
+    { "name": "foamColor",     "type": "THREE.ColorRepresentation", "default": "0xf2fbff", "description": "Màu foam trắng (sọc + chân + mist) — live setFoamColor" },
+    { "name": "opacity",       "type": "number",                    "default": "0.95",     "description": "Alpha tổng màn nước 0..1 (màn gần đặc — 'trong' đến từ khúc xạ) — live setOpacity" },
+    { "name": "tint",          "type": "number",                    "default": "0.35",     "description": "Ám màu nước lên ảnh khúc xạ 0..1 — live setTint" },
+    { "name": "refract",       "type": "number",                    "default": "0.6",      "description": "Cường độ méo khúc xạ theo vệt 0..2 — live setRefract" },
+    { "name": "posterize",     "type": "number",                    "default": "0",        "description": "Banding stylized 0..1 (1 = 4 nấc kiểu RiME) — live setPosterize" },
+    { "name": "wobble",        "type": "number",                    "default": "0.035",    "description": "Biên độ lắc mép dưới (m) — live setWobble" },
+    { "name": "mistCount",     "type": "number",                    "default": "220",      "description": "Số hạt mist (cap 600; splash = 45% số đó; 0 = tắt cả hai)" },
+    { "name": "mistIntensity", "type": "number",                    "default": "0.7",      "description": "Cường độ mist/splash 0..1 — live setMistIntensity" }
+  ],
+  "usage": "const wf = new Waterfall({ width: 2, height: 1.8 }); scene.add(wf.getGroup()); /* mỗi frame */ wf.setTime(elapsed)"
+}

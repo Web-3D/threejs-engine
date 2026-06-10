@@ -133,7 +133,7 @@
 | `GrassBlades` | Cỏ 3D nhú lên (tier B) — InstancedMesh lá geometry, accent-only+cap; cặp `GrassGround` tier A. **Rebuild tăng dần (preview-first)** — B0: lá phẳng + 1 màu | vegetation, instanced, grass, cỏ, tier-b, site-kit | ✅ in-use |
 | `WaterSurface` | Hồ nước vừa PHẢN CHIẾU vừa NHÌN XUYÊN ĐÁY (tier C) — `reflector` + `viewportSharedTexture` (refraction) fresnel-blend + form tự do (kéo đỉnh). Đáy basin + khoét lỗ nền ở site-kit. ⚠ +1 render pass/RTT | water, hồ, reflection, refraction, mirror, site-kit, tier-c | ✅ in-use |
 | `SkyGradient` | Bầu trời gradient ngày↔đêm WebGPU qua `scene.backgroundNode` (KHÔNG mesh → luôn phủ, né "quả cầu từ ngoài") — zenith→horizon lerp theo độ-cao sun + quầng nắng/hoàng hôn. `setSun(dir)`→day-factor để mờ đèn fill/env | sky, environment, day-night, gradient, backgroundnode, tsl, webgpu | ✅ in-use |
-| `RockCluster` | Đá mỏm procedural (non bộ Phase A) — N viên Icosahedron displace craggy (value-noise 3D fbm) xếp MỎM đế-rộng→đỉnh-hẹp, merge 1 mesh flatShading faceted, deterministic theo seed. Terrain làm ĐẾ, đây làm ĐÁ. KHÔNG overhang/hang thật | rock, đá, non-bộ, procedural, icosahedron, noise, merged, site-kit | 🆕 module |
+| `Waterfall` | Thác nước stylized (tier B, công thức RiME/Season — A2) — MÀN sheet cong (z=arc·√t) + TEXTURE VỆT (canvas 1 lần) cuộn 3 LỚP khác tốc + fresnel + KHÚC XẠ màn + lip/foot band + posterize + wobble; chân = MIST bốc + SPLASH ngang (sprite mềm). 0 RTT/0 asset, 3 draw; tune ở Lab tab 🌊 Thác | water, waterfall, thác, foam, mist, splash, fresnel, refraction, tsl, site-kit, tier-b | 🆕 module |
 | `StoneScatter` | Rải mảng đá DẸT tròn/ellipse trong khuôn vô hình bằng Poisson-disk (Bridson → blue-noise): cách đều ngẫu nhiên, KHÔNG chạm nhau (chừa khe cỏ). N phiến = 1 InstancedMesh = 1 draw, deterministic theo seed. Lối đi lát đá sân vườn (stepping-stone v1). Voronoi ghép-khít = đích xa | stone, đá, scatter, poisson, stepping-stone, paving, instanced, site-kit | 🆕 module |
 
 ---
@@ -194,7 +194,7 @@
 | Mục | Mô tả |
 | --- | ----- |
 | `site/state` | `SiteState` (nền + cỏ-3D + **hồ nước** + rào) + factory + `GROUND_PRESETS` + `coverageStats` (建ぺい率 đối chiếu nhà/lô) + `parseSite`. Lô mặc định 15×14.4m |
-| `site/render/fromState` | `renderSiteState(site, ctx)` headless — nền slab (có hồ → ExtrudeGeometry **khoét lỗ** `Shape.holes`) + **cỏ 3D** (`GrassBlades`, mọi nền, 2 màu mặt trong/ngoài) + **hồ nước** (`WaterSurface` reflect+refract + **basin** đáy vách+sàn theo polygon; cỏ né footprint) + hàng rào (merged) + **🪨 non bộ** (`buildRocks` → `RockCluster` đa-cụm, bám cao-độ gò ở tâm) |
+| `site/render/fromState` | `renderSiteState(site, ctx)` headless — nền slab (có hồ → ExtrudeGeometry **khoét lỗ** `Shape.holes`) + **cỏ 3D** (`GrassBlades`, mọi nền, 2 màu mặt trong/ngoài) + **hồ nước** (`WaterSurface` reflect+refract + **basin** đáy vách+sàn theo polygon; cỏ né footprint) + hàng rào (merged) |
 
 - **Phases:** G0 nền+rào ✅ · **G1a cỏ 3D `GrassBlades` — rebuild tăng dần (B0 lá phẳng+1 màu ✅; B1 thon → B9 đổ-bóng ⏳)** · G1b cây/bụi ⏳ · G2 đá triplanar ⏳ · **G3 hồ nước (tier C) `WaterSurface` — ✅ reflect+refract (nhìn xuyên đáy) + basin + form tự do; wired site/render + GUI archplan**.
 - **Coupling:** caller bật `site.show` → đôn building lên `groundThick` (foundation nằm trên mặt nền).
