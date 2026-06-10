@@ -245,6 +245,9 @@ export interface GroundMixParams {
   margin: number // mép trộn 4 ô
   farOn: number // trộn xa dual-scale
   farRange: number // m — khoảng cách đạt trộn đầy
+  // 🖌 Mask VẼ TAY (stage 3): base64 raw RGBA 128² (PaintMask), kênh R/G/B/A = slot 0..3, uv = bbox zone.
+  // undefined = chưa vẽ (mask chỉ fbm). Ghi khi BUÔNG nét cọ (~87KB/zone — chỉ zone có vẽ mới mang).
+  paint?: string
 }
 
 // Factory mix nền — defaults khớp uniform defaults PhotoGroundMix (cùng bộ số Lab đã chốt).
@@ -297,6 +300,8 @@ function parseGroundMix(raw: unknown): GroundMixParams {
     margin: f(o.margin, d.margin, 0.02, 0.49),
     farOn: f(o.farOn, d.farOn, 0, 1),
     farRange: f(o.farRange, d.farRange, 4, 60),
+    // 🖌 mask vẽ tay — chuỗi base64 giữ nguyên (PaintMask.loadBase64 tự bỏ qua nếu hỏng/lệch size)
+    paint: typeof o.paint === 'string' && o.paint !== '' ? o.paint : undefined,
   }
 }
 
@@ -335,6 +340,9 @@ export interface SiteState {
   lotDepth: number // mm — chiều sâu lô (trục Z)
   groundThick: number // mm — dày slab nền 10..100 (1..10cm); ≥10 để mặt trên cao hơn grid → hết z-fight
   ground: GroundMaterialKey
+  // 🎨 MIX NỀN cho G0 base (PhotoGroundMix — như GroundLayer.mix nhưng cho NỀN LÔ; NgQuan 2026-06-10
+  // "bên phần G0 hiện ko có phần mix"). undefined = texture/màu đơn `ground` như cũ (backward-compat).
+  groundMix?: GroundMixParams
   groundLayers?: GroundLayer[] // TẦNG surface chồng lên base (xếp lớp 3D). Optional → backward-compat (cũ = [])
   groundLevels?: number // SỐ G-level tường minh (G1..GN) — cho phép tầng RỖNG (chưa có zone/cut). Optional →
   // migrate = max(level layers) (backward-compat). Editor enumerate tab theo số này; render vẫn derive từ layers.
@@ -831,6 +839,7 @@ export function parseSite(raw: unknown): SiteState {
     lotDepth: num(o.lotDepth, d.lotDepth),
     groundThick: clamp(num(o.groundThick, d.groundThick), GROUND_THICK_MIN, GROUND_THICK_MAX),
     ground: parseGround(o.ground, d.ground),
+    groundMix: o.groundMix !== undefined ? parseGroundMix(o.groundMix) : undefined, // 🎨 mix G0 — thiếu = đơn
     groundLayers,
     groundLevels: parseGroundLevels(o.groundLevels, groundLayers),
     terrain: parseTerrain(o.terrain, d.terrain ?? defaultTerrain()),

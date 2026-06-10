@@ -55,7 +55,7 @@
 | `AsphaltGround`      | Procedural asphalt/tar road — world-space XZ, no UV, worn patches + aggregate + LOD | asphalt, tar, road, ground, world-space, no-uv | ✅ in-use |
 | `GrassGround`        | Procedural bãi cỏ/lawn — world-space XZ, no UV, patch tươi/khô + clump + blade speckle + LOD | grass, lawn, cỏ, ground, world-space, no-uv | ✅ in-use |
 | `PhotoGround`        | Ground PBR từ texture ẢNH (scan) — map/normal/rough/ao, lát world-XZ ÷ tileSizeMeters (độc lập geometry UV); caller bơm texture | ground, pbr, texture, world-space, tiling | ✅ in-use |
-| `PhotoGroundMix`     | Ground MIX ≤5 texture (port bộ nền Lab → TSL): bombing per-ô (xoay/offset/jitter, normal xoay đúng) + 4 lớp mask fbm + height-lerp (lum proxy) + mask vẽ tay (kênh RGBA, uv zone-local) + macro/úa + trộn xa dual-scale; rough/ao của base. Plan: Factory/deferred/ground-mix-port-plan.md | ground, mix, anti-tiling, bombing, splat, height-lerp, tsl | 🆕 stage 1 (chưa wire site-kit) |
+| `PhotoGroundMix`     | Ground MIX ≤5 texture (port bộ nền Lab → TSL): bombing per-ô (xoay/offset/jitter, normal xoay đúng) + 4 lớp mask fbm + height-lerp (lum proxy) + mask VẼ TAY (kênh RGBA, uv zone-local; rect + bias/seed per-slot = uniform LIVE qua setPaintRect/setSlot — kéo slider/dời zone KHÔNG recompile) + macro/úa + trộn xa dual-scale; rough/ao của base. Plan: Factory/deferred/ground-mix-port-plan.md | ground, mix, anti-tiling, bombing, splat, height-lerp, paint, tsl | ✅ in-use (site-kit: zone surface + G0 base) |
 | `TexturedSurface`    | Surface PBR **triplanar** (world-space) — đúng MỌI hướng (sàn/tường/đáy hồ/mái nghiêng), normal whiteout, no UV; "unified" cho slab/fence/roof | surface, pbr, texture, triplanar, any-orientation | ✅ in-use |
 
 ---

@@ -12,15 +12,19 @@
  *            Plan port: Factory/deferred/ground-mix-port-plan.md. Consumer: site-kit zone surface (stage 2).
  *
  * GIỚI HẠN stage 1: roughness/ao lấy của BASE cho cả mặt (không per-lớp — đỡ 8 tap); far chỉ pha albedo.
+ * STAGE 3 (2026-06-10): bias/seed per-slot + rect paint = UNIFORM live (setSlot/setPaintRect — kéo Ngưỡng/
+ * dời zone KHÔNG recompile; chỉ đổi TEXTURE/số slot mới dựng lại graph). paint = 1 DataTexture caller đưa vào.
  * CHI PHÍ: nặng nhất hệ ground (4 tap × A+N × 5 bộ + far) — chỉ zone bật mix mới trả.
  *
- * CÁCH DÙNG: const g = new PhotoGroundMix({ base: maps, slots: [{ maps, bias: 0.5, seed: 13.7 }] })
+ * CÁCH DÙNG: const g = new PhotoGroundMix({ base: maps, slots: [{ maps, bias: 0.5, seed: 13.7 }], paint: tex })
+ *            g.setPaintRect(ox, oz, sx, sz) // rect world-XZ của zone (uv mask = (world − o)/s)
  *            mesh.material = g.getMaterial() // texture caller load (PROTOCOL) + set wrap Repeat
  * DISPOSE: dispose() — NodeMaterial; KHÔNG dispose texture (caller sở hữu, như PhotoGround).
  */
 
 import type * as THREE from 'three'
 import type Node from 'three/src/nodes/core/Node.js'
+import type UniformNode from 'three/src/nodes/core/UniformNode.js'
 import type { ShaderNodeObject } from 'three/tsl'
 import {
   cameraPosition,
@@ -44,9 +48,11 @@ import { MeshStandardNodeMaterial } from 'three/webgpu'
 import type { PhotoGroundMaps } from '../PhotoGround'
 
 type TSLNode = ShaderNodeObject<Node>
+type UniformNum = ShaderNodeObject<UniformNode<number>> // uniform(number) — set .value live
 type AN = { A: TSLNode; N: TSLNode } // albedo (vec3) + normal tangent-space (vec3, z = blue)
 
-/** 1 SLOT lớp trộn: bộ map + ngưỡng mask + seed fbm riêng (loang khác chỗ giữa các slot). */
+/** 1 SLOT lớp trộn: bộ map + ngưỡng mask + seed fbm riêng (loang khác chỗ giữa các slot).
+ *  bias/seed = giá trị ĐẦU — sau đó chỉnh live qua setSlot(i, bias, seed), không dựng lại. */
 export interface MixSlot {
   maps: PhotoGroundMaps
   bias: number // ngưỡng mask 0..1 (cao = ít xuất hiện)
@@ -56,8 +62,9 @@ export interface MixSlot {
 export interface PhotoGroundMixOptions {
   base: PhotoGroundMaps
   slots?: MixSlot[] // ≤ 4 (kênh paint R/G/B/A)
-  /** Mask VẼ TAY (stage 3): DataTexture RGBA, kênh i = slot i; uv zone-local từ world-XZ. */
-  paint?: { tex: THREE.Texture; originX: number; originZ: number; sizeX: number; sizeZ: number }
+  /** Mask VẼ TAY (stage 3): DataTexture RGBA, kênh i = slot i; uv zone-local = (worldXZ − paintO)/paintS —
+   *  rect qua 4 uniform (setPaintRect) → zone dời/resize KHÔNG dựng lại graph. */
+  paint?: THREE.Texture
   tileSizeMeters?: number // default 2 (PROTOCOL kho)
 }
 
@@ -84,10 +91,20 @@ export class PhotoGroundMix {
     farOn: uniform(0.6),
     farRange: uniform(16),
     normalScale: uniform(1),
+    paintOX: uniform(0), // rect world-XZ của mask vẽ (setPaintRect) — origin
+    paintOZ: uniform(0),
+    paintSX: uniform(1), // size (m) — clamp ≥1e-6 trong setter (né chia 0)
+    paintSZ: uniform(1),
   }
+
+  // Uniform PER-SLOT (stage 3): kéo Ngưỡng = setSlot → đổi .value, KHÔNG dựng lại material (hết khựng recompile).
+  private readonly slotU: { bias: UniformNum; seed: UniformNum }[]
 
   constructor(opts: PhotoGroundMixOptions) {
     this.u.invTile.value = 1 / Math.max(0.01, opts.tileSizeMeters ?? 2)
+    this.slotU = (opts.slots ?? [])
+      .slice(0, 4)
+      .map((s) => ({ bias: uniform(s.bias), seed: uniform(s.seed) }))
     this.material = this._build(opts)
   }
 
@@ -147,24 +164,24 @@ export class PhotoGroundMix {
 
   // Mask 1 lớp: fbm world (seed riêng) + CHÊNH luminance(lớp − màu tích lũy)·heightK đẩy vào TRƯỚC smoothstep
   // (height-lerp proxy — biên bám cấu trúc vật liệu), rồi MAX với kênh vẽ tay (chủ đích thắng loang).
-  private _layerMask(slot: MixSlot, A: TSLNode, col: TSLNode, wxz: TSLNode, pv: TSLNode): TSLNode {
-    const fb = mx_fractal_noise_float(vec3(wxz.mul(this.u.maskScale), slot.seed))
+  // bias/seed = uniform per-slot (stage 3) — chỉnh live, không vào graph constant.
+  private _layerMask(i: number, A: TSLNode, col: TSLNode, wxz: TSLNode, pv: TSLNode): TSLNode {
+    const su = this.slotU[i]
+    const fb = mx_fractal_noise_float(vec3(wxz.mul(this.u.maskScale), su.seed))
       .mul(0.5)
       .add(0.5) as TSLNode
     const raw = fb.add(luminance(A).sub(luminance(col)).mul(this.u.heightK)) as TSLNode
-    const bias = float(slot.bias) as TSLNode
-    const m = smoothstep(bias.sub(this.u.maskSoft), bias.add(this.u.maskSoft), raw) as TSLNode
+    const m = smoothstep(su.bias.sub(this.u.maskSoft), su.bias.add(this.u.maskSoft), raw) as TSLNode
     return max(m, pv) as TSLNode
   }
 
-  // Kênh vẽ tay của slot i — không có paint → 0 (mask chỉ fbm).
+  // Kênh vẽ tay của slot i — không có paint tex → 0 (mask chỉ fbm). Rect zone = uniform → setPaintRect live.
   private _paintCh(opts: PhotoGroundMixOptions, i: number): TSLNode {
-    const p = opts.paint
-    if (!p) return float(0) as TSLNode
+    if (!opts.paint) return float(0) as TSLNode
     const uvP = positionWorld.xz
-      .sub(vec2(p.originX, p.originZ))
-      .div(vec2(Math.max(1e-6, p.sizeX), Math.max(1e-6, p.sizeZ))) as TSLNode
-    return texture(p.tex, uvP)[CH[i]] as TSLNode
+      .sub(vec2(this.u.paintOX, this.u.paintOZ))
+      .div(vec2(this.u.paintSX, this.u.paintSZ)) as TSLNode
+    return texture(opts.paint, uvP)[CH[i]] as TSLNode
   }
 
   // Ráp graph: base → 4 lớp → macro/úa → colorNode; normal blend → world (T=+X B=+Z N=+Y như PhotoGround)
@@ -185,7 +202,7 @@ export class PhotoGroundMix {
     const slots = (opts.slots ?? []).slice(0, 4)
     slots.forEach((slot, i) => {
       const L = this._setAN(slot.maps, uvw, far)
-      const m = this._layerMask(slot, L.A, col, wxz, this._paintCh(opts, i))
+      const m = this._layerMask(i, L.A, col, wxz, this._paintCh(opts, i))
       col = mix(col, L.A, m) as TSLNode
       nrm = mix(nrm, L.N, m) as TSLNode
     })
@@ -218,6 +235,23 @@ export class PhotoGroundMix {
    *  maskSoft/heightK/farOn/farRange/normalScale) — khớp slider mixer board. */
   set(name: keyof PhotoGroundMix['u'], v: number): void {
     if (!this.isDisposed) this.u[name].value = v
+  }
+
+  /** Bias/seed live của slot i (uniform — KHÔNG recompile; đổi texture/số slot mới dựng lại graph). */
+  setSlot(i: number, bias: number, seed: number): void {
+    const su = this.slotU[i]
+    if (!su || this.isDisposed) return
+    su.bias.value = bias
+    su.seed.value = seed
+  }
+
+  /** Rect world-XZ của mask vẽ (origin + size m) — uniform live, gọi lại mỗi khi zone dời/resize. */
+  setPaintRect(ox: number, oz: number, sx: number, sz: number): void {
+    if (this.isDisposed) return
+    this.u.paintOX.value = ox
+    this.u.paintOZ.value = oz
+    this.u.paintSX.value = Math.max(1e-6, sx)
+    this.u.paintSZ.value = Math.max(1e-6, sz)
   }
 
   setTileSizeMeters(v: number): void {

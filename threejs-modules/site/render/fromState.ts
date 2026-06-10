@@ -80,6 +80,9 @@ export interface SiteRenderOpts {
   // 🎨 Material MIX per-zone (PhotoGroundMix — layer.mix bật): caller (editor) tạo + CACHE theo zone, lõi
   // KHÔNG push/dispose. null = chưa sẵn (texture đang load) → fallback texture đơn layer.material như cũ.
   groundMixMat?: (layer: GroundLayer) => THREE.Material | null
+  // 🎨 Material MIX cho G0 BASE (site.groundMix bật) — cùng giao kèo groundMixMat (caller cache/dispose,
+  // null = chưa sẵn → fallback groundMaterial texture đơn).
+  groundBaseMixMat?: () => THREE.Material | null
   // 🪨 Material RÀO/VIỀN hồ (TexturedSurface triplanar) theo borderMaterial key. Caller CACHE 1 lần/key (lab-
   // lifetime, KHÔNG push/dispose ở lõi). Thiếu/'none' → rào dùng màu phẳng borderColor. Triplanar áp được cả đá/gỗ.
   borderMatByKey?: Partial<Record<string, THREE.Material>>
@@ -672,11 +675,20 @@ export function grassBuildSig(site: SiteState, exclude: GrassExcludeRect[]): str
 // cỏ" ở mép hồ (cut-face của slab cũ cao = groundThick, càng dày càng lộ). Vách basin tự chạy rim→đáy.
 function buildGround(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): THREE.Mesh {
   const geo = groundGeometry(site, opts)
-  const mesh = new THREE.Mesh(geo, groundMaterial(site, ctx, opts))
+  // 🎨 G0 bật MIX → PhotoGroundMix từ editor; null (texture đang load / tắt) → groundMaterial texture đơn như cũ
+  const mesh = new THREE.Mesh(geo, baseMixMaterial(site, opts) ?? groundMaterial(site, ctx, opts))
+  mesh.userData.isBaseGround = true // 🖌 editor raycast cọ vẽ mask mix G0 (target 'base')
   mesh.receiveShadow = true
   ctx.geos.push(geo)
   ctx.group.add(mesh)
   return mesh
+}
+
+// 🎨 Material mix G0 base (site.groundMix bật) — caller-owned (editor cache/dispose, lõi KHÔNG push).
+// Tách hàm riêng: groundMaterial vốn đã chạm trần complexity 10.
+function baseMixMaterial(site: SiteState, opts: SiteRenderOpts): THREE.Material | null {
+  if (!site.groundMix) return null
+  return opts.groundBaseMixMat?.() ?? null
 }
 
 // Geometry nền base (G0) TÁCH RIÊNG → caller LIVE-rebuild geometry-only (terrain drag): swap mesh.geometry,
