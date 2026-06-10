@@ -19,9 +19,14 @@ updated: 2026-06-08
 
 ## 1. Kết quả
 
-Mô hình **G0 cỏ → tạo G-level (G1+) → mỗi zone add chọn LOẠI**: ① **Surface** (lớp vật liệu cũ) hoặc ②
-**Path** (rải đá tròn/ellipse Poisson, không chạm, chừa khe). **Path KHÔNG còn tab riêng** — là 1 zoneKind bên
-trong hệ G-level. Khuôn vô hình = CHÍNH rect zone. **Đích xa** = Voronoi crazy-paving (`geometry/voronoi-applications.md`).
+Mô hình **G0 cỏ → tạo G-level (G1+) → mỗi zone add chọn LOẠI**: ① **Surface** (lớp vật liệu cũ) · ②
+**Path** (rải đá tròn/ellipse Poisson, không chạm, chừa khe) · ③ **🧱 Sân gạch** (`zoneKind: 'paving'`,
+2026-06-10 — `BrickPaving` viên block bond đều so le + DECAY rụng/lún/lệch/sạm; instance B1/B2…; consumer
+op #3 gridOnSurface+copyToPoints; PHẲNG v1 — không Bám gò, khác path) · ④ **🧱 Tường cong**
+(`zoneKind: 'wall'`, cùng ngày — `CurvedBrickWall` cung tròn R + góc quét 360°=vòng kín, viên nhô 2 mặt,
+TÂM cung = Pos X/Z, length/width zone KHÔNG dùng, KHÔNG flatten terrain dưới nó; instance W1/W2…).
+Loại zone chốt LÚC TẠO theo tab giữa [Mảng add | Path đá | Sân gạch | Tường cong | Khoét cut].
+**Đích xa** = Voronoi crazy-paving (`geometry/voronoi-applications.md`).
 
 ## 2. Recipe dựng
 

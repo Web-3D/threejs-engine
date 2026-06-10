@@ -192,6 +192,40 @@ export interface StonePathParams {
   material: BorderMaterialKey // 'none' = màu phẳng; texture đá (triplanar) → DÙNG CHUNG cache border hồ
 }
 
+// 🧱 SÂN GẠCH bond đều (paving-zone) — tham số BrickPaving cho zone zoneKind='paving' (consumer op #3,
+// 2026-06-10 "làm 2 cái đầu"). KHUÔN = CHÍNH rect zone (length×width, offsetX/Z) như path. Viên block
+// chữ nhật so le chừa khe + DECAY tuổi sân. Material texture DÙNG CHUNG cache đá border hồ (triplanar).
+export interface PavingParams {
+  brickL: number // mm — DÀI viên dọc hướng bond (50..500). Block sân chuẩn 200×100
+  brickW: number // mm — RỘNG viên (50..500)
+  brickH: number // mm — DÀY viên nhô trên nền (20..150)
+  joint: number // mm — khe vữa/cát giữa viên (2..50)
+  bond: number // 0..1 — so le hàng lẻ ×viên (0.5 = running bond · 0 = stack thẳng)
+  seed: number // 0..9999 — deterministic: đổi viên rụng/lệch decay (tái lập)
+  decay: number // 0..1 — tuổi sân: mất viên + lún + xoay lệch + sạm
+  rot: number // độ — XOAY khung quanh Y (-180..180) — transform mesh như path
+  color: number // màu viên khi material='none'
+  material: BorderMaterialKey // 'none' = màu phẳng; texture (triplanar) → DÙNG CHUNG cache border hồ
+}
+
+// 🧱 TƯỜNG CONG (wall-zone) — tham số CurvedBrickWall cho zone zoneKind='wall' (gap 3 mạch tường gạch,
+// 2026-06-10 "tiếp tường cong"). Cung tròn TÂM = offsetX/Z zone, KHÔNG dùng length/width (R + góc quét
+// thay thế). Viên nhô 2 mặt + decay. Material texture viên DÙNG CHUNG cache đá border hồ (triplanar).
+export interface WallCurveParams {
+  radius: number // mm — bán kính cung đường TIM tường (300..20000)
+  sweep: number // độ — góc quét cung (10..360; 360 = vòng kín)
+  height: number // mm — cao tường (100..3000)
+  thickness: number // mm — dày thân vữa (40..400)
+  brickL: number // mm — dài mặt lộ viên (50..500; UK 215)
+  brickH: number // mm — cao mặt lộ viên (20..200; UK 65)
+  joint: number // mm — mạch vữa (2..50)
+  seed: number // 0..9999 — deterministic: đổi viên rụng/lệch decay
+  decay: number // 0..1 — tuổi tường: mất viên + thụt + xoay lệch + sạm
+  rot: number // độ — XOAY cung quanh Y (-180..180) — transform mesh như path
+  color: number // màu viên khi material='none'
+  material: BorderMaterialKey // 'none' = màu phẳng; texture viên (triplanar) → DÙNG CHUNG cache border hồ
+}
+
 // TẦNG SURFACE chồng (nghệ thuật xếp lớp 3D): mỗi layer = 1 lớp vật liệu phủ kín lô, dày RIÊNG, xếp CHỒNG
 // lên base ground (+ các layer trước). Top layer che layer dưới; KHOÉT lỗ 1 layer → lớp dưới lộ ra (carve =
 // phase sau — chừa chỗ `holes?` để thêm). Đơn giản: material + thickness. lotShape (đã carve lỗ hồ) dùng chung.
@@ -213,10 +247,16 @@ export interface GroundLayer {
   // gò G0 nếu drape). Optional → undefined (zone không có gò riêng). Cấu hình = cùng TerrainConfig với G0.
   terrain?: TerrainConfig
   // 🪨 LOẠI zone (chỉ op='add'): 'surface' (mặc định) = lớp vật liệu phủ; 'path' = rải đá StoneScatter trong rect
-  // zone (Poisson, không chạm). Optional → 'surface' (backward-compat). op='cut' bỏ qua field này.
-  zoneKind?: 'surface' | 'path'
+  // zone (Poisson, không chạm); 'paving' = 🧱 sân gạch bond đều BrickPaving (viên block so le + decay);
+  // 'wall' = 🧱 TƯỜNG CONG CurvedBrickWall (cung tròn, viên 2 mặt + decay).
+  // Optional → 'surface' (backward-compat). op='cut' bỏ qua field này.
+  zoneKind?: 'surface' | 'path' | 'paving' | 'wall'
   // 🪨 Tham số rải đá khi zoneKind='path'. Khung = CHÍNH rect zone (length×width, offsetX/Z). Optional → makeStonePathParams.
   path?: StonePathParams
+  // 🧱 Tham số sân gạch khi zoneKind='paving'. Khung = CHÍNH rect zone. Optional → makePavingParams.
+  paving?: PavingParams
+  // 🧱 Tham số tường cong khi zoneKind='wall'. TÂM cung = offsetX/Z (length/width KHÔNG dùng). Optional → makeWallCurveParams.
+  wall?: WallCurveParams
   // 🎨 MIX NỀN (PhotoGroundMix TSL — port bộ nền Lab thay texture đơn, NgQuan 2026-06-10). Optional →
   // undefined = zone texture đơn `material` như cũ (backward-compat). Plan: Factory/deferred/ground-mix-port-plan.md.
   mix?: GroundMixParams
@@ -493,6 +533,42 @@ export function makeStonePathParams(): StonePathParams {
   }
 }
 
+// 🧱 Factory tham số sân gạch cho paving-zone (zoneKind='paving'). Block sân chuẩn 200×100×60, khe 8mm,
+// running bond. seed NGẪU NHIÊN lúc tạo (mỗi sân khác viên rụng) — lưu lại nên save/load tái lập.
+export function makePavingParams(): PavingParams {
+  return {
+    brickL: 200, // block sân chuẩn 200×100
+    brickW: 100,
+    brickH: 60, // dày 6cm
+    joint: 8, // khe 8mm
+    bond: 0.5, // running bond
+    seed: Math.floor(Math.random() * 1000),
+    decay: 0, // sân mới tinh — kéo slider để cũ đi
+    rot: 0,
+    color: 0x9a6a52, // block đất nung
+    material: 'none', // mặc định màu phẳng; texture triplanar dùng chung cache đá border hồ
+  }
+}
+
+// 🧱 Factory tham số tường cong cho wall-zone (zoneKind='wall'). Cung R2m quét 120°, cao 1m, viên UK.
+// seed NGẪU NHIÊN lúc tạo (mỗi tường khác viên rụng) — lưu lại nên save/load tái lập.
+export function makeWallCurveParams(): WallCurveParams {
+  return {
+    radius: 2000, // R 2m
+    sweep: 120, // cung 1/3 vòng
+    height: 1000, // cao 1m — tường vườn
+    thickness: 100, // dày 10cm
+    brickL: 215, // viên UK (khớp InstancedBrickWall)
+    brickH: 65,
+    joint: 10,
+    seed: Math.floor(Math.random() * 1000),
+    decay: 0, // tường mới — kéo slider để cũ đi
+    rot: 0,
+    color: 0xb86042, // terra cotta
+    material: 'none',
+  }
+}
+
 // Factory 1 hồ theo kind. enabled mặc định false (instance thêm-mới); chỉ pool đầu của defaultWaters bật.
 export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
   return {
@@ -577,8 +653,8 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       level: clamp(num(o.level, idx + 1), 1, 99), // thiếu level (design cũ) → migrate idx+1 (giữ tách G1/G2…)
       drape: o.drape === true, // 🏔️ zone bám gò (lưới displaced) — thiếu = false (slab phẳng pad)
       terrain: o.terrain !== undefined ? parseTerrain(o.terrain, defaultTerrain()) : undefined, // 🏔️ gò riêng zone
-      zoneKind: o.zoneKind === 'path' ? 'path' : 'surface', // 🪨 LOẠI zone — thiếu = 'surface' (backward-compat)
-      path: o.path !== undefined ? parseStonePathParams(o.path) : undefined, // 🪨 tham số rải đá khi zoneKind='path'
+      zoneKind: parseZoneKind(o.zoneKind), // 🪨🧱 LOẠI zone — thiếu = 'surface' (backward-compat)
+      ...parseZoneKindParams(o), // 🪨🧱 path/paving/wall — tách hàm (callback chạm trần complexity)
       mix: o.mix !== undefined ? parseGroundMix(o.mix) : undefined, // 🎨 mix nền — thiếu = texture đơn
     }
   })
@@ -596,6 +672,60 @@ function parseStonePathParams(raw: unknown): StonePathParams {
     gap: clamp(num(r.gap, d.gap), 0, 1000),
     thickness: clamp(num(r.thickness, d.thickness), 10, 300),
     seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
+    rot: clamp(num(r.rot, d.rot), -180, 180),
+    color: parseColor(r.color, d.color),
+    material: parseBorderMat(r.material),
+  }
+}
+
+// 🪨🧱 LOẠI zone từ raw — tách hàm (callback parseGroundLayers chạm trần complexity 10).
+function parseZoneKind(v: unknown): 'surface' | 'path' | 'paving' | 'wall' {
+  return v === 'path' || v === 'paving' || v === 'wall' ? v : 'surface'
+}
+
+// 🪨🧱 3 bộ tham số zone-kind optional (path/paving/wall) — tách khỏi callback parseGroundLayers (≤10).
+function parseZoneKindParams(
+  o: Partial<GroundLayer>
+): Pick<GroundLayer, 'path' | 'paving' | 'wall'> {
+  return {
+    path: o.path !== undefined ? parseStonePathParams(o.path) : undefined,
+    paving: o.paving !== undefined ? parsePavingParams(o.paving) : undefined,
+    wall: o.wall !== undefined ? parseWallCurveParams(o.wall) : undefined,
+  }
+}
+
+// 🧱 Tham số tường cong wall-zone — clamp khớp slider GUI. Thiếu → makeWallCurveParams default.
+function parseWallCurveParams(raw: unknown): WallCurveParams {
+  const r = (raw ?? {}) as Partial<WallCurveParams>
+  const d = makeWallCurveParams()
+  return {
+    radius: clamp(num(r.radius, d.radius), 300, 20000),
+    sweep: clamp(num(r.sweep, d.sweep), 10, 360),
+    height: clamp(num(r.height, d.height), 100, 3000),
+    thickness: clamp(num(r.thickness, d.thickness), 40, 400),
+    brickL: clamp(num(r.brickL, d.brickL), 50, 500),
+    brickH: clamp(num(r.brickH, d.brickH), 20, 200),
+    joint: clamp(num(r.joint, d.joint), 2, 50),
+    seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
+    decay: clamp(num(r.decay, d.decay), 0, 1),
+    rot: clamp(num(r.rot, d.rot), -180, 180),
+    color: parseColor(r.color, d.color),
+    material: parseBorderMat(r.material),
+  }
+}
+
+// 🧱 Tham số sân gạch paving-zone — clamp khớp slider GUI. Thiếu → makePavingParams default.
+function parsePavingParams(raw: unknown): PavingParams {
+  const r = (raw ?? {}) as Partial<PavingParams>
+  const d = makePavingParams()
+  return {
+    brickL: clamp(num(r.brickL, d.brickL), 50, 500),
+    brickW: clamp(num(r.brickW, d.brickW), 50, 500),
+    brickH: clamp(num(r.brickH, d.brickH), 20, 150),
+    joint: clamp(num(r.joint, d.joint), 2, 50),
+    bond: clamp(num(r.bond, d.bond), 0, 1),
+    seed: Math.round(clamp(num(r.seed, d.seed), 0, 9999)),
+    decay: clamp(num(r.decay, d.decay), 0, 1),
     rot: clamp(num(r.rot, d.rot), -180, 180),
     color: parseColor(r.color, d.color),
     material: parseBorderMat(r.material),
@@ -780,7 +910,7 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     distortion: clamp(num(r.distortion, d.distortion), 0, 2),
     detail: clamp(num(r.detail, d.detail), 0, 1.5),
     refract: clamp(num(r.refract, d.refract), 0, 2),
-    rippleScale: clamp(num(r.rippleScale, d.rippleScale), 0.5, 20),
+    rippleScale: clamp(num(r.rippleScale, d.rippleScale), 0.05, 20), // floor 0.05 — Wave size 24 (rs phân số = sóng to)
     depthY: clamp(num(r.depthY, d.depthY), 50, 3000),
     bottomColor: parseColor(r.bottomColor, d.bottomColor),
     tileColor2: parseColor(r.tileColor2, d.tileColor2),

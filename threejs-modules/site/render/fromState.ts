@@ -21,6 +21,8 @@ import type { ShaderNodeObject } from 'three/tsl'
 import { float, floor, fract, min, mix, smoothstep, uv, vec3 } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 
+import { BrickPaving } from '../../components/BrickPaving' // 🧱 sân gạch bond đều (paving-zone, consumer op #3)
+import { CurvedBrickWall } from '../../components/CurvedBrickWall' // 🧱 tường cong (wall-zone — op #1+#2+#3+#5)
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
 import { StoneScatter } from '../../components/StoneScatter'
 import { WaterSurface } from '../../components/WaterSurface'
@@ -35,7 +37,9 @@ import {
   type GroundLayer,
   type GroundMaterialKey,
   isGroundTexKey,
+  makePavingParams,
   makeStonePathParams,
+  makeWallCurveParams,
   renderPuddles,
   renderWaters,
   type SiteState,
@@ -142,7 +146,8 @@ export function siteGrassExclude(
   for (const w of renderPuddles(site)) exclude.push(waterRect(w)) // cỏ né cả vũng nước (không mọc xuyên mặt)
   // 🪨 cỏ né KHUÔN path (mọi path-zone): flat path đã trong zoneRects nhưng bám-gò (drape) thì KHÔNG → cần ở đây.
   for (const l of site.groundLayers ?? [])
-    if (l.op !== 'cut' && l.zoneKind === 'path') exclude.push(layerRect(l))
+    if (l.op !== 'cut' && (l.zoneKind === 'path' || l.zoneKind === 'paving'))
+      exclude.push(layerRect(l)) // 🧱 cỏ né cả sân gạch (paving) — không mọc xuyên viên
   return exclude
 }
 
@@ -1009,7 +1014,9 @@ function layerRect(layer: GroundLayer): MaskRect {
 // nhô để zone uốn theo (drapedLayerGeometry). cut = lỗ → bỏ.
 function zoneRects(site: SiteState): MaskRect[] {
   const rects: MaskRect[] = []
-  for (const l of site.groundLayers ?? []) if (l.op !== 'cut' && !l.drape) rects.push(layerRect(l))
+  // 🧱 wall = tường cong MỎNG (rect zone không phản ánh footprint) → KHÔNG flatten terrain dưới nó
+  for (const l of site.groundLayers ?? [])
+    if (l.op !== 'cut' && !l.drape && l.zoneKind !== 'wall') rects.push(layerRect(l))
   return rects
 }
 
@@ -1352,6 +1359,91 @@ function addStonePathMesh(
   ctx.shaders.push(field) // dispose tự lo (field.dispose → geometry+material+gỡ parent)
 }
 
+// 🧱 Zone LOẠI 'wall' (zoneKind='wall') = TƯỜNG CONG CurvedBrickWall thay lớp surface (op #1+#2+#3+#5).
+// TÂM cung = offsetX/Z; length/width zone KHÔNG dùng (R + góc quét thay). Chân tường y = baseY. PHẲNG v1.
+// userData.curvedWall = ref → live-rebuild dispose đúng. Texture viên DÙNG CHUNG cache đá border hồ.
+function addWallCurveMesh(
+  layer: GroundLayer,
+  idx: number,
+  baseY: number,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): void {
+  const p = layer.wall ?? makeWallCurveParams()
+  const mat = p.material !== 'none' ? opts.borderMatByKey?.[p.material] : undefined
+  const field = new CurvedBrickWall({
+    radius: p.radius / 1000,
+    sweepDeg: p.sweep,
+    height: p.height / 1000,
+    thickness: p.thickness / 1000,
+    brickL: p.brickL / 1000,
+    brickH: p.brickH / 1000,
+    joint: p.joint / 1000,
+    seed: p.seed,
+    decay: p.decay,
+    brickColor: p.color,
+    material: mat,
+  })
+  const mesh = field.getMesh()
+  mesh.position.set(layer.offsetX / 1000, baseY, layer.offsetZ / 1000)
+  mesh.rotation.y = (p.rot * Math.PI) / 180 // xoay cung quanh tâm (như path/paving)
+  mesh.userData.groundLayerIdx = idx // editor pick/Move/live-rebuild (như surface zone)
+  mesh.userData.curvedWall = field // ref → live-rebuild dispose qua field.dispose (né double-dispose)
+  ctx.group.add(mesh)
+  ctx.shaders.push(field) // dispose tự lo (geo + material nội bộ + gỡ parent)
+}
+
+// 🧱 Zone LOẠI 'paving' (zoneKind='paving') = sân gạch bond đều BrickPaving thay lớp surface (consumer op #3).
+// Khung = chính rect zone. Y = baseY (mặt G-level). PHẲNG v1 (sân gạch không bám gò — khác path).
+// userData.brickPaving = ref → live-rebuild dispose đúng. Texture viên DÙNG CHUNG cache đá border hồ.
+function addPavingMesh(
+  layer: GroundLayer,
+  idx: number,
+  baseY: number,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts
+): void {
+  const p = layer.paving ?? makePavingParams()
+  const mat = p.material !== 'none' ? opts.borderMatByKey?.[p.material] : undefined
+  const field = new BrickPaving({
+    frameW: layer.length / 1000,
+    frameD: layer.width / 1000,
+    brickL: p.brickL / 1000,
+    brickW: p.brickW / 1000,
+    brickH: p.brickH / 1000,
+    joint: p.joint / 1000,
+    bond: p.bond,
+    seed: p.seed,
+    decay: p.decay,
+    brickColor: p.color,
+    material: mat,
+  })
+  const mesh = field.getMesh()
+  mesh.position.set(layer.offsetX / 1000, baseY, layer.offsetZ / 1000)
+  mesh.rotation.y = (p.rot * Math.PI) / 180 // xoay cả khung quanh Y (như path)
+  mesh.userData.groundLayerIdx = idx // editor pick/Move/live-rebuild (như surface zone)
+  mesh.userData.brickPaving = field // ref → live-rebuild dispose qua field.dispose (né double-dispose)
+  ctx.group.add(mesh)
+  ctx.shaders.push(field) // dispose tự lo (geometry + material nội bộ + gỡ parent)
+}
+
+// 🪨🧱 Zone LOẠI viên rải/dựng (path/paving/wall) → builder riêng thay surface; true = đã xử lý.
+// Tách khỏi addZoneMesh (chạm trần complexity 10).
+function addKindZone(
+  layer: GroundLayer,
+  idx: number,
+  baseY: number,
+  ctx: SiteRenderCtx,
+  opts: SiteRenderOpts,
+  drape: DrapeCtx | null
+): boolean {
+  if (layer.zoneKind === 'path') addStonePathMesh(layer, idx, baseY, ctx, opts, drape)
+  else if (layer.zoneKind === 'paving') addPavingMesh(layer, idx, baseY, ctx, opts)
+  else if (layer.zoneKind === 'wall') addWallCurveMesh(layer, idx, baseY, ctx, opts)
+  else return false
+  return true
+}
+
 function addZoneMesh(
   layer: GroundLayer,
   idx: number,
@@ -1362,7 +1454,7 @@ function addZoneMesh(
   drape: DrapeCtx | null,
   clean: boolean
 ): void {
-  if (layer.zoneKind === 'path') return addStonePathMesh(layer, idx, baseY, ctx, opts, drape) // 🪨 rải đá thay surface
+  if (addKindZone(layer, idx, baseY, ctx, opts, drape)) return // 🪨🧱 path/paving/wall = builder viên riêng
   const surf = zoneSurfaces(layer, baseY, drape)
   let geo: THREE.BufferGeometry | null
   if (surf) {
@@ -1402,7 +1494,8 @@ function buildLevelZones(
   layers.forEach((layer, idx) => {
     if (layer.op === 'cut' || (layer.level ?? 1) !== lv) return
     addZoneMesh(layer, idx, baseY, [...water, ...cuts], ctx, opts, drape, clean)
-    if (layer.zoneKind !== 'path') maxTh = Math.max(maxTh, layer.thickness / 1000) // path = rải đá, không tính dày stacking
+    if (layer.zoneKind === 'surface' || layer.zoneKind === undefined)
+      maxTh = Math.max(maxTh, layer.thickness / 1000) // path/paving/wall = viên rải/dựng, không tính dày stacking
   })
   return baseY + maxTh
 }

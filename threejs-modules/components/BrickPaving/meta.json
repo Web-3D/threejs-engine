@@ -1,0 +1,29 @@
+{
+  "name": "BrickPaving",
+  "category": "components",
+  "version": "1.0.0",
+  "description": "Sân lát gạch BOND ĐỀU (running bond): nền vữa/cát mỏng + InstancedMesh viên block chữ nhật rải lưới so le chừa khe + DECAY tuổi sân (mất viên lộ nền + lún + xoay lệch + sạm màu). CONSUMER op #3: build trên kệ ops — gridOnSurface (stagger=bond) + copyToPoints (mutate tanU = xoay lệch viên) + mulberry32. Anh em InstancedBrickWall (tường đứng, cull lỗ) — đây là bản NẰM cho sân/lối đi. Deterministic theo seed. 1 sân = 2 draw.",
+  "tags": ["brick", "gạch", "paving", "sân", "running-bond", "decay", "instanced", "procedural", "site-kit", "garden", "op-3", "copy-to-points"],
+  "complexity": "low",
+  "performance-cost": "low",
+  "performance": "Build-time, KHÔNG per-frame. N viên = 1 InstancedMesh = 1 draw (+1 nền). Viên = box 12 tri; sân 4×3m viên 200×100 ≈ 580 viên ≈ 7k tri. Decay GIẢM viên (rụng). Đổi tham số = dựng lại component (rebuild nhanh — chỉ tính ma trận).",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three", "threejs-modules/ops/copy-to-points", "threejs-modules/ops/scatter"],
+  "props": [
+    { "name": "frameW",         "type": "number",                    "default": "4.0",      "description": "Bề ngang sân X (m)" },
+    { "name": "frameD",         "type": "number",                    "default": "3.0",      "description": "Chiều sâu sân Z (m)" },
+    { "name": "brickL",         "type": "number",                    "default": "0.2",      "description": "DÀI viên dọc X — hướng bond (m); block sân chuẩn 200×100" },
+    { "name": "brickW",         "type": "number",                    "default": "0.1",      "description": "RỘNG viên (m)" },
+    { "name": "brickH",         "type": "number",                    "default": "0.06",     "description": "DÀY viên nhô trên nền (m)" },
+    { "name": "joint",          "type": "number",                    "default": "0.008",    "description": "Khe vữa/cát giữa viên (m)" },
+    { "name": "bond",           "type": "number",                    "default": "0.5",      "description": "So le hàng lẻ ×viên: 0.5 = running bond · 0 = stack thẳng" },
+    { "name": "seed",           "type": "number",                    "default": "7",        "description": "Seed deterministic — đổi viên rụng/lệch decay (tái lập)" },
+    { "name": "decay",          "type": "number",                    "default": "0",        "description": "Tuổi sân 0..1: mất viên + lún + xoay lệch + sạm màu" },
+    { "name": "brickColor",     "type": "THREE.ColorRepresentation", "default": "0x9a6a52", "description": "Màu viên (instanceColor — material nội bộ trắng)" },
+    { "name": "jointColor",     "type": "THREE.ColorRepresentation", "default": "0xb5ab98", "description": "Màu NỀN lộ ở khe + chỗ mất viên (cát vữa)" },
+    { "name": "colorVariation", "type": "number",                    "default": "0.12",     "description": "Jitter sáng/tối từng viên 0..1" },
+    { "name": "material",       "type": "THREE.Material",            "default": "undefined", "description": "Material NGOÀI (caller-owned, vd TexturedSurface triplanar) — KHÔNG dispose ở module" }
+  ],
+  "usage": "const p = new BrickPaving({ frameW: 4, frameD: 3, decay: 0.3 }); scene.add(p.getMesh())"
+}

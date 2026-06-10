@@ -2,6 +2,7 @@
  * VỊ TRÍ   — threejs-modules/components/InstancedBrickWall/index.ts
  * VAI TRÒ  — Tường gạch GEOMETRY THẬT: nền vữa (box, hoặc custom KHOÉT lỗ cửa/sổ + reveal) +
  *             InstancedMesh hàng vạn viên gạch nhô running-bond chừa khe = mạch vữa lõm (bake không phẳng).
+ *             + DECAY tuổi tường (2026-06-10): mất viên lộ vữa + viên lệch/thụt + sạm — hash vị trí, tái lập.
  * LIÊN HỆ  — Dùng trong 01-Doraemon ArchPlanLab (material 'brick-3d'); thay/bổ sung BrickWall shader.
  *
  * Vì sao InstancedMesh (không phải box rời merge / Points sprite):
@@ -40,6 +41,47 @@ export interface InstancedBrickWallOptions {
   mortarColor?: THREE.ColorRepresentation // Default 0xc7c4be (xám vữa)
   colorVariation?: number // 0–1 — jitter sáng/tối từng viên (instanceColor). Default 0.12
   openings?: BrickOpening[] // lỗ cửa/sổ — cull gạch CHẠM lỗ (không dư ra) + KHOÉT XUYÊN nền vữa + reveal 4 mặt
+  // 🧱 DECAY tuổi tường 0..1: MẤT viên (lộ vữa) + viên lệch (xoay nhẹ + thụt vào nền) + sạm màu.
+  // Hash theo VỊ TRÍ viên (deterministic) — cùng tường cùng decay = cùng viên rụng. Default 0 = mới.
+  decay?: number
+  decaySeed?: number // đổi seed = đổi viên nào rụng/lệch (cùng seed cùng kết quả). Default 1
+}
+
+// Defaults tách 2 hàm nhỏ — eslint complexity đếm TỪNG `??` (gom hết trong constructor là vượt trần 10).
+function wallDims(o: InstancedBrickWallOptions): {
+  depth: number
+  brickL: number
+  brickH: number
+  protrude: number
+  joint: number
+} {
+  return {
+    depth: o.depth ?? 0.1,
+    brickL: o.brickL ?? 0.215,
+    brickH: o.brickH ?? 0.065,
+    protrude: o.brickProtrude ?? 0.012,
+    joint: o.joint ?? 0.01,
+  }
+}
+
+function wallLook(o: InstancedBrickWallOptions): {
+  bevel: number
+  color: THREE.Color
+  mortarColor: THREE.ColorRepresentation
+  variation: number
+  decay: number
+  decaySeed: number
+  openings: BrickOpening[]
+} {
+  return {
+    bevel: o.edgeBevel ?? 0.004,
+    color: new THREE.Color(o.brickColor ?? 0xb86042),
+    mortarColor: o.mortarColor ?? 0xc7c4be,
+    variation: o.colorVariation ?? 0.12,
+    decay: Math.min(1, Math.max(0, o.decay ?? 0)),
+    decaySeed: (o.decaySeed ?? 1) * 0.731, // trộn vào hash vị trí — đổi seed = đổi viên rụng
+    openings: o.openings ?? [],
+  }
 }
 
 export class InstancedBrickWall {
@@ -54,27 +96,28 @@ export class InstancedBrickWall {
   private isDisposed = false
 
   constructor(opts: InstancedBrickWallOptions) {
-    const depth = opts.depth ?? 0.1
-    const brickL = opts.brickL ?? 0.215
-    const brickH = opts.brickH ?? 0.065
-    const protrude = opts.brickProtrude ?? 0.012
-    const joint = opts.joint ?? 0.01
-    const variation = opts.colorVariation ?? 0.12
-
+    const d = wallDims(opts)
+    const lk = wallLook(opts)
     const group = new THREE.Group()
-    const openings = opts.openings ?? []
-    this._buildBacking(group, opts.width, opts.height, depth, opts.mortarColor ?? 0xc7c4be, openings)
-
-    const centers = this._layoutBricks(opts.width, opts.height, brickL, brickH, joint, openings)
-    this.brickCount = centers.length
+    this._buildBacking(group, opts.width, opts.height, d.depth, lk.mortarColor, lk.openings)
+    const centers = this._layoutBricks(
+      opts.width,
+      opts.height,
+      d.brickL,
+      d.brickH,
+      d.joint,
+      lk.openings
+    )
     this._buildBricks(group, centers, {
-      brickL,
-      brickH,
-      protrude,
-      frontZ: depth / 2,
-      bevel: opts.edgeBevel ?? 0.004,
-      color: new THREE.Color(opts.brickColor ?? 0xb86042),
-      variation,
+      brickL: d.brickL,
+      brickH: d.brickH,
+      protrude: d.protrude,
+      frontZ: d.depth / 2,
+      bevel: lk.bevel,
+      color: lk.color,
+      variation: lk.variation,
+      decay: lk.decay,
+      decaySeed: lk.decaySeed,
     })
     this.group = group
   }
@@ -140,6 +183,9 @@ export class InstancedBrickWall {
   // Nền vữa KHOÉT lỗ: front (+Z) + back (−Z) clip theo lỗ (band ngang, chừa khoảng X đặc) + 4 mặt
   // ngoài (cạnh tường) + reveal tunnel 4 mặt/lỗ (front→back, normal hướng vào lỗ). Dùng vật liệu vữa
   // (world-space) → không cần vertex color/uv, chỉ position + computeVertexNormals.
+  // NỢ pre-existing (lộ khi lint lại file 2026-06-10, KHÔNG thuộc đợt decay): 152 dòng / complexity 11
+  // — geometry đan tay, refactor đợt riêng (tách band/reveal), không sửa tiện tay kẻo vỡ lỗ ellip.
+  // eslint-disable-next-line max-lines-per-function, complexity
   private _buildBackingGeo(
     w: number,
     h: number,
@@ -199,7 +245,14 @@ export class InstancedBrickWall {
       let cT = x0
       for (const hl of ht) {
         if (hl.lB > cB + 1e-6 || hl.lT > cT + 1e-6) {
-          out.push({ lB: cB, lT: cT, rB: hl.lB, rT: hl.lT, jL: cB > x0 + 1e-6 || cT > x0 + 1e-6, jR: true })
+          out.push({
+            lB: cB,
+            lT: cT,
+            rB: hl.lB,
+            rT: hl.lT,
+            jL: cB > x0 + 1e-6 || cT > x0 + 1e-6,
+            jR: true,
+          })
         }
         cB = Math.max(cB, hl.rB)
         cT = Math.max(cT, hl.rT)
@@ -231,22 +284,62 @@ export class InstancedBrickWall {
       const yb = ys[k + 1]
       if (yb - ya < 1e-6) continue
       for (const tr of solidTraps(ya, yb)) {
-        quad([[tr.lB, ya, zf], [tr.rB, ya, zf], [tr.rT, yb, zf], [tr.lT, yb, zf]]) // front +Z
-        quad([[tr.rB, ya, zb], [tr.lB, ya, zb], [tr.lT, yb, zb], [tr.rT, yb, zb]]) // back −Z
+        quad([
+          [tr.lB, ya, zf],
+          [tr.rB, ya, zf],
+          [tr.rT, yb, zf],
+          [tr.lT, yb, zf],
+        ]) // front +Z
+        quad([
+          [tr.rB, ya, zb],
+          [tr.lB, ya, zb],
+          [tr.lT, yb, zb],
+          [tr.rT, yb, zb],
+        ]) // back −Z
         if (tr.jL) revealQuad(tr.lB, tr.lT, ya, yb, false) // cạnh trái = mép phải lỗ → −X
         if (tr.jR) revealQuad(tr.rB, tr.rT, ya, yb, true) // cạnh phải = mép trái lỗ → +X
       }
     }
     // 4 mặt ngoài (cạnh tường, không bị lỗ cắt vì lỗ nằm trong)
-    quad([[x0, 0, zb], [x0, 0, zf], [x0, h, zf], [x0, h, zb]]) // trái −X
-    quad([[x1, 0, zf], [x1, 0, zb], [x1, h, zb], [x1, h, zf]]) // phải +X
-    quad([[x0, h, zf], [x1, h, zf], [x1, h, zb], [x0, h, zb]]) // đỉnh +Y
-    quad([[x0, 0, zb], [x1, 0, zb], [x1, 0, zf], [x0, 0, zf]]) // đáy −Y
+    quad([
+      [x0, 0, zb],
+      [x0, 0, zf],
+      [x0, h, zf],
+      [x0, h, zb],
+    ]) // trái −X
+    quad([
+      [x1, 0, zf],
+      [x1, 0, zb],
+      [x1, h, zb],
+      [x1, h, zf],
+    ]) // phải +X
+    quad([
+      [x0, h, zf],
+      [x1, h, zf],
+      [x1, h, zb],
+      [x0, h, zb],
+    ]) // đỉnh +Y
+    quad([
+      [x0, 0, zb],
+      [x1, 0, zb],
+      [x1, 0, zf],
+      [x0, 0, zf],
+    ]) // đáy −Y
     // REVEAL bệ + đầu (head/sill) cho lỗ CHỮ NHẬT — trái/phải ĐÃ do band phát. Lỗ tròn: band lo hết.
     for (const o of ops) {
       if (o.round) continue
-      quad([[o.xa, o.y0, zb], [o.xa, o.y0, zf], [o.xb, o.y0, zf], [o.xb, o.y0, zb]]) // bệ +Y
-      quad([[o.xb, o.y1, zb], [o.xb, o.y1, zf], [o.xa, o.y1, zf], [o.xa, o.y1, zb]]) // đầu −Y
+      quad([
+        [o.xa, o.y0, zb],
+        [o.xa, o.y0, zf],
+        [o.xb, o.y0, zf],
+        [o.xb, o.y0, zb],
+      ]) // bệ +Y
+      quad([
+        [o.xb, o.y1, zb],
+        [o.xb, o.y1, zf],
+        [o.xa, o.y1, zf],
+        [o.xa, o.y1, zb],
+      ]) // đầu −Y
     }
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
@@ -266,7 +359,9 @@ export class InstancedBrickWall {
     const lite = vec3(base.r * 1.1, base.g * 1.09, base.b * 1.06) // mảng khô sáng
     mat.colorNode = mix(dark, lite, t)
     const grain = mx_fractal_noise_float(positionWorld.mul(float(42)), int(2), float(2), float(0.5))
-    mat.roughnessNode = float(0.95).add(grain.mul(float(0.12))).clamp(float(0.8), float(1))
+    mat.roughnessNode = float(0.95)
+      .add(grain.mul(float(0.12)))
+      .clamp(float(0.8), float(1))
     return mat
   }
 
@@ -316,7 +411,24 @@ export class InstancedBrickWall {
     return false
   }
 
-  // InstancedMesh: 1 box gạch, đặt tâm theo centers, nhô +Z; jitter màu từng viên (instanceColor).
+  // 🧱 Số phận DECAY 1 viên (hash vị trí + seed — deterministic, không cần mảng random): null = RỤNG
+  // (lộ vữa); còn lại = xoay lệch quanh Z ±4.6° + thụt vào nền ≤50% nhô + sạm ≤40% (đều × decay).
+  private _decayOf(
+    ct: { x: number; y: number },
+    decay: number,
+    sd: number
+  ): { tilt: number; sink: number; tone: number } | null {
+    if (decay <= 0) return { tilt: 0, sink: 0, tone: 1 }
+    if (this._hash(ct.x * 1.7 + sd, ct.y * 2.3 - sd) < decay * 0.3) return null
+    return {
+      tilt: (this._hash(ct.x + sd, ct.y) - 0.5) * decay * 0.16,
+      sink: this._hash(ct.x - sd, ct.y + sd) * decay * 0.5,
+      tone: 1 - this._hash(ct.x, ct.y - sd) * decay * 0.4,
+    }
+  }
+
+  // InstancedMesh: 1 box gạch, đặt tâm theo centers, nhô +Z; jitter màu từng viên (instanceColor);
+  // decay > 0 → viên rụng bị BỎ trước khi cấp buffer (count = viên thật), viên còn nhận tilt/sink/tone.
   private _buildBricks(
     group: THREE.Group,
     centers: { x: number; y: number }[],
@@ -328,23 +440,36 @@ export class InstancedBrickWall {
       bevel: number
       color: THREE.Color
       variation: number
+      decay: number
+      decaySeed: number
     }
   ): void {
-    if (centers.length === 0) return
+    const kept = centers
+      .map((ct) => ({ ct, d: this._decayOf(ct, p.decay, p.decaySeed) }))
+      .filter(
+        (
+          k
+        ): k is {
+          ct: { x: number; y: number }
+          d: NonNullable<ReturnType<InstancedBrickWall['_decayOf']>>
+        } => k.d !== null
+      )
+    this.brickCount = kept.length
+    if (kept.length === 0) return
     this.brickGeo = new THREE.BoxGeometry(p.brickL, p.brickH, p.protrude)
     if (p.bevel > 0) this._bevelFront(this.brickGeo, p.bevel, p.brickL, p.brickH)
     this._removeBackFace(this.brickGeo, p.protrude) // mặt sau giáp nền: -2 tris + hết z-fight
     this.brickMat = new THREE.MeshStandardMaterial({ roughness: 0.88 })
-    const inst = new THREE.InstancedMesh(this.brickGeo, this.brickMat, centers.length)
+    const inst = new THREE.InstancedMesh(this.brickGeo, this.brickMat, kept.length)
     inst.castShadow = true
     inst.receiveShadow = true
     const m = new THREE.Matrix4()
     const c = new THREE.Color()
-    const zc = p.frontZ + p.protrude / 2
-    centers.forEach((ct, i) => {
-      m.makeTranslation(ct.x, ct.y, zc)
+    kept.forEach(({ ct, d }, i) => {
+      const zc = p.frontZ + p.protrude * (0.5 - d.sink) // thụt vào nền theo decay
+      m.makeRotationZ(d.tilt).setPosition(ct.x, ct.y, zc)
       inst.setMatrixAt(i, m)
-      const j = 1 + (this._hash(ct.x, ct.y) - 0.5) * 2 * p.variation
+      const j = (1 + (this._hash(ct.x, ct.y) - 0.5) * 2 * p.variation) * d.tone
       inst.setColorAt(i, c.copy(p.color).multiplyScalar(j))
     })
     inst.instanceMatrix.needsUpdate = true

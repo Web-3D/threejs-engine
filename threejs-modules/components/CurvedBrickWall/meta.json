@@ -1,0 +1,30 @@
+{
+  "name": "CurvedBrickWall",
+  "category": "components",
+  "version": "1.0.0",
+  "description": "Tường gạch CONG đứng tự do (tường vườn/rào trang trí): thân vữa cong theo CUNG TRÒN (radius + góc quét, 360° = vòng kín) + viên gạch running-bond nhô CẢ 2 MẶT + DECAY tuổi (mất viên lộ vữa + thụt + xoay lệch + sạm). TỔ HỢP 4 OP kệ ops: #1 resampleCurve (spine đốt đều) → #2 sweepInto (thân cong liền) → #3 rowsOnSurface (viên đếm theo CHIỀU DÀI THẬT từng hàng — cỡ đều tuyệt đối trên cung) + copyToPoints → #5 mulberry32 (decay deterministic). Anh em InstancedBrickWall (tường thẳng, lỗ cửa cull) + BrickPaving (sân nằm). 3 draw.",
+  "tags": ["brick", "gạch", "wall", "tường cong", "curved", "arc", "running-bond", "decay", "instanced", "sweep", "site-kit", "op-1", "op-2", "op-3"],
+  "complexity": "low",
+  "performance-cost": "low",
+  "performance": "Build-time, KHÔNG per-frame. Thân sweep ~5°/đốt (360° = 72 đốt × 4 cạnh ≈ 600 tri). Viên = 2 InstancedMesh (2 mặt) × N box 12 tri; cung R2m 120° cao 1m viên UK ≈ 240 viên/mặt ≈ 5.8k tri tổng. Decay GIẢM viên. LƯU Ý: viên box THẲNG trên mặt cong — sagitta L²/8R (R<0.5m nên rút brickL kẻo hở dây cung).",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three", "threejs-modules/ops/resample", "threejs-modules/ops/sweep", "threejs-modules/ops/copy-to-points", "threejs-modules/ops/scatter"],
+  "props": [
+    { "name": "radius",         "type": "number",                    "default": "2.0",      "description": "Bán kính cung — đường TIM tường (m)" },
+    { "name": "sweepDeg",       "type": "number",                    "default": "120",      "description": "Góc quét cung (độ, 10..360; 360 = vòng tròn kín)" },
+    { "name": "height",         "type": "number",                    "default": "1.0",      "description": "Cao tường (m)" },
+    { "name": "thickness",      "type": "number",                    "default": "0.1",      "description": "Dày thân vữa (m)" },
+    { "name": "brickL",         "type": "number",                    "default": "0.215",    "description": "Dài mặt lộ viên (m) — UK chuẩn, khớp InstancedBrickWall" },
+    { "name": "brickH",         "type": "number",                    "default": "0.065",    "description": "Cao mặt lộ viên (m)" },
+    { "name": "protrude",       "type": "number",                    "default": "0.012",    "description": "Độ nhô viên khỏi thân = sâu mạch (m)" },
+    { "name": "joint",          "type": "number",                    "default": "0.01",     "description": "Mạch vữa (m)" },
+    { "name": "seed",           "type": "number",                    "default": "7",        "description": "Seed deterministic — đổi viên rụng/lệch decay (tái lập)" },
+    { "name": "decay",          "type": "number",                    "default": "0",        "description": "Tuổi tường 0..1: mất viên + thụt + xoay lệch + sạm (2 mặt trùng chỗ = vết tróc thật)" },
+    { "name": "brickColor",     "type": "THREE.ColorRepresentation", "default": "0xb86042", "description": "Màu viên (instanceColor — material nội bộ trắng)" },
+    { "name": "mortarColor",    "type": "THREE.ColorRepresentation", "default": "0xc7c4be", "description": "Màu thân vữa (lộ ở mạch + chỗ mất viên)" },
+    { "name": "colorVariation", "type": "number",                    "default": "0.12",     "description": "Jitter sáng/tối từng viên 0..1" },
+    { "name": "material",       "type": "THREE.Material",            "default": "undefined", "description": "Material NGOÀI cho viên (caller-owned, vd TexturedSurface triplanar) — KHÔNG dispose ở module" }
+  ],
+  "usage": "const w = new CurvedBrickWall({ radius: 2, sweepDeg: 120, decay: 0.3 }); scene.add(w.getMesh())"
+}

@@ -24,8 +24,9 @@ const wall = new InstancedBrickWall({
 })
 scene.add(wall.getGroup())
 
-// eslint-disable-next-line no-console
-console.log(`InstancedBrickWall: ${wall.getBrickCount()} viên, ${wall.getTriangleCount()} triangles`)
+console.log(
+  `InstancedBrickWall: ${wall.getBrickCount()} viên, ${wall.getTriangleCount()} triangles`
+)
 
 // Dọn dẹp khi cần
 export function cleanup(): void {
