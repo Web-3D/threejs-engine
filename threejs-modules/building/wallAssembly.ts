@@ -22,15 +22,15 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { type BrickOpening, InstancedBrickWall } from '../components/InstancedBrickWall'
 import { WoodSidingStrip } from '../components/WoodSidingStrip'
 import { WoodSidingWall } from '../components/WoodSidingWall'
-import { makePositionedWall, type PositionedOpening, type PositionedPanel } from './parts/WallSingle'
-import { WALL_COLORS } from './tokens'
+import { frameGeosLocal } from './parts/Joinery'
 import {
-  brickOptsOf,
-  DEFAULT_BRICK,
-  wallColor,
-  WallMaterialCache,
-  type WallMatInput,
-} from './wallMaterials'
+  makePositionedWall,
+  type PositionedOpening,
+  type PositionedPanel,
+} from './parts/WallSingle'
+import { WALL_COLORS } from './tokens'
+import type { WallMaterialCache } from './wallMaterials'
+import { brickOptsOf, DEFAULT_BRICK, wallColor, type WallMatInput } from './wallMaterials'
 
 // Lỗ + panel + spec tường — ĐƠN VỊ MÉT (caller convert mm→m nếu cần).
 export interface AsmOpening {
@@ -40,6 +40,7 @@ export interface AsmOpening {
   h: number
   yOffset: number
   round?: boolean
+  frame?: { w: number; out: number; color: number } // m — khung bao C1 (caller resolve style→spec); undefined = không khung
 }
 export interface AsmPanel {
   x: number
@@ -83,10 +84,36 @@ export interface WallAsmCtx {
 // Dựng 1 tường: dispatch theo material. brick-3d/wood-3d/wood-strip = geometry thật (add thẳng group);
 // còn lại = mesh phẳng + material cache → bake vào bucket để merge sau (mergeWalls).
 export function assembleWall(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
+  assembleFrames(place, spec, ctx) // khung opening TRƯỚC dispatch — mọi loại tường đều có khung
   if (spec.material === 'brick-3d') return assembleBrick3d(place, spec, ctx)
   if (spec.material === 'wood-3d') return assembleWood3d(place, spec, ctx)
   if (spec.material === 'wood-strip') return assembleWoodStrip(place, spec, ctx)
   assembleSurface(place, spec, ctx)
+}
+
+// KHUNG BAO opening (C1 Joinery): geos hệ local tường → transform theo place → đẩy THẲNG vào bucket
+// màu phẳng `n:color` (mergeWalls merge + dispose) — khung cùng màu toàn nhà gộp 1 draw, 0 lifecycle mới.
+function assembleFrames(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
+  const framed = spec.openings.filter((op) => op.frame)
+  if (framed.length === 0) return
+  const mtx = new THREE.Matrix4()
+    .makeRotationY((place.rotationY * Math.PI) / 180)
+    .setPosition(place.xOffset, place.yBase, place.zOffset)
+  for (const op of framed) {
+    const fr = op.frame
+    if (!fr) continue
+    const key = ctx.cache.matKey('none', fr.color, 1, DEFAULT_BRICK)
+    ctx.cache.ensureMat(key, 'none', fr.color, 1, DEFAULT_BRICK)
+    let bucket = ctx.buckets.get(key)
+    if (!bucket) {
+      bucket = []
+      ctx.buckets.set(key, bucket)
+    }
+    for (const g of frameGeosLocal(op, place.w, place.depth, fr)) {
+      g.applyMatrix4(mtx)
+      bucket.push(g) // bucket SỞ HỮU — mergeWalls dispose sau merge
+    }
+  }
 }
 
 function assembleSurface(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
@@ -109,7 +136,13 @@ function assembleSurface(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): voi
     yBase: place.yBase,
     rotationY: place.rotationY,
     openings,
-    wallMaterial: ctx.cache.ensureMat(key, spec.material, wallColor(spec), spec.matScale, brickOptsOf(spec)),
+    wallMaterial: ctx.cache.ensureMat(
+      key,
+      spec.material,
+      wallColor(spec),
+      spec.matScale,
+      brickOptsOf(spec)
+    ),
     panels: resolvePanels(spec, ctx.cache),
   })
   bakeToBucket(ctx.buckets, key, result.meshes)

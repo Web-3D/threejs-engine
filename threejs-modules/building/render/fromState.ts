@@ -38,13 +38,15 @@ import {
   makePositionedSlab,
   makePositionedStairs,
 } from '../parts/Structure'
-import type {
-  BalconyState,
-  BuildingState,
-  SegmentState,
-  ShapeInstance,
-  StructureState,
-  WallConfig,
+import {
+  type BalconyState,
+  type BuildingState,
+  FRAME_DEFAULTS,
+  type OpeningState,
+  type SegmentState,
+  type ShapeInstance,
+  type StructureState,
+  type WallConfig,
 } from '../state'
 import { type PartResult } from '../tokens'
 import {
@@ -96,6 +98,18 @@ export interface BuildRenderCtx {
   groundDrops?: GroundDrop[]
 }
 
+// C1 khung opening: resolve style→spec mét (field thiếu → FRAME_DEFAULTS); none/undefined = không khung.
+function frameOf(op: OpeningState): { w: number; out: number; color: number } | undefined {
+  const st = op.frameStyle
+  if (!st || st === 'none') return undefined
+  const d = FRAME_DEFAULTS[st]
+  return {
+    w: (op.frameW ?? d.w) / 1000,
+    out: (op.frameOut ?? d.out) / 1000,
+    color: op.frameColor ?? d.color,
+  }
+}
+
 // SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
 function segToSpec(seg: SegmentState): WallSpec {
   return {
@@ -116,6 +130,7 @@ function segToSpec(seg: SegmentState): WallSpec {
       h: op.h / 1000,
       yOffset: op.yOffset / 1000,
       round: op.round,
+      frame: frameOf(op), // C1 khung bao — undefined = không khung
     })),
     panels: seg.panels.map((p) => ({
       x: p.x / 1000,

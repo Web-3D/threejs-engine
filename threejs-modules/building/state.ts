@@ -24,7 +24,19 @@ export interface OpeningState {
   w: number // mm
   h: number // mm
   yOffset: number // mm từ sàn
+  // ── KHUNG BAO quanh lỗ (C1 joinery 2026-06-10) — OPTIONAL parse-tolerant: save cũ thiếu field = none ──
+  frameStyle?: 'none' | 'wood' | 'alu' | 'steel'
+  frameW?: number // mm — bản khung (face width). undefined → FRAME_DEFAULTS theo style
+  frameOut?: number // mm — khung nhô khỏi mặt tường MỖI BÊN. undefined → default style
+  frameColor?: number // hex. undefined → default style
 }
+
+// Default khung theo style — GUI fill khi user chọn style; render fallback khi save thiếu field.
+export const FRAME_DEFAULTS = {
+  wood: { w: 90, out: 20, color: 0x8a6a48 },
+  alu: { w: 50, out: 10, color: 0x3a3d42 },
+  steel: { w: 60, out: 15, color: 0x2e3236 },
+} as const
 
 // WallMaterial định nghĩa trong building-kit (engine chung editor + headless); re-export để file
 // archplan khác (gui/sections.ts…) import từ đây như cũ. 'brick-3d'/'wood-3d'/'wood-strip' = geometry THẬT.

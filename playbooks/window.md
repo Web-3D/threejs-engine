@@ -5,13 +5,15 @@ status: building
 tier: —
 modules:
   - threejs-modules/building/parts/WallSingle   # _solidTraps / _emitHoleBands — carve gốc
+  - threejs-modules/building/parts/Joinery      # C1 khung bao quanh lỗ (frame)
   - threejs-modules/components/InstancedBrickWall
   - threejs-modules/components/WoodSidingStrip
   - threejs-modules/components/WoodSidingWall
 issues:
   - KI-001
   - KI-003
-updated: 2026-06-04
+  - KI-004
+updated: 2026-06-10
 ---
 
 # Playbook — Cửa sổ / lỗ mở (opening)
@@ -69,6 +71,7 @@ band [ya,yb] × trapezoid đặc (lB,lT,rB,rT) = phần TƯỜNG; phần thiếu
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-10` — **C1 KHUNG BAO (joinery phase 1 — kế hoạch khung+cánh theo khảo sát BIM)**: `parts/Joinery.ts` mới, khung per-opening optional (`frameStyle` wood/alu/steel + `frameW/frameOut/frameColor` — parse tolerant, KHÔNG bump schema). Chữ nhật = box butt-joint (đầu ngang GỐI 2 má; bậu dưới chỉ khi lỗ treo >2cm — cửa đi/bán nguyệt không bậu); tròn/bán nguyệt = **sweep op #2** profile fw×fd dọc spine ellipse **resample op #1** nở fw/2 (vòng kín caps-off; chạm sàn → cung vòm caps-on, chân chạm y=0). Wire `assembleFrames` TRƯỚC dispatch material — mọi loại tường (cả brick-3d/gỗ instanced) đều có khung; geo đẩy thẳng bucket `n:color` mergeWalls = khung cùng màu toàn nhà 1 draw, 0 lifecycle mới. ⚠️ Bài học: geo tay vào bucket chung PHẢI đệm **uv zeros** (đồng bộ attribute với BoxGeometry — thiếu uv là mergeGeometries trả null, mất hình lặng lẽ họ KI-004). GUI: dropdown Khung + Bản/Nhô (live) + màu per-opening.
 - base — bands + `_solidTraps` + reveal (front/back/jamb) cho lỗ chữ nhật.
 - `2026-05-30` — lỗ tròn: lấy mẫu Y cho cung; `2026-06-04` (e51f569) clip **bán nguyệt** + fix unclamped ellipse.
 - `7b171a6` — `WoodSidingStrip` giữ mảng tường dưới/trên lỗ (guard `!b||!t`).

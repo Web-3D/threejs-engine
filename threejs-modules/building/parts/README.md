@@ -11,6 +11,7 @@ Import alias: `@world/building/parts/[Name]`.
 | File | Exports chính | Vai trò |
 |------|---------------|---------|
 | [Structure.ts](Structure.ts) | makePositionedFoundation, makePositionedSlab, makePositionedColumn | Móng (concrete / wood-deck lưới cột / **stone-pillar** = 3 mesh material RIÊNG: **deck** gỗ ngang [+ **lan can 4 mặt** dài/rộng/cao chỉnh-được] · **khung-dưới** [2 tầng 8 xà toả tâm + 8 trụ tròn + 8 chống xiên @45° uốn-cong, số đo ĐỘC LẬP deck, texture riêng] · **trụ đá** tròn giữa), sàn bê tông/**gỗ-planks-tex**, cột tròn/vuông. Slab + móng concrete nhận `outline` đa giác (shape **round** N-gon — móng tự nở wallDepth/2+overhang TB; wood-deck/stone-pillar giữ rect/radial) |
+| [Joinery.ts](Joinery.ts) | frameGeosLocal | C1 KHUNG BAO quanh lỗ opening (hệ local tường): chữ nhật = box butt-joint (má + đầu ngang + bậu-khi-treo-cao); tròn/bán nguyệt = sweep op #2 dọc spine ellipse resample op #1. Caller (wallAssembly.assembleFrames) bake bucket màu phẳng — geo TỰ đệm uv zeros đồng bộ attribute merge |
 | [Wall.ts](Wall.ts) | makeWall | 4 mặt tường cơ bản (toàn bộ building box) |
 | [WallDetail.ts](WallDetail.ts) | makeWallReveal, makeWallPanel | Tường groove + curtain wall grid |
 | [WallSingle.ts](WallSingle.ts) | makePositionedWall, makeWallSingleSet, presetLShape/UShape | Tường đơn 1 mặt + preset L/U-shape |
