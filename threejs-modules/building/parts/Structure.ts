@@ -146,6 +146,7 @@ export interface PositionedFoundationOpts {
   worldZ: number
   rotY: number // degrees
   openings?: SlabOpening[] // lỗ khoét móng — shape LỒNG (#3): khoét móng shape lớn để nhét shape nhỏ (né z-fight)
+  outline?: [number, number][] // m, local centered (tim-tường) — shape 'round': móng đa giác thay bbox; chỉ nhánh concrete dùng (deck/stone-pillar giữ rect/radial)
   foundType?: 'concrete' | 'wood-deck' | 'stone-pillar' // bê tông khối | sàn gỗ Nhật (lưới cột) | sàn gỗ trên 1 trụ đá giữa + váy
   deckPostSpacing?: number // m? KHÔNG — mm (đồng bộ state); #10 khoảng cách lưới cột deck (default 1500mm)
   deckPostInset?: number // mm — cột chống (wood-deck) LÙI vào từ mép deck mỗi cạnh → cột không sát mép sàn. Default 50
@@ -184,6 +185,7 @@ export interface PositionedSlabOpts {
   worldZ: number
   rotY: number
   openings?: SlabOpening[] // lỗ khoét trên sàn (cầu thang, ban công, ống nước...)
+  outline?: [number, number][] // m, local centered (tim-tường) — shape 'round': slab đa giác N-gon thay bbox chữ nhật
   material?: THREE.Material // override vật liệu (vd gỗ từ WallMaterialCache); KHÔNG set → MeshToon bê tông tự tạo
 }
 
@@ -640,6 +642,14 @@ function makeStonePillarFoundation(
   return { geos: [deckGeo, underGeo, pillarGeo], mats, meshes: [deckMesh, underMesh, stoneMesh] }
 }
 
+// Shape round: outline tim-tường nở ĐỀU ra `grow` m (mặt ngoài tường + overhang) — N-gon đều quanh tâm
+// nên offset cạnh ≈ scale bán kính quanh gốc (outline đã centered).
+function expandOutline(outline: [number, number][], grow: number): [number, number][] {
+  const r = outline.reduce((s, [x, z]) => s + Math.hypot(x, z), 0) / outline.length
+  const k = (Math.max(r, 0.01) + grow) / Math.max(r, 0.01)
+  return outline.map(([x, z]) => [x * k, z * k])
+}
+
 export function makePositionedFoundation(opts: PositionedFoundationOpts): PartResult {
   const { oh } = opts
   // base mỗi cạnh = bbox/2 + wallDepth/2 (mặt ngoài tường) → tổng base 2 cạnh = wallDepth.
@@ -652,9 +662,14 @@ export function makePositionedFoundation(opts: PositionedFoundationOpts): PartRe
   if (opts.foundType === 'stone-pillar') return makeStonePillarFoundation(fw, fd, cx, cz, opts) // sàn gỗ + trụ đá giữa
   // Có lỗ (shape lồng) → ExtrudeGeometry khoét (overhang bake vào outer rect qua ocx/ocz, lỗ giữ local thật);
   // không → BoxGeometry + translate như cũ. Lỗ vẫn khớp shape nhỏ bất kể overhang.
-  const geo = opts.openings?.length
-    ? makeSlabWithHoles(fw, fd, opts.h, opts.openings, cx, cz)
-    : boxFoundationGeo(fw, opts.h, fd, cx, cz)
+  // Shape round: móng đa giác = outline nở wallDepth/2 + overhang trung bình 4 hướng (đa giác không có hướng N/E/S/W riêng).
+  const outline = opts.outline?.length
+    ? expandOutline(opts.outline, opts.wallDepth / 2 + (oh.n + oh.e + oh.s + oh.w) / 4)
+    : undefined
+  const geo =
+    opts.openings?.length || outline
+      ? makeSlabWithHoles(fw, fd, opts.h, opts.openings ?? [], cx, cz, outline)
+      : boxFoundationGeo(fw, opts.h, fd, cx, cz)
   const mat = new THREE.MeshToonMaterial({
     color: COL_FOUNDATION,
     polygonOffset: true,
@@ -669,6 +684,31 @@ export function makePositionedFoundation(opts: PositionedFoundationOpts): PartRe
   return { geos: [geo], mats: [mat], meshes: [m] }
 }
 
+// Biên ngoài slab/móng: đa giác outline (shape round N-gon) hoặc rect w×d. Quy ước shape.y = -localZ
+// (do rotateX(-PI/2) bên dưới); (ocx,ocz) dời tâm outer (overhang móng lệch 4 hướng).
+function outerBoundary(
+  w: number,
+  d: number,
+  ocx: number,
+  ocz: number,
+  outline?: [number, number][]
+): THREE.Shape {
+  const shape = new THREE.Shape()
+  if (outline && outline.length >= 3) {
+    outline.forEach(([x, z], i) => {
+      if (i === 0) shape.moveTo(x + ocx, -z - ocz)
+      else shape.lineTo(x + ocx, -z - ocz)
+    })
+  } else {
+    shape.moveTo(-w / 2 + ocx, -d / 2 - ocz)
+    shape.lineTo(w / 2 + ocx, -d / 2 - ocz)
+    shape.lineTo(w / 2 + ocx, d / 2 - ocz)
+    shape.lineTo(-w / 2 + ocx, d / 2 - ocz)
+  }
+  shape.closePath()
+  return shape
+}
+
 // Sàn có lỗ khoét — dùng ExtrudeGeometry từ THREE.Shape với holes
 // Shape định nghĩa trong mặt phẳng XY (shape.x=worldX, shape.y→worldZ sau rotateX)
 // ExtrudeGeometry extrude theo +Z (local) → rotateX(-PI/2) nằm ngang
@@ -678,14 +718,10 @@ function makeSlabWithHoles(
   thick: number,
   holes: SlabOpening[],
   ocx = 0, // dời tâm OUTER rect (overhang móng) — lỗ giữ toạ độ local thật nên vẫn khớp shape lồng
-  ocz = 0
+  ocz = 0,
+  outline?: [number, number][] // biên đa giác (shape round) thay rect
 ): THREE.BufferGeometry {
-  const shape = new THREE.Shape()
-  shape.moveTo(-w / 2 + ocx, -d / 2 - ocz)
-  shape.lineTo(w / 2 + ocx, -d / 2 - ocz)
-  shape.lineTo(w / 2 + ocx, d / 2 - ocz)
-  shape.lineTo(-w / 2 + ocx, d / 2 - ocz)
-  shape.closePath()
+  const shape = outerBoundary(w, d, ocx, ocz, outline)
   for (const op of holes) {
     // Rect lỗ xoay quanh tâm (op.rot, Three Ry). shape.y = -localZ (do rotateX(-PI/2)).
     // slab-local: sx = ex*cos + ez*sin + op.x ; sz = -ex*sin + ez*cos + op.z
@@ -718,9 +754,18 @@ function makeSlabWithHoles(
 }
 
 export function makePositionedSlab(opts: PositionedSlabOpts): PartResult {
-  const geo = opts.openings?.length
-    ? makeSlabWithHoles(opts.bboxW, opts.bboxD, opts.thick, opts.openings)
-    : new THREE.BoxGeometry(opts.bboxW, opts.thick, opts.bboxD)
+  const geo =
+    opts.openings?.length || opts.outline
+      ? makeSlabWithHoles(
+          opts.bboxW,
+          opts.bboxD,
+          opts.thick,
+          opts.openings ?? [],
+          0,
+          0,
+          opts.outline
+        )
+      : new THREE.BoxGeometry(opts.bboxW, opts.thick, opts.bboxD)
   // material ngoài (gỗ từ WallMaterialCache) → cache SỞ HỮU dispose ⇒ KHÔNG đưa vào mats; không set → MeshToon bê tông.
   const mat =
     opts.material ??

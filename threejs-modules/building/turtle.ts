@@ -60,6 +60,20 @@ export function planBbox(segs: SegPlan[]): { w: number; d: number } {
 }
 
 /**
+ * Đỉnh polygon (m) đã center về tâm bbox — frame LOCAL trước rotY/pos (cùng phép center planWalls).
+ * Dùng cho slab/móng theo ĐÚNG footprint đa giác (shape round N-gon) thay AABB chữ nhật.
+ * Trả về đúng segs.length đỉnh (bỏ điểm đóng vòng trùng điểm đầu).
+ */
+export function planOutline(segs: SegPlan[]): [number, number][] {
+  const { pts } = walk(segs)
+  const xs = pts.map((p) => p[0])
+  const zs = pts.map((p) => p[1])
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const cz = (Math.min(...zs) + Math.max(...zs)) / 2
+  return pts.slice(0, segs.length).map(([x, z]) => [x - cx, z - cz])
+}
+
+/**
  * Vị trí world (tâm + heading) của từng tường. Quy trình KHỚP editor build.ts cũ:
  * turtle-walk → đặt tâm tường giữa segment → center về tâm bbox → xoay quanh Y rồi dời ra world.
  */

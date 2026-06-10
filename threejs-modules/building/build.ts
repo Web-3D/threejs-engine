@@ -7,7 +7,7 @@
  */
 
 import type { ShapeInstance, WallConfig } from './state'
-import { planBbox, planWalls, type SegPlan } from './turtle'
+import { planBbox, planOutline, planWalls, type SegPlan } from './turtle'
 
 // Editor lưu mm; turtle core dùng m → convert ở biên (chỉ chỗ này).
 function toSegPlans(inst: ShapeInstance): SegPlan[] {
@@ -34,6 +34,12 @@ export function computeWallConfigs(inst: ShapeInstance, wallBase: number): WallC
 
 export function computeLocalBbox(inst: ShapeInstance): { w: number; d: number } {
   return planBbox(toSegPlans(inst))
+}
+
+// Outline footprint LOCAL (m, đã center, TRƯỚC rotY/pos — khớp frame local của slab/móng trước khi
+// mesh tự xoay rotY). Shape 'round' dùng để slab/móng theo đúng đa giác thay AABB chữ nhật.
+export function instOutlineLocal(inst: ShapeInstance): [number, number][] {
+  return planOutline(toSegPlans(inst))
 }
 
 // ── Cầu thang: footprint world (AABB) + map sang lỗ slab tầng trên ───────────

@@ -459,6 +459,25 @@ export const SHAPE_CONFIGS: Record<string, ShapeConfig> = {
       return segs
     },
   },
+
+  // Round: tháp/khối trụ tròn = N-gon đều (industry-style arc tessellation — Revit/SketchUp cũng
+  // facet hoá khi render). turtle-walk chịu góc tùy ý sẵn → mỗi facet là 1 tường thường: opening/
+  // material/wallH per-facet dùng nguyên hệ hiện có. chord = 2·r·sin(π/N), turn = 360/N.
+  round: {
+    label: 'Round',
+    wallLabels: Array.from({ length: 24 }, (_, i) => `Facet ${i + 1}`),
+    dims: {
+      radius: { label: 'Radius mm', min: 1000, max: 10000, step: 100, default: 3000 },
+      sides: { label: 'Sides', min: 6, max: 24, step: 1, default: 16 },
+    },
+    toSegments(dims, base) {
+      const n = Math.max(3, Math.round(dims.sides))
+      const chord = 2 * dims.radius * Math.sin(Math.PI / n)
+      const segs = Array.from({ length: n }, (_, i) => mkSeg(chord, i === 0 ? 0 : 360 / n))
+      copySegExtras(segs, base)
+      return segs
+    },
+  },
 }
 
 export function defaultDims(shapeKey: string): Record<string, number> {

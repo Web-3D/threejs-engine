@@ -23,6 +23,7 @@ import {
   computeWallConfigs,
   footprintXZ,
   type FootXZ,
+  instOutlineLocal,
   instWorldAABB,
   stairFootprintWorld,
   type WorldRect,
@@ -296,6 +297,11 @@ class StateRenderer {
     if (inst.structure.showSlab) this.buildSlab(inst, wallBase, holes, fp)
   }
 
+  // Shape 'round': slab/móng theo ĐÚNG đa giác N-gon — bbox chữ nhật sẽ thò 4 góc ra ngoài chân tường tròn.
+  private instOutline(inst: ShapeInstance): [number, number][] | undefined {
+    return inst.shapeKey === 'round' ? instOutlineLocal(inst) : undefined
+  }
+
   private buildFoundation(inst: ShapeInstance, wallBase: number, fp: FootXZ): void {
     const { w, d } = computeLocalBbox(inst)
     const fh = inst.structure.foundH / 1000
@@ -303,6 +309,7 @@ class StateRenderer {
       makePositionedFoundation({
         bboxW: w,
         bboxD: d,
+        outline: this.instOutline(inst),
         wallDepth: inst.wallDepth / 1000,
         oh: inst.structure.foundOh,
         h: fh,
@@ -350,6 +357,7 @@ class StateRenderer {
       makePositionedSlab({
         bboxW: w,
         bboxD: d,
+        outline: this.instOutline(inst),
         thick: st,
         yBase: wallBase,
         worldX: wx,
