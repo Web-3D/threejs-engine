@@ -27,7 +27,7 @@ deferred/
 | [building-sdf-phases.md](geometry/building-sdf-phases.md) | SDF ray march per component → bake pipeline | Bắt đầu Phase 1 SDF (column/beam) — xem `01-Doraemon/deferred/geometry/` |
 | [archplan-coord-true-slice.md](geometry/archplan-coord-true-slice.md) | Coordinate scanner cắt geometry/segment thật thay bbox → tọa độ tường đúng từng tầng | Cần đọc tọa độ tường trong / footprint per-floor, hoặc làm build editor |
 | [voronoi-applications.md](geometry/voronoi-applications.md) | Voronoi cho hạng mục RỜI RẠC: chia lô đất · facade screen · đá lát TSL · fracture (KHÔNG dùng cho nhà vuông góc) | Làm city/neighborhood (chia lô), hoặc cần điểm nhấn mặt dựng/nền hữu cơ |
-| [pond-organic-and-stilt-foundation.md](geometry/pond-organic-and-stilt-foundation.md) | **WANTED 2026-06-05** — pond cạnh CONG mượt (spline) + foundation wood-deck cột tự nối xuống ĐÁY HỒ (nhà sàn trên nước, cross-system probe) | NgQuan yêu cầu; #11 cần chốt cách probe pond từ editor |
+| [pond-organic-and-stilt-foundation.md](geometry/pond-organic-and-stilt-foundation.md) | **✅ BUILD XONG 2026-06-06** — hồ bezier-handles (kéo nắn tay cầm 3D) + cột deck đâm đáy hồ qua `GroundDrop[]` data (không callback). File giữ làm sử liệu plan-vs-thực | — (xong; nâng cấp hồ/nhà sàn → playbook `pond.md`) |
 | [shoji-sliding-door.md](geometry/shoji-sliding-door.md) | **WANTED 2026-06-05** — cửa TRƯỢT shoji (cánh kumiko+washi reuse ShojiScreen + ray) như opening element | NgQuan yêu cầu; đi kèm tường shoji đã build |
 
 ---

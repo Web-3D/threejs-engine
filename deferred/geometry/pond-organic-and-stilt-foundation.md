@@ -1,6 +1,20 @@
 # Pond cong tự nhiên (#9) + Foundation cột chạm đáy hồ (#11)
 
-> Status: **WANTED 2026-06-05**, chưa build (turn quá dài). 2 yêu cầu pond-liên-quan của NgQuan.
+> Status: **✅ CẢ 2 BUILD XONG 2026-06-06** (file này quên update — NgQuan phát hiện 2026-06-10, đã verify code).
+> Commit: `27d2e23` (site-kit: hồ free/circle/ellipse/**bezier** + coping bo-cong) + `4a3980d` (building-kit:
+> wood-deck tách deck↔cột + **cột-đâm-đáy-hồ** + plainFoundation LOD).
+>
+> **Triển khai THẬT khác plan dưới (xịn hơn):**
+> - **#9**: KHÔNG dùng `smooth: boolean` + Catmull resample — dùng **bezier handles per-đỉnh**
+>   (`WaterPoint.inX/inZ/outX/outZ`, state.ts) kéo nắn từng tay cầm 3D; seed blob 8-điểm bo tròn
+>   `rectBezierPoints` (Catmull-Rom tangent /6 → mirror handle, gui/site.ts — DÙNG CHUNG hồ + ground layer);
+>   mặt nước/coping/basin tessellate bám mọi shape (fromState `pondWorldXZ`).
+> - **#11**: KHÔNG dùng callback `pondProbe` — dùng **DATA `GroundDrop[]`** (vùng nền tụt) thread qua
+>   `BuildRenderCtx.groundDrops` → `buildFoundation` → `postDropAt(px,pz)` (Structure.ts): cột deck trên
+>   lòng hồ tự đâm sâu tới đáy; archplan `_groundDropsForBuild()` dựng data từ site.waters (giữ đúng cả
+>   2 path split-drag — ArchPlanLab 2098/2138). Building-kit vẫn độc lập site-kit (nhận data thuần, không callback).
+>
+> Plan gốc giữ lại dưới làm sử liệu. Chi tiết sống: playbook `pond.md` + `building/parts/Structure.ts`.
 
 ## #9 — Bẻ cong mặt hồ pond theo đường cong (organic, không vuông như hồ bơi)
 Pond đã có `shape:'free'` + `points[]` (kéo đỉnh). User muốn cạnh CONG mượt, không gãy-góc.
