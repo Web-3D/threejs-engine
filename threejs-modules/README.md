@@ -154,6 +154,7 @@
 | `ops/copy-to-points` | #3 — 2 tầng: generator điểm trên mặt tham số (grid UV đều · rows đếm riêng hàng · cols song song nửa-bước) → `copyToPoints` InstancedMesh; interface chung `SurfacePoint` | instancing, copy-to-points, tile, brick, houdini | ✅ in-use |
 | `ops/bevel` | #4 — bevel-at-generation: `bevelProfile` bo góc TIẾT DIỆN 2D trước sweep + `filletSpine` bo góc SPINE 3D (2 thanh → 1 thân liền gối cong) | bevel, fillet, chamfer, profile, timber, houdini | ✅ in-use |
 | `ops/scatter` | #5 — rải điểm random trên mesh (wrap MeshSurfaceSampler) + seed mulberry32 + minDist hash-grid + mask → trả `SurfacePoint` (instancer #3 dùng lại) | scatter, random, poisson-ish, seed, environment, houdini | ✅ in-use |
+| `ops/boolean` | #6 — union/subtract/intersect 2 geometry cùng không gian: `booleanGeometry(a, b, op)` — A-wrap `three-bvh-csg` PIN 0.0.17 (0.0.18 đòi three ≥0.179); useGroups=false → 1 geometry liền | boolean, csg, subtract, cut, window, houdini | ✅ in-use (tường hồi mái) |
 
 ---
 

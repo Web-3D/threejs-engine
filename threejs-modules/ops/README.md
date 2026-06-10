@@ -15,6 +15,7 @@
 | #3 Copy to Points | `copy-to-points.ts` | 2 tầng: generator điểm trên mặt tham số (grid UV đều · rows đếm riêng hàng · cols song song nửa-bước) → instancer InstancedMesh | `gridOnSurface` · `rowsOnSurface` · `colsOnSurface` · `copyToPoints` |
 | #4 Bevel-at-gen | `bevel.ts` | bo góc TIẾT DIỆN 2D trước sweep (polygon kín) + bo góc SPINE 3D (polyline hở — 2 thanh thành 1 thân liền gối cong) | `bevelProfile(profile, r, segs)` · `filletSpine(points, r, segs)` |
 | #5 Scatter | `scatter.ts` | rải điểm random trên mesh (wrap MeshSurfaceSampler) + seed mulberry32 + minDist hash-grid + mask; trả SurfacePoint → instancer #3 dùng lại | `scatterOnMesh(geo, count, opts)` · `mulberry32(seed)` |
+| #6 Boolean | `boolean.ts` | union/subtract/intersect 2 geometry CÙNG không gian (A-wrap `three-bvh-csg` **pin 0.0.17** — 0.0.18 đòi three ≥0.179); useGroups=false → 1 geometry liền, input giữ nguyên | `booleanGeometry(a, b, op)` |
 
 Quy ước chung:
 

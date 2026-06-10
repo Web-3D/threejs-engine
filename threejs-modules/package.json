@@ -55,6 +55,7 @@
     ]
   },
   "dependencies": {
-    "polygon-clipping": "^0.15.7"
+    "polygon-clipping": "^0.15.7",
+    "three-bvh-csg": "0.0.17"
   }
 }
