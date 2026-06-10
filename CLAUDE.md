@@ -15,6 +15,7 @@ THREEJS/
 ├── 01-Doraemon/       ← project Doraemon — city procedural (repo riêng / gitlink)
 ├── archplan/          ← TOOL standalone: editor dựng nhà procedural từ floor-plan (repo riêng, port 3002)
 ├── threejs-modules/   ← thư viện module tái sử dụng + building/ (= building-kit: engine sinh nhà, three-only)
+│                        + ops/ (kệ OP hình học kiểu Houdini SOP — HÀM THUẦN, ≠ components: ops/README.md)
 ├── validate.js        ← Three.js module/asset validator
 ├── update-index.js    ← cập nhật Living Index trong file này
 ├── check-imports.js   ← kiểm tra import path hợp lệ
@@ -116,6 +117,7 @@ Câu đầu tiên khi mở THREEJS session:
 | Thêm element live-editable mới mà KHÔNG tụt fps? | `PERFORMANCE.md` — 8 bẫy + checklist BẮT BUỘC; `node check-perf.js` duyệt |
 | Dựng 1 mảng (hồ/cửa sổ/cỏ/mái…) thế nào? Tầng/toạ độ? Lỗi mảng đó? | `playbooks/<slug>.md` — cẩm nang theo mảng |
 | Tính năng đã nghiên cứu nhưng hoãn?         | `deferred/README.md`                           |
+| Op hình học (resample/sweep/copy/bevel/scatter/boolean)? | `threejs-modules/ops/README.md` — kệ hàm thuần; catalog chọn op KẾ + bảng tiến độ 📊: `c:\Factory\deferred\houdini-algorithms.md` (cập nhật ở đó, không mở catalog song song) |
 | Workflow import + tích hợp module?          | `../.claude/skills/module-handoff/SKILL.md` |
 | Kế hoạch asset, budget tier, shaderProfile? | `../assets/ROADMAP.md`                         |
 
