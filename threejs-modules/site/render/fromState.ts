@@ -295,7 +295,9 @@ function buildPondBorder(
   const topY = site.groundThick / 1000 // mặt nền (coping ở +3mm)
   const size = w.borderHeight / 1000
   const isRect = w.shape === 'rect'
-  const geos = isRect ? pondFenceGeos(ring, topY, size) : pondStoneGeos(ring, topY, size)
+  const geos = isRect
+    ? pondFenceGeos(ring, topY, size)
+    : pondStoneGeos(ring, topY, size, w.borderStoneVar / 100, w.borderStoneJag / 100)
   if (geos.length === 0) return
   const merged = mergeGeometries(geos, false)
   for (const g of geos) g.dispose()
@@ -333,15 +335,18 @@ function hash01(i: number, salt: number): number {
 }
 
 // 1 viên đá cuội tại (px,pz): IcosahedronGeometry(r, detail=1) faceted (~80 tri), jitter scale ngang 0.78..1.18 +
-// hơi dẹt Y + xoay Y random (deterministic theo idx). Tâm ở topY + r×0.4 (chìm nhẹ xuống coping → tự nhiên).
+// hơi dẹt Y + xoay Y random (deterministic theo idx). jag>0 → GÓC CẠNH (jagVertices). Tâm ở topY + r×0.4
+// (chìm nhẹ xuống coping → tự nhiên).
 function stoneAt(
   px: number,
   pz: number,
   topY: number,
   r: number,
-  idx: number
+  idx: number,
+  jag = 0
 ): THREE.BufferGeometry {
   const g = new THREE.IcosahedronGeometry(r, 1)
+  if (jag > 0) jagVertices(g, jag, idx)
   const s = 0.78 + hash01(idx, 1.7) * 0.4 // scale ngang 0.78..1.18
   const sy = 0.7 + hash01(idx, 5.3) * 0.45 // hơi dẹt 0.7..1.15
   const rot = new THREE.Matrix4().makeRotationY(hash01(idx, 9.1) * Math.PI * 2)
@@ -350,15 +355,35 @@ function stoneAt(
   return g
 }
 
-// Đá cuội xếp liền dọc polygon `ring` (world XZ, mét; tự nối last→first). Sample arc-length mỗi ~0.82×đường-kính
-// (xếp liền, chồng nhẹ → không hở). Mỗi điểm 1 viên (stoneAt, jitter deterministic theo index chạy liên tục).
+// GÓC CẠNH (NgQuan 2026-06-10 "min max random từ tâm ra các cạnh, đừng tròn quá"): mỗi đỉnh icosa lệch bán
+// kính [1 − 0.45j .. 1 + 0.45j] từ tâm — sin-hash theo (VỊ TRÍ đỉnh, idx viên): vertex trùng vị-trí lệch
+// GIỐNG nhau → icosa non-indexed KHÔNG nứt mặt (cùng bài displacement-theo-vị-trí của KI-003); idx vào salt
+// → viên nào dáng nấy. computeVertexNormals sau displace — non-indexed → normal per-face, giữ faceted.
+function jagVertices(g: THREE.BufferGeometry, jag: number, idx: number): void {
+  const pos = g.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    const h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + idx * 17.13) * 43758.5453
+    const k = 1 + (h - Math.floor(h) - 0.5) * jag * 0.9
+    pos.setXYZ(i, x * k, y * k, z * k)
+  }
+  g.computeVertexNormals()
+}
+
+// Đá cuội xếp liền dọc polygon `ring` (world XZ, mét; tự nối last→first). varK>0 → TO-NHỎ XEN KẼ: bán kính
+// mỗi viên ×[1 − 0.45v .. 1 + 0.45v] (hash theo idx) và BƯỚC theo (r_i + r_{i+1})×0.82 — viên to chiếm chỗ
+// rộng hơn, vẫn xếp liền chồng nhẹ không hở (varK=0 → bước cũ 2r×0.82). Jitter deterministic theo idx liên tục.
 function pondStoneGeos(
   ring: { x: number; z: number }[],
   topY: number,
-  diam: number
+  diam: number,
+  varK = 0,
+  jag = 0
 ): THREE.BufferGeometry[] {
   const r = diam / 2
-  const step = Math.max(0.05, diam * 0.82)
+  const fAt = (i: number): number => 1 + (hash01(i, 3.7) - 0.5) * varK * 0.9
   const out: THREE.BufferGeometry[] = []
   const n = ring.length
   let acc = 0 // arc-length tới điểm đặt kế (mang dư qua cạnh sau)
@@ -371,8 +396,10 @@ function pondStoneGeos(
     const segLen = Math.hypot(dx, dz)
     if (segLen < 1e-4) continue
     while (acc <= segLen) {
-      out.push(stoneAt(a.x + (dx / segLen) * acc, a.z + (dz / segLen) * acc, topY, r, idx++))
-      acc += step
+      const ri = r * fAt(idx)
+      out.push(stoneAt(a.x + (dx / segLen) * acc, a.z + (dz / segLen) * acc, topY, ri, idx, jag))
+      acc += Math.max(0.05, (ri + r * fAt(idx + 1)) * 0.82)
+      idx++
     }
     acc -= segLen
   }

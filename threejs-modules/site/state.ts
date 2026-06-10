@@ -164,6 +164,8 @@ export interface WaterConfig {
   borderHeight: number // mm — cao hàng rào (rect) / đường kính đá cuội (cong). 100..1200
   borderColor: number // màu rào/đá khi borderMaterial='none' (gỗ nâu / đá xám) — 1 field dùng chung 2 mode
   borderMaterial: BorderMaterialKey // 'none' = màu phẳng; texture đá (triplanar) → áp lên geometry rào/đá
+  borderStoneVar: number // % 0..100 — đá TO-NHỎ xen kẽ (bán kính mỗi viên lệch ±45%×var; 0 = đều cỡ). Chỉ đá cuội
+  borderStoneJag: number // % 0..100 — GÓC CẠNH: đỉnh đá lệch bán kính random từ tâm (0 = tròn icosa). Chỉ đá cuội
 }
 
 // Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural
@@ -431,6 +433,8 @@ export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
     edgeMaterial: 'none',
     borderEnabled: false, // 🪨 rào/đá quanh hồ — mặc định tắt
     borderHeight: 350, // 35cm — cao rào / đường kính đá cuội
+    borderStoneVar: 45, // đá to-nhỏ xen kẽ vừa phải (NgQuan 2026-06-10: "to hơi đều" → default có lệch cỡ)
+    borderStoneJag: 35, // góc cạnh nhẹ — bớt "tròn quá" mà chưa thành đá dăm
     borderColor: 0x9a8f80, // xám-ấm (đá); đổi nâu ở GUI cho rào gỗ
     borderMaterial: 'none', // 'none' = màu phẳng; chọn texture đá ở GUI
   }
@@ -698,6 +702,8 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     edgeMaterial: parseMat(r.edgeMaterial),
     borderEnabled: typeof r.borderEnabled === 'boolean' ? r.borderEnabled : d.borderEnabled,
     borderHeight: clamp(num(r.borderHeight, d.borderHeight), 100, 1200),
+    borderStoneVar: clamp(num(r.borderStoneVar, d.borderStoneVar), 0, 100),
+    borderStoneJag: clamp(num(r.borderStoneJag, d.borderStoneJag), 0, 100),
     borderColor: parseColor(r.borderColor, d.borderColor),
     borderMaterial: parseBorderMat(r.borderMaterial),
   }
