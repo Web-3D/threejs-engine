@@ -102,8 +102,8 @@ function assembleFrames(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void
   for (const op of framed) {
     const fr = op.frame
     if (!fr) continue
-    const key = ctx.cache.matKey('none', fr.color, 1, DEFAULT_BRICK)
-    ctx.cache.ensureMat(key, 'none', fr.color, 1, DEFAULT_BRICK)
+    const key = ctx.cache.frameKey(fr.color) // material DoubleSide riêng (né cull lớp lót trong)
+    ctx.cache.ensureFrameMat(fr.color)
     let bucket = ctx.buckets.get(key)
     if (!bucket) {
       bucket = []

@@ -215,7 +215,8 @@ export class WallMaterialCache {
     if (material === 'brick') return `brick:${color}:${scale}:${brick.mortarColor}:${brick.relief}`
     if (material === 'jp-shoji' || material === 'jp-shoji-glass') {
       const sj = `${color}:${scale}:${brick.trucCell}:${brick.nanCell}:${brick.woodGrain}`
-      if (material === 'jp-shoji-glass') return `jp-shoji-glass:${sj}:${brick.glassReflect}:${brick.glassOpacity}`
+      if (material === 'jp-shoji-glass')
+        return `jp-shoji-glass:${sj}:${brick.glassReflect}:${brick.glassOpacity}`
       return `jp-shoji:${sj}`
     }
     return `${material}:${color}:${scale}`
@@ -243,6 +244,22 @@ export class WallMaterialCache {
 
   getEntry(key: string): WallMatEntry | undefined {
     return this.cache.get(key)
+  }
+
+  // Material KHUNG opening (C1 Joinery) — RIÊNG tường: DoubleSide vì khung là vòng ỐNG, lớp lót trong
+  // nửa-xa quay lưng camera → single-side cull = "thủng/nhìn xuyên qua lỗ" (xác minh render 2026-06-11).
+  // Tường giữ single-side (đặc, né shadow-acne). Key 'frame:color' tự nằm trong used-set sweep (bucket).
+  frameKey(color: number): string {
+    return `frame:${color}`
+  }
+  ensureFrameMat(color: number): THREE.Material {
+    const key = this.frameKey(color)
+    let entry = this.cache.get(key)
+    if (!entry) {
+      entry = { mat: new THREE.MeshToonMaterial({ color, side: THREE.DoubleSide }), shader: null }
+      this.cache.set(key, entry)
+    }
+    return entry.mat
   }
 
   // none → MeshToon; brick-tex → texture PBR triplanar; còn lại → procedural shader lit.
