@@ -24,6 +24,7 @@ import { MeshStandardNodeMaterial } from 'three/webgpu'
 import { GrassBlades, type GrassExcludeRect } from '../../components/GrassBlades'
 import { StoneScatter } from '../../components/StoneScatter'
 import { WaterSurface } from '../../components/WaterSurface'
+import { arcLength } from '../../ops/resample' // op #1 — viền đá hồ đặt theo chiều-dài-thật, khép kín
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { PhotoGround, type PhotoGroundMaps } from '../../shaders/ground/PhotoGround'
 import { TexturedSurface, type TexturedSurfaceMaps } from '../../shaders/surface/TexturedSurface'
@@ -380,9 +381,11 @@ function jagVertices(g: THREE.BufferGeometry, jag: number, idx: number): void {
   g.computeVertexNormals()
 }
 
-// Đá cuội xếp liền dọc polygon `ring` (world XZ, mét; tự nối last→first). varK>0 → TO-NHỎ XEN KẼ: bán kính
-// mỗi viên ×[1 − 0.45v .. 1 + 0.45v] (hash theo idx) và BƯỚC theo (r_i + r_{i+1})×0.82 — viên to chiếm chỗ
-// rộng hơn, vẫn xếp liền chồng nhẹ không hở (varK=0 → bước cũ 2r×0.82). Jitter deterministic theo idx liên tục.
+// Đá cuội xếp liền dọc polygon `ring` (world XZ, mét) — đặt theo CHIỀU DÀI THẬT qua op #1 `arcLength`
+// (ops/resample, thay walk tay 2026-06-10): sinh hết bước adaptive trước rồi CHIA LẠI khít chu vi
+// (k = L/Σstep) → vòng KHÉP KÍN không mối nối (walk cũ dừng đâu hở đó — seam last→first tùy chu vi).
+// varK>0 → TO-NHỎ XEN KẼ: bán kính ×[1±0.45v] (hash idx), bước (r_i + r_{i+1})×0.82 — viên to chiếm
+// chỗ rộng, vẫn liền (varK=0 → bước đều 2r×0.82). jag → góc cạnh. Deterministic theo idx.
 function pondStoneGeos(
   ring: { x: number; z: number }[],
   topY: number,
@@ -390,26 +393,35 @@ function pondStoneGeos(
   varK = 0,
   jag = 0
 ): THREE.BufferGeometry[] {
-  const r = diam / 2
-  const fAt = (i: number): number => 1 + (hash01(i, 3.7) - 0.5) * varK * 0.9
-  const out: THREE.BufferGeometry[] = []
   const n = ring.length
-  let acc = 0 // arc-length tới điểm đặt kế (mang dư qua cạnh sau)
-  let idx = 0
-  for (let i = 0; i < n; i++) {
+  // Polyline khép kín → curve fn (t 0..1 theo index); arcLength lo phần đều-theo-chiều-dài + nghịch đảo.
+  const closed = (t: number): THREE.Vector3 => {
+    const s = Math.min(0.999999, Math.max(0, t)) * n
+    const i = Math.floor(s)
+    const f = s - i
     const a = ring[i]
     const b = ring[(i + 1) % n]
-    const dx = b.x - a.x
-    const dz = b.z - a.z
-    const segLen = Math.hypot(dx, dz)
-    if (segLen < 1e-4) continue
-    while (acc <= segLen) {
-      const ri = r * fAt(idx)
-      out.push(stoneAt(a.x + (dx / segLen) * acc, a.z + (dz / segLen) * acc, topY, ri, idx, jag))
-      acc += Math.max(0.05, (ri + r * fAt(idx + 1)) * 0.82)
-      idx++
-    }
-    acc -= segLen
+    return new THREE.Vector3(a.x + (b.x - a.x) * f, 0, a.z + (b.z - a.z) * f)
+  }
+  const al = arcLength(closed, Math.max(128, n * 2))
+  if (al.length < 1e-3) return []
+  const r = diam / 2
+  const fAt = (i: number): number => 1 + (hash01(i, 3.7) - 0.5) * varK * 0.9
+  const m = Math.max(3, Math.round(al.length / Math.max(0.05, diam * 0.82))) // số viên vừa chu vi
+  const steps: number[] = []
+  let sum = 0
+  for (let i = 0; i < m; i++) {
+    const s = Math.max(0.05, (r * fAt(i) + r * fAt((i + 1) % m)) * 0.82) // neighbor wrap → bước cuối khớp viên 0
+    steps.push(s)
+    sum += s
+  }
+  const k = al.length / sum // chia lại khít chu vi → khép kín
+  const out: THREE.BufferGeometry[] = []
+  let dist = 0
+  for (let i = 0; i < m; i++) {
+    const p = al.pointAt(dist / al.length)
+    out.push(stoneAt(p.x, p.z, topY, r * fAt(i), i, jag))
+    dist += steps[i] * k
   }
   return out
 }
