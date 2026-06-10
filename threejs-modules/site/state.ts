@@ -217,6 +217,87 @@ export interface GroundLayer {
   zoneKind?: 'surface' | 'path'
   // 🪨 Tham số rải đá khi zoneKind='path'. Khung = CHÍNH rect zone (length×width, offsetX/Z). Optional → makeStonePathParams.
   path?: StonePathParams
+  // 🎨 MIX NỀN (PhotoGroundMix TSL — port bộ nền Lab thay texture đơn, NgQuan 2026-06-10). Optional →
+  // undefined = zone texture đơn `material` như cũ (backward-compat). Plan: Factory/deferred/ground-mix-port-plan.md.
+  mix?: GroundMixParams
+}
+
+// 🎨 1 SLOT lớp trộn của mix nền: texture kho (CHỈ key texture — isGroundTexKey) + ngưỡng + seed fbm riêng.
+export interface GroundMixSlot {
+  key: GroundMaterialKey
+  bias: number // ngưỡng mask 0..1 (cao = ít xuất hiện)
+  seed: number // seed fbm riêng slot (loang khác chỗ)
+}
+
+// 🎨 Tham số mix nền per-zone — khớp 1-1 uniforms PhotoGroundMix (shaders/ground/PhotoGroundMix).
+export interface GroundMixParams {
+  base: GroundMaterialKey
+  slots: GroundMixSlot[] // ≤ 4
+  maskScale: number // 1/m world — tần mask fbm
+  maskSoft: number // mềm biên smoothstep
+  heightK: number // height-lerp proxy (0 = fade đều)
+  macro: number // sáng/tối tần thấp
+  tint: number // loang úa nhuộm ấm
+  bomb: number // 0 = lát thẳng · 1 = full bombing
+  rotFree: number // 0 = 90°×k · 1 = góc tự do
+  seed: number
+  scaleJit: number
+  margin: number // mép trộn 4 ô
+  farOn: number // trộn xa dual-scale
+  farRange: number // m — khoảng cách đạt trộn đầy
+}
+
+// Factory mix nền — defaults khớp uniform defaults PhotoGroundMix (cùng bộ số Lab đã chốt).
+export function makeGroundMixParams(base: GroundMaterialKey = 'grass-o'): GroundMixParams {
+  return {
+    base,
+    slots: [{ key: 'construction-gravel', bias: 0.5, seed: 13.7 }],
+    maskScale: 0.6,
+    maskSoft: 0.18,
+    heightK: 0.3,
+    macro: 0.35,
+    tint: 0.25,
+    bomb: 1,
+    rotFree: 0,
+    seed: 0,
+    scaleJit: 0,
+    margin: 0.12,
+    farOn: 0.6,
+    farRange: 16,
+  }
+}
+
+// Parse mix nền — số sai/thiếu → default; slots cap 4, key texture sai → construction-gravel. Backward-safe.
+function parseGroundMix(raw: unknown): GroundMixParams {
+  const o = (raw ?? {}) as Partial<GroundMixParams>
+  const d = makeGroundMixParams()
+  const f = (v: unknown, dv: number, lo: number, hi: number): number => clamp(num(v, dv), lo, hi)
+  const slots = Array.isArray(o.slots)
+    ? o.slots.slice(0, 4).map((s) => {
+        const so = (s ?? {}) as Partial<GroundMixSlot>
+        return {
+          key: parseGround(so.key, 'construction-gravel'),
+          bias: f(so.bias, 0.5, 0, 1),
+          seed: num(so.seed, 13.7),
+        }
+      })
+    : d.slots
+  return {
+    base: parseGround(o.base, d.base),
+    slots,
+    maskScale: f(o.maskScale, d.maskScale, 0.05, 5),
+    maskSoft: f(o.maskSoft, d.maskSoft, 0.01, 0.5),
+    heightK: f(o.heightK, d.heightK, 0, 1),
+    macro: f(o.macro, d.macro, 0, 1),
+    tint: f(o.tint, d.tint, 0, 1),
+    bomb: f(o.bomb, d.bomb, 0, 1),
+    rotFree: f(o.rotFree, d.rotFree, 0, 1),
+    seed: f(o.seed, d.seed, 0, 999),
+    scaleJit: f(o.scaleJit, d.scaleJit, 0, 0.5),
+    margin: f(o.margin, d.margin, 0.02, 0.49),
+    farOn: f(o.farOn, d.farOn, 0, 1),
+    farRange: f(o.farRange, d.farRange, 4, 60),
+  }
 }
 
 // 🏔️ GÒ NẶN-TAY (Phase 3): bump radial trên height-field. x/z = tâm (mm, local so tâm lô); radius = bán kính
@@ -490,6 +571,7 @@ function parseGroundLayers(raw: unknown): GroundLayer[] {
       terrain: o.terrain !== undefined ? parseTerrain(o.terrain, defaultTerrain()) : undefined, // 🏔️ gò riêng zone
       zoneKind: o.zoneKind === 'path' ? 'path' : 'surface', // 🪨 LOẠI zone — thiếu = 'surface' (backward-compat)
       path: o.path !== undefined ? parseStonePathParams(o.path) : undefined, // 🪨 tham số rải đá khi zoneKind='path'
+      mix: o.mix !== undefined ? parseGroundMix(o.mix) : undefined, // 🎨 mix nền — thiếu = texture đơn
     }
   })
 }

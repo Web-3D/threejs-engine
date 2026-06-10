@@ -77,6 +77,9 @@ export interface SiteRenderOpts {
   // lab-lifetime, KHÔNG recompile mỗi rebuild; nhiều ground cùng key DÙNG CHUNG 1 material. Ưu tiên hơn
   // groundTextures single. Lõi KHÔNG dispose (caller lo). Thiếu key → ground rơi về màu phẳng preset.
   groundMatByKey?: Partial<Record<GroundMaterialKey, THREE.Material>>
+  // 🎨 Material MIX per-zone (PhotoGroundMix — layer.mix bật): caller (editor) tạo + CACHE theo zone, lõi
+  // KHÔNG push/dispose. null = chưa sẵn (texture đang load) → fallback texture đơn layer.material như cũ.
+  groundMixMat?: (layer: GroundLayer) => THREE.Material | null
   // 🪨 Material RÀO/VIỀN hồ (TexturedSurface triplanar) theo borderMaterial key. Caller CACHE 1 lần/key (lab-
   // lifetime, KHÔNG push/dispose ở lõi). Thiếu/'none' → rào dùng màu phẳng borderColor. Triplanar áp được cả đá/gỗ.
   borderMatByKey?: Partial<Record<string, THREE.Material>>
@@ -1346,7 +1349,9 @@ function addZoneMesh(
     if (!geo) return // zone bị cut khoét sạch (difference rỗng) → không dựng mesh
     geo.translate(0, baseY, 0)
   }
-  const mesh = new THREE.Mesh(geo, resolveGroundMat(layer.material, ctx, opts))
+  // 🎨 zone bật MIX → material PhotoGroundMix từ editor (cache per-zone); chưa sẵn/tắt → texture đơn như cũ
+  const mixMat = layer.mix ? (opts.groundMixMat?.(layer) ?? null) : null
+  const mesh = new THREE.Mesh(geo, mixMat ?? resolveGroundMat(layer.material, ctx, opts))
   mesh.userData.groundLayerIdx = idx
   mesh.receiveShadow = true
   mesh.castShadow = true
