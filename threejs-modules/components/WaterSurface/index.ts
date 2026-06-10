@@ -59,7 +59,12 @@ const DEFAULTS = {
   refract: 1, // hệ số méo ảnh khúc-xạ (×distortion); 1 = như reflection, cao = đáy gợn mạnh hơn
   shininess: 100,
   alpha: 1,
-  resolution: 0.5,
+  // ⚠ KI-011 (2026-06-10): PHẢI = 1 trên three r174 WebGPU — resolution<1 làm RT reflector (RGBA16Float,
+  // size×res) nhỏ hơn getDrawingBufferSize; viewportSharedTexture (khúc xạ, dòng ~345) copyFramebufferToTexture
+  // trong pass reflector với copySize FULL drawingBuffer → copy out-of-bounds → CommandBuffer invalid MỖI FRAME
+  // + texture leak + lag toàn app (DPR 2: copy 2844×1406 từ RT 1422×703 — NgQuan chốt án bằng tách hồ).
+  // Hạ lại <1 CHỈ KHI nâng three có fix clamp copy theo RT hiện hành. Chi tiết: Factory/deferred/ground-mix-port-plan.md.
+  resolution: 1,
   tint: 0.4,
 }
 
