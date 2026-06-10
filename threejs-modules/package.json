@@ -12,7 +12,8 @@
     "./utils/*": "./utils/*/index.ts",
     "./effects/*": "./effects/*/index.ts",
     "./components/*": "./components/*/index.ts",
-    "./hooks/*": "./hooks/*/index.ts"
+    "./hooks/*": "./hooks/*/index.ts",
+    "./ops/*": "./ops/*.ts"
   },
   "author": "NgQuan",
   "scripts": {
