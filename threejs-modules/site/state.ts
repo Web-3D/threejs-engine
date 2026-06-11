@@ -382,6 +382,26 @@ export interface FishSchool {
   seed: number // xáo bộ màu cam/đốm cả đàn — LIVE setColorSeed
 }
 
+// 🌉 1 CẦU bắc ngang (bridge) — instance ĐẶT TỰ DO trong lô (thường bắc ngang hồ, nhưng đặt đâu cũng được).
+// Tham số parametric kiểu industry (Houdini Arch Bridge SOP / CityEngine pier / RailClone deck+pier /
+// SideFX Japanese taiko-bashi): nhịp + vồng vòm + ván + lan can + trụ đỡ. Gốc cầu tại MẶT NỀN (rim).
+export interface BridgeConfig {
+  enabled: boolean
+  material: 'wood' | 'stone'
+  offsetX: number // mm — tâm cầu lệch tâm lô (X)
+  offsetZ: number // mm — (Z)
+  rotDeg: number // độ — hướng bắc qua hồ (xoay quanh Y)
+  span: number // mm — chiều dài nhịp (trục dọc cầu)
+  deckWidth: number // mm — bề rộng mặt cầu
+  rise: number // mm — độ vồng vòm (taiko-bashi); 0 = phẳng
+  plankCount: number // số tấm ván chia mặt cầu
+  railOn: boolean
+  railHeight: number // mm — cao lan can
+  postCount: number // số trụ con lan can mỗi bên
+  pierOn: boolean
+  pierCount: number // số trụ đỡ dưới gầm (đứng từ mặt nền lên đáy ván)
+}
+
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
   lotWidth: number // mm — bề ngang lô (trục X)
@@ -398,6 +418,7 @@ export interface SiteState {
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
   fishSchools: FishSchool[] // 🐟 bầy cá koi đa-instance ĐỘC LẬP hồ (tab F1 F2… — đặt tự do, thường thả vào lòng hồ)
+  bridges: BridgeConfig[] // 🌉 cầu đa-instance đặt TỰ DO (tab C1 C2… — thường bắc ngang hồ)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
   // (rocks?: RockConfig[] đã GỠ 2026-06-09 — non bộ procedural "chưa ra dáng", thay bằng Houdini-bake asset
   //  → deferred/systems/houdini-bake-accents.md. Key `rocks` trong design cũ được parseSite bỏ qua an toàn.)
@@ -519,7 +540,29 @@ export function defaultSiteState(): SiteState {
     },
     waters: defaultWaters(),
     fishSchools: [], // 🐟 chưa có bầy nào — thêm qua ＋ ở tab Cá
+    bridges: [], // 🌉 chưa có cầu nào — thêm qua ＋ ở tab Cầu
     fences: [makeFence()],
+  }
+}
+
+// 🌉 Factory 1 cầu — đặt tự do (default rơi vào tâm pool đầu, offsetZ 5000 — user kéo đặt lại). Cầu vòm
+// gỗ kiểu Nhật (taiko-bashi vừa vồng), có lan can + 2 trụ đỡ.
+export function makeBridge(): BridgeConfig {
+  return {
+    enabled: true,
+    material: 'wood',
+    offsetX: 0,
+    offsetZ: 5000,
+    rotDeg: 0,
+    span: 5000,
+    deckWidth: 1400,
+    rise: 600,
+    plankCount: 14,
+    railOn: true,
+    railHeight: 900,
+    postCount: 6,
+    pierOn: true,
+    pierCount: 2,
   }
 }
 

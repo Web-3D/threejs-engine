@@ -13,6 +13,7 @@
 
 import type {
   BorderMaterialKey,
+  BridgeConfig,
   FenceConfig,
   FishSchool,
   Grass3DConfig,
@@ -40,6 +41,7 @@ import {
   GROUND_PRESETS,
   GROUND_THICK_MAX,
   GROUND_THICK_MIN,
+  makeBridge,
   makeFence,
   makeFishSchool,
   makeGroundMixParams,
@@ -451,6 +453,7 @@ export function parseSite(raw: unknown): SiteState {
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
     waters: parseWaters(o.waters, o.water),
     fishSchools: parseFishSchools(o.fishSchools, o.waters), // 🐟 + migrate fishOn per-hồ (bản 1 ngày 2026-06-11)
+    bridges: parseBridges(o.bridges), // 🌉 cầu — design cũ không có → []
     fences: parseFences(o.fences, o.fence, d.fences[0]),
     // key `rocks` (non bộ cũ, gỡ 2026-06-09) trong design lưu cũ: KHÔNG parse → biến mất khi save lại (an toàn)
   }
@@ -495,6 +498,33 @@ function parseFishSchool(raw: unknown): FishSchool {
     size: clamp(num(r.size, d.size), 80, 500),
     speed: clamp(num(r.speed, d.speed), 0.05, 0.8),
     seed: num(r.seed, d.seed),
+  }
+}
+
+// 🌉 Cầu: parse mảng tolerant (design cũ không có key bridges → []).
+function parseBridges(raw: unknown): BridgeConfig[] {
+  return Array.isArray(raw) ? raw.map(parseBridge) : []
+}
+
+function parseBridge(raw: unknown): BridgeConfig {
+  const d = makeBridge()
+  if (!raw || typeof raw !== 'object') return d
+  const r = raw as Partial<BridgeConfig>
+  return {
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    material: r.material === 'stone' ? 'stone' : 'wood',
+    offsetX: clamp(num(r.offsetX, d.offsetX), -20000, 20000),
+    offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
+    rotDeg: clamp(num(r.rotDeg, d.rotDeg), 0, 360),
+    span: clamp(num(r.span, d.span), 1000, 20000),
+    deckWidth: clamp(num(r.deckWidth, d.deckWidth), 600, 4000),
+    rise: clamp(num(r.rise, d.rise), 0, 2000),
+    plankCount: clamp(Math.round(num(r.plankCount, d.plankCount)), 4, 40),
+    railOn: typeof r.railOn === 'boolean' ? r.railOn : d.railOn,
+    railHeight: clamp(num(r.railHeight, d.railHeight), 300, 1500),
+    postCount: clamp(Math.round(num(r.postCount, d.postCount)), 0, 20),
+    pierOn: typeof r.pierOn === 'boolean' ? r.pierOn : d.pierOn,
+    pierCount: clamp(Math.round(num(r.pierCount, d.pierCount)), 0, 6),
   }
 }
 
