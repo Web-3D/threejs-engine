@@ -14,6 +14,15 @@
 >   không thấy đổi"); chỉ zone surface.
 >
 > **Còn treo:** nghiệm thu ảnh WebGPU toàn hệ (NgQuan `2). Phần dưới giữ làm tư liệu thiết kế.
+>
+> **TIẾN HÓA cùng ngày (3 feedback NgQuan, archplan `e6e6729` + `d812583`):**
+> 1. Tấm PREVIEW LIVE 2×2m trước lô cho editor preset ✎ (CLONE = chỉnh kho không thấy gì → material-ball).
+> 2. THÁO TRỌN mix UI inline 7 panel (G0/zone/đáy-vách hồ/fence/tường/móng/sàn → `mixStatusRow` 1 dòng;
+>    `mkMixSection` xóa) — khay 🧪 thành trung tâm duy nhất với 3 mode 🪣 Áp / 🧽 Gỡ / 🎯 Chỉnh
+>    (board ĐỐI TƯỢNG trong khay — cọ vẽ zone/G0/hồ giữ nguyên đường).
+> 3. REF-PHIÊN-XÔ → BAKE ("ref lúc ban đầu để chỉnh thấy trên bề mặt, xong lưu clone riêng"): phiên 🪣
+>    gán REF preset.mix (✎ live trên mọi bề mặt vừa áp); buông xô = `_bakeRefs` đóng băng clone riêng
+>    từng field. Chốt CLONE giữ nguyên — autosave giữa phiên vẫn tự chứa. Chi tiết: playbooks/ground.md.
 
 > NgQuan 2026-06-11, sau khi mix phủ 8 đích: "thay vì cài đặt vào từng cái, tạo 1 palette giống màu
 > đã làm — cần ở đâu click palette rồi chỉ thẳng vào phần tường/nền/fence". = SketchUp paint-bucket /
