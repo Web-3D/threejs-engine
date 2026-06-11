@@ -1,7 +1,8 @@
 /**
  * VỊ TRÍ   — building-kit/parts/Joinery.ts
- * VAI TRÒ  — C1 hệ khung+cánh cửa: KHUNG BAO (frame/architrave) quanh lỗ opening — geometry thuần
- *            trong hệ LOCAL tường (x dọc thân tính từ TÂM, y 0..h, z ±depth/2, mặt ngoài +Z).
+ * VAI TRÒ  — Hệ joinery quanh lỗ opening, geometry thuần hệ LOCAL tường (x dọc thân tính từ TÂM,
+ *            y 0..h, z ±depth/2, mặt ngoài +Z): C1 KHUNG BAO (frame/architrave). Cánh cửa (C2+C4)
+ *            ở parts/Leaf.ts (barrel re-export dưới).
  * LIÊN HỆ  — Consumer kệ ops: lỗ TRÒN/bán nguyệt = sweep (op #2) profile dọc spine ellipse đã
  *            resample đốt đều (op #1). Lỗ CHỮ NHẬT = box butt-joint (đầu ngang GỐI lên 2 má dọc —
  *            mộc cổ điển; sweep qua spine vuông pinch góc 45° nên KHÔNG ép op vào chỗ thẳng).
@@ -12,13 +13,14 @@
  */
 
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 import { rectProfile, sweepInto } from '../../ops/sweep'
 
+// Cánh cửa (C2 xoay + C4 trượt) tách sang parts/Leaf.ts (2026-06-11, chống phình) — barrel giữ
+// consumer (wallAssembly) import từ Joinery như cũ.
+export { LEAF_T, leafGeoLocal, type SlideLeafGeos, slideLeafGeos } from './Leaf'
+
 const EPS = 1e-4
-const LEAF_T = 0.04 // m — dày cánh gỗ
-const LEAF_GAP = 0.006 // m — khe quanh cánh (cánh không kẹt lỗ)
 
 export interface FrameSpec {
   w: number // m — bản khung (face width)
@@ -73,43 +75,6 @@ function rectFrame(
   if (op.yOffset + op.h <= wallH + EPS) box(op.w + 2 * fw, fw, (x0 + x1) / 2, y1 + fw / 2) // đầu ngang
   if (op.yOffset > 0.02) box(op.w + 2 * fw, fw, (x0 + x1) / 2, y0 - fw / 2) // bậu dưới (window)
   return out
-}
-
-// CÁNH GỖ PANEL (C2): 2 stile dọc + 3 rail ngang (dưới/giữa/trên) + 2 Ô PANEL LÕM (tấm mỏng tâm
-// cánh — recessed nhìn từ cả 2 phía). Geometry hệ LEAF-LOCAL: gốc tại TRỤC BẢN LỀ x=0, cánh trải
-// [0..lw] (mirror=true → [-lw..0], cho cánh phải French), y [0..lh], dày z ±LEAF_T/2.
-// Trả 1 geometry merged (Box indexed + uv sẵn — đồng bộ attribute); null nếu suy biến.
-export function leafGeoLocal(lw: number, lh: number, mirror: boolean): THREE.BufferGeometry | null {
-  if (lw < 0.08 || lh < 0.3) return null
-  const boxes: THREE.BufferGeometry[] = []
-  const box = (bw: number, bh: number, cx: number, cy: number, bt = LEAF_T): void => {
-    if (bw < EPS || bh < EPS) return
-    const g = new THREE.BoxGeometry(bw, bh, bt)
-    g.translate(mirror ? -cx : cx, cy, 0)
-    boxes.push(g)
-  }
-  const x0 = LEAF_GAP
-  const x1 = lw - LEAF_GAP
-  const sw = Math.min(0.1, (x1 - x0) * 0.18) // bản stile
-  box(sw, lh, x0 + sw / 2, lh / 2) // stile bản lề
-  box(sw, lh, x1 - sw / 2, lh / 2) // stile khoá
-  const iw = x1 - x0 - 2 * sw // lòng giữa 2 stile
-  const icx = x0 + sw + iw / 2
-  const rb = Math.min(0.16, lh * 0.12) // rail dưới (cao hơn — chống đá chân, mộc cổ điển)
-  const rt = Math.min(0.1, lh * 0.08) // rail trên
-  const rm = Math.min(0.1, lh * 0.08) // rail giữa
-  const my = lh * 0.4 // tâm rail giữa — tỉ lệ cửa panel 2 ô cổ điển
-  box(iw, rb, icx, rb / 2)
-  box(iw, rm, icx, my)
-  box(iw, rt, icx, lh - rt / 2)
-  const p1h = my - rm / 2 - rb // ô panel dưới
-  const p2h = lh - rt - (my + rm / 2) // ô panel trên
-  if (p1h > 0.02) box(iw, p1h, icx, rb + p1h / 2, 0.014)
-  if (p2h > 0.02) box(iw, p2h, icx, my + rm / 2 + p2h / 2, 0.014)
-  const merged = mergeGeometries(boxes, false) // toàn BoxGeometry (indexed+uv) — không lệch attribute
-  for (const b of boxes) b.dispose()
-  if (!merged) return null // guard KI-004 (merge null âm thầm) — với toàn Box không xảy ra, gate đòi tường minh
-  return merged
 }
 
 // N điểm trên ELLIPSE (tâm cx,cy bán trục a,b) trong mặt phẳng tường z=0 — KHÔNG lặp điểm cuối.

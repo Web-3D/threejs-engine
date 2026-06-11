@@ -262,6 +262,28 @@ export class WallMaterialCache {
     return entry.mat
   }
 
+  // Tấm KÍNH cánh trượt (C4 Leaf) — recipe = kính lan can Balcony glass-frame: trong suốt thấy
+  // xuyên + roughness thấp → phản chiếu IBL. Key vào keep-set sweep qua bucket rỗng (assembleLeaves).
+  glassKey(color: number): string {
+    return `glass:${color}`
+  }
+  ensureGlassMat(color: number): THREE.Material {
+    const key = this.glassKey(color)
+    let entry = this.cache.get(key)
+    if (!entry) {
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        metalness: 0,
+        roughness: 0.05,
+        transparent: true,
+        opacity: 0.32,
+      })
+      entry = { mat, shader: null }
+      this.cache.set(key, entry)
+    }
+    return entry.mat
+  }
+
   // none → MeshToon; brick-tex → texture PBR triplanar; còn lại → procedural shader lit.
   private _createMat(
     material: WallMaterial,

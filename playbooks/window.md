@@ -6,6 +6,7 @@ tier: —
 modules:
   - threejs-modules/building/parts/WallSingle   # _solidTraps / _emitHoleBands — carve gốc
   - threejs-modules/building/parts/Joinery      # C1 khung bao quanh lỗ (frame)
+  - threejs-modules/building/parts/Leaf         # C2 cánh gỗ xoay + C4 cánh trượt kính/shoji
   - threejs-modules/components/InstancedBrickWall
   - threejs-modules/components/WoodSidingStrip
   - threejs-modules/components/WoodSidingWall
@@ -13,7 +14,7 @@ issues:
   - KI-001
   - KI-003
   - KI-004
-updated: 2026-06-10
+updated: 2026-06-11
 ---
 
 # Playbook — Cửa sổ / lỗ mở (opening)
@@ -75,6 +76,7 @@ band [ya,yb] × trapezoid đặc (lB,lT,rB,rT) = phần TƯỜNG; phần thiếu
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-11` — **C4 CÁNH TRƯỢT kính/shoji (joinery phase 4)**: `leafType` nới `'glass-slide' | 'shoji-slide'` (0 field mới — reuse leafDouble/leafOpen/leafColor C2, parse tolerant). Builder `parts/Leaf.ts` MỚI (tách từ Joinery chống phình, barrel re-export giữ import): kính trượt = khung 4 thanh + tấm kính 8mm (`ensureGlassMat` — recipe kính lan can Balcony: transparent + roughness 0.05 phản chiếu IBL); shoji trượt = khung + koshita ván đáy + lưới kumiko **GEOMETRY thật** + tấm giấy washi toon (KHÔNG reuse shader ShojiScreen — triplanar world-space → cánh trượt thì hoạ tiết "bơi" đứng yên trong không gian). Đôi = 2 panel 2 ray so le, panel 0 trượt ĐÈ panel 1 (mở max nửa lỗ — đúng patio/shoji thật); đơn = phủ trọn lỗ trượt sang phải đè mặt tường trong. Ray trên/dưới = bake bucket `frame:color` (0 draw mới). "Mở %" = **translate pivot LIVE** (`leafKind:'slide'` trong userData — `_tuneLeafLive` rẽ nhánh xoay/trượt, 0 rebuild). ⚠️ Vá kèm: material cánh vào KEEP-SET sweep qua bucket RỖNG (`keepMatKey`) — trước đây màu cánh C2 không trùng màu khung là bị `cache.sweep` evict cuối build → build sau recompile lại.
 - `2026-06-10` — **C1 KHUNG BAO (joinery phase 1 — kế hoạch khung+cánh theo khảo sát BIM)**: `parts/Joinery.ts` mới, khung per-opening optional (`frameStyle` wood/alu/steel + `frameW/frameOut/frameColor` — parse tolerant, KHÔNG bump schema). Chữ nhật = box butt-joint (đầu ngang GỐI 2 má; bậu dưới chỉ khi lỗ treo >2cm — cửa đi/bán nguyệt không bậu); tròn/bán nguyệt = **sweep op #2** profile fw×fd dọc spine ellipse nở fw/2. Wire `assembleFrames` TRƯỚC dispatch material — mọi loại tường (cả brick-3d/gỗ instanced) đều có khung; geo đẩy thẳng bucket `n:color` mergeWalls = khung cùng màu toàn nhà 1 draw, 0 lifecycle mới. ⚠️ Bài học: geo tay vào bucket chung PHẢI đệm **uv zeros** (đồng bộ attribute với BoxGeometry — thiếu uv là mergeGeometries trả null, mất hình lặng lẽ họ KI-004). GUI: dropdown Khung + Bản/Nhô (live) + màu per-opening.
 - `2026-06-11` — **FIX khung tròn THÒ NGOÀI tường** (ảnh thực tế: opening tròn đặt sát mép/đỉnh → khung vẽ trọn ellipse lơ lửng ngoài tường, lệch lỗ): `Joinery` thêm `clipToWall` — sinh 96 điểm ellipse → **clip vào biên tường `[x0,x1]×[0,h]`** (KHỚP `_holeChord` clamp của carve) → toàn-trong = 1 vòng kín (caps off), có điểm ngoài = tách các cung hở (caps on, xoay mảng bắt đầu tại điểm NGOÀI để quét vòng không cần wrap). Bỏ logic clip-đáy-riêng cũ (`cy<b`); rect frame cũng clip má `[0,h]` + đầu ngang/bậu chỉ vẽ khi trong biên. Cần thêm tham số `wallH` vào `frameGeosLocal` (carve dùng h, Joinery trước thiếu). Frame VỐN phẳng (đối xứng z=0) — "nghiêng" trong ảnh là phối cảnh + phần thò, không phải bug frame.
 - `2026-06-11` — **C2 CÁNH GỖ (joinery phase 2)**: `leafGeoLocal` (Joinery) — cánh panel mộc cổ điển: 2 stile + 3 rail (dưới cao chống-đá-chân / giữa tại 0.4h / trên) + 2 ô panel LÕM (tấm 14mm giữa cánh 40mm — recessed nhìn 2 phía); geometry LEAF-LOCAL gốc tại TRỤC BẢN LỀ, mirror cho cánh phải French. State optional `leafType/leafDouble/leafOpen/leafColor` (parse tolerant). `assembleLeaves` (wallAssembly): mesh RIÊNG trên PIVOT tại bản lề (xoay được → KHÔNG merge bucket; material chung `ensureFrameMat` DoubleSide per-color), French đôi = 2 cánh bản lề 2 má cùng mở VÀO TRONG. **Mở % = LIVE transform thuần**: pivot mang `userData {leafKey, leafBase, leafSign}`, slider → `ctx.tuneLeafLive(key,pct)` → Lab traverse set `rotation.y` (0 rebuild/recompile — pattern tunePathRotLive); buông = commit persist; key = `${instId}:${segIdx}:${opIdx}` luồn qua `segToSpec(seg, keyBase)`. Chỉ lỗ CHỮ NHẬT kind door/loading_door (window/round ẩn GUI + render skip). Budget: ~7 box/cánh ≈ 84 tri, +1 draw/cánh (không merge được vì xoay độc lập).

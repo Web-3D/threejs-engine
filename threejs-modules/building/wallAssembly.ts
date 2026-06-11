@@ -23,7 +23,7 @@ import { type BrickOpening, InstancedBrickWall } from '../components/InstancedBr
 import { WoodSidingStrip } from '../components/WoodSidingStrip'
 import { WoodSidingWall } from '../components/WoodSidingWall'
 import type { GroundMixParams } from '../site/state' // 🎨 mix mặt tường (schema chung site-kit)
-import { frameGeosLocal, leafGeoLocal } from './parts/Joinery'
+import { frameGeosLocal, LEAF_T, leafGeoLocal, slideLeafGeos } from './parts/Joinery'
 import {
   makePositionedWall,
   type PositionedOpening,
@@ -42,7 +42,13 @@ export interface AsmOpening {
   yOffset: number
   round?: boolean
   frame?: { w: number; out: number; color: number } // m — khung bao C1 (caller resolve style→spec); undefined = không khung
-  leaf?: { double: boolean; open: number; color: number } // C2 cánh gỗ — open 0–100% (100 = 110°)
+  // C2 cánh gỗ xoay ('wood' — open % = góc, 100 = 110°) + C4 cánh TRƯỢT kính/shoji (open % = quãng trượt).
+  leaf?: {
+    type: 'wood' | 'glass-slide' | 'shoji-slide'
+    double: boolean
+    open: number
+    color: number
+  }
   key?: string // `${instId}:${segIdx}:${opIdx}` — editor live-tune cánh (tuneLeafLive); headless bỏ qua
 }
 export interface AsmPanel {
@@ -145,47 +151,203 @@ function assembleFrames(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void
 // Cánh mở tối đa 110° (open=100%). Editor live-tune dùng CÙNG hằng số (xoay pivot trực tiếp).
 export const LEAF_MAX_RAD = (110 * Math.PI) / 180
 
-// CÁNH CỬA (C2 Joinery): mesh RIÊNG trên PIVOT tại trục bản lề — xoay live (transform thuần) nên
-// KHÔNG merge bucket. Material chung joinery DoubleSide (cache — per-color). Pivot mang userData
-// {leafKey, leafBase, leafSign} để editor kéo slider Mở xoay trực tiếp 0-rebuild (ctx.tuneLeafLive).
-// French đôi: cánh 0 bản lề má TRÁI (trải +X), cánh 1 bản lề má PHẢI (mirror, trải −X) — cùng mở vào trong.
+type AsmLeaf = NonNullable<AsmOpening['leaf']>
+
+// Material cánh vào KEEP-SET sweep: sweep cuối build chỉ giữ key CÓ MẶT trong buckets — cánh là mesh
+// RIÊNG (không bake bucket) nên đăng ký bucket RỖNG giữ chỗ (mergeWalls bỏ qua bucket rỗng), kẻo
+// material bị evict → build sau recompile lại. Vá luôn cho C2 (màu cánh ≠ màu khung là dính).
+function keepMatKey(ctx: WallAsmCtx, key: string): void {
+  if (!ctx.buckets.has(key)) ctx.buckets.set(key, [])
+}
+
+// CÁNH CỬA (C2 xoay + C4 trượt): mesh RIÊNG trên PIVOT — "Mở %" = transform thuần pivot (xoay bản
+// lề / translate ray) qua editor ctx.tuneLeafLive, 0 rebuild. KHÔNG merge bucket.
 function assembleLeaves(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
-  const th = (place.rotationY * Math.PI) / 180
-  const cos = Math.cos(th)
-  const sin = Math.sin(th)
   for (const op of spec.openings) {
     const lf = op.leaf
     if (!lf || op.round) continue
     const y0 = Math.max(0, op.yOffset)
     const lh = Math.min(place.h, op.yOffset + op.h) - y0 - 0.008 // khe trên/dưới
-    const n = lf.double ? 2 : 1
-    const lw = op.w / n
-    const mat = ctx.cache.ensureFrameMat(lf.color)
-    const hx0 = op.x - place.w / 2 // mép trái lỗ (local centered)
-    for (let i = 0; i < n; i++) {
-      const mirror = i === 1
-      const geo = leafGeoLocal(lw, lh, mirror)
-      if (!geo) continue
-      ctx.geos.push(geo)
-      const mesh = new THREE.Mesh(geo, mat)
-      mesh.castShadow = true
-      mesh.receiveShadow = true
-      const pivot = new THREE.Group()
-      const hx = mirror ? hx0 + op.w : hx0 // trục bản lề: má trái / má phải
-      pivot.position.set(
-        place.xOffset + hx * cos,
-        place.yBase + y0 + 0.004,
-        place.zOffset - hx * sin
-      )
-      const sign = mirror ? -1 : 1 // cả 2 cánh mở VÀO TRONG (−Z local)
-      pivot.rotation.y = th + sign * (Math.min(100, Math.max(0, lf.open)) / 100) * LEAF_MAX_RAD
-      pivot.userData.leafKey = op.key ?? ''
-      pivot.userData.leafBase = th
-      pivot.userData.leafSign = sign
-      pivot.add(mesh)
-      ctx.group.add(pivot)
-    }
+    if (lh < 0.1) continue
+    keepMatKey(ctx, ctx.cache.frameKey(lf.color))
+    if (lf.type === 'wood') swingLeaves(place, op, lf, y0, lh, ctx)
+    else slideLeaves(place, op, lf, y0, lh, ctx)
   }
+}
+
+// C2 CÁNH GỖ XOAY: pivot tại trục bản lề, userData {leafKey, leafKind:'swing', leafBase, leafSign}.
+// French đôi: cánh 0 bản lề má TRÁI (trải +X), cánh 1 bản lề má PHẢI (mirror, trải −X) — cùng mở vào trong.
+function swingLeaves(
+  place: WallPlace,
+  op: AsmOpening,
+  lf: AsmLeaf,
+  y0: number,
+  lh: number,
+  ctx: WallAsmCtx
+): void {
+  const th = (place.rotationY * Math.PI) / 180
+  const cos = Math.cos(th)
+  const sin = Math.sin(th)
+  const n = lf.double ? 2 : 1
+  const lw = op.w / n
+  const mat = ctx.cache.ensureFrameMat(lf.color)
+  const hx0 = op.x - place.w / 2 // mép trái lỗ (local centered)
+  for (let i = 0; i < n; i++) {
+    const mirror = i === 1
+    const geo = leafGeoLocal(lw, lh, mirror)
+    if (!geo) continue
+    const pivot = new THREE.Group()
+    addLeafMesh(pivot, geo, mat, 0, true, ctx)
+    const hx = mirror ? hx0 + op.w : hx0 // trục bản lề: má trái / má phải
+    pivot.position.set(place.xOffset + hx * cos, place.yBase + y0 + 0.004, place.zOffset - hx * sin)
+    const sign = mirror ? -1 : 1 // cả 2 cánh mở VÀO TRONG (−Z local)
+    pivot.rotation.y = th + sign * (Math.min(100, Math.max(0, lf.open)) / 100) * LEAF_MAX_RAD
+    pivot.userData.leafKey = op.key ?? ''
+    pivot.userData.leafKind = 'swing'
+    pivot.userData.leafBase = th
+    pivot.userData.leafSign = sign
+    ctx.group.add(pivot)
+  }
+}
+
+const COL_GLASS_PANE = 0xbfd8e0 // kính xanh nhạt trong (= kính lan can Balcony glass-frame)
+const COL_WASHI = 0xf3ecd6 // giấy washi trắng-ấm (= paperColor ShojiScreen)
+const SLIDE_GAP = 0.006 // m — khe giữa 2 ray so le
+
+// C4 CÁNH TRƯỢT (kính patio / shoji): mỗi panel = pivot + 2 mesh (solid toon per-color + pane
+// kính/giấy). Ray sát mặt TRONG tường (−Z local). Đôi = 2 panel 2 ray so le, panel 0 trượt ĐÈ
+// panel 1 đứng yên (mở tối đa nửa lỗ — đúng patio/shoji thật); đơn = 1 panel phủ trọn lỗ trượt
+// SANG PHẢI đè mặt tường. "Mở %" = translate pivot panel 0 dọc tường — userData {leafKind:'slide',
+// leafBaseX/Z, leafDirX/Z, leafMax} cho editor tuneLeafLive set position 0-rebuild.
+function slideLeaves(
+  place: WallPlace,
+  op: AsmOpening,
+  lf: AsmLeaf,
+  y0: number,
+  lh: number,
+  ctx: WallAsmCtx
+): void {
+  const kind = lf.type as 'glass-slide' | 'shoji-slide' // dispatch assembleLeaves đã loại 'wood'
+  const th = (place.rotationY * Math.PI) / 180
+  const ov = 0.02 // mép panel đè nhau / đè mép lỗ
+  const lw = lf.double ? op.w / 2 + ov : op.w + 0.06
+  const hx0 = op.x - place.w / 2
+  const zIn = -(place.depth / 2 + 0.012 + LEAF_T / 2) // ray 0 — sát mặt trong tường
+  const slideMax = lf.double ? op.w - lw : op.w // panel 0: chạy tới panel 1 / qua hết lỗ
+  const xs = lf.double ? [hx0, hx0 + op.w - lw] : [hx0 - 0.03] // panel 0 trái (trượt) / 1 phải (yên)
+  const solidMat = ctx.cache.ensureFrameMat(lf.color)
+  xs.forEach((xL, i) => {
+    const geos = slideLeafGeos(lw, lh, kind)
+    if (!geos.solid) return
+    const mov = i === 0 ? { open: lf.open, max: slideMax, key: op.key } : null
+    const pivot = slidePivot(place, th, xL, y0, mov)
+    const z = zIn - i * (LEAF_T + SLIDE_GAP)
+    addLeafMesh(pivot, geos.solid, solidMat, z, true, ctx)
+    if (geos.pane) addLeafMesh(pivot, geos.pane, paneMat(kind, ctx), z, false, ctx)
+    ctx.group.add(pivot)
+  })
+  slideRails(place, op, lf, y0, lh, xs.length, lw, zIn, ctx)
+}
+
+// Pivot panel trượt tại MÉP TRÁI panel (local x dọc tường), xoay theo heading tường. Panel 0 (mov)
+// mang userData cho tuneLeafLive + áp sẵn quãng mở từ state; panel 1 (mov=null) đứng yên.
+function slidePivot(
+  place: WallPlace,
+  th: number,
+  xL: number,
+  y0: number,
+  mov: { open: number; max: number; key?: string } | null
+): THREE.Group {
+  const cos = Math.cos(th)
+  const sin = Math.sin(th)
+  const bx = place.xOffset + xL * cos
+  const bz = place.zOffset - xL * sin
+  const pivot = new THREE.Group()
+  pivot.rotation.y = th
+  let d = 0
+  if (mov) {
+    d = (Math.min(100, Math.max(0, mov.open)) / 100) * mov.max
+    pivot.userData.leafKey = mov.key ?? ''
+    pivot.userData.leafKind = 'slide'
+    pivot.userData.leafBaseX = bx
+    pivot.userData.leafBaseZ = bz
+    pivot.userData.leafDirX = cos
+    pivot.userData.leafDirZ = -sin
+    pivot.userData.leafMax = mov.max
+  }
+  pivot.position.set(bx + cos * d, place.yBase + y0 + 0.004, bz - sin * d)
+  return pivot
+}
+
+// Tấm pane theo loại cánh: kính (transparent + IBL) / giấy washi (toon DoubleSide). Key vào keep-set.
+function paneMat(kind: 'glass-slide' | 'shoji-slide', ctx: WallAsmCtx): THREE.Material {
+  if (kind === 'glass-slide') {
+    keepMatKey(ctx, ctx.cache.glassKey(COL_GLASS_PANE))
+    return ctx.cache.ensureGlassMat(COL_GLASS_PANE)
+  }
+  keepMatKey(ctx, ctx.cache.frameKey(COL_WASHI))
+  return ctx.cache.ensureFrameMat(COL_WASHI)
+}
+
+// Mesh con của pivot cánh: geo vào ctx.geos (caller dispose), đặt z ray local. Pane kính/giấy
+// KHÔNG cast shadow (tấm mỏng lọt lòng khung — khung đã đổ bóng đủ, kính trong đổ bóng đặc = sai).
+function addLeafMesh(
+  pivot: THREE.Group,
+  geo: THREE.BufferGeometry,
+  mat: THREE.Material,
+  z: number,
+  shadow: boolean,
+  ctx: WallAsmCtx
+): void {
+  ctx.geos.push(geo)
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.z = z
+  mesh.castShadow = shadow
+  mesh.receiveShadow = true
+  pivot.add(mesh)
+}
+
+// RAY trượt trên/dưới (tĩnh — bake bucket frame:color như khung C1, merge 0 draw mới): thanh trên
+// dày ôm đủ số ray, thanh dưới mỏng (ngưỡng). Clip theo biên tường (panel đơn trượt đè tường có
+// thể vươn quá mép — ray chỉ tới mép).
+function slideRails(
+  place: WallPlace,
+  op: AsmOpening,
+  lf: AsmLeaf,
+  y0: number,
+  lh: number,
+  n: number,
+  lw: number,
+  zIn: number,
+  ctx: WallAsmCtx
+): void {
+  const hx0 = op.x - place.w / 2
+  const x0 = lf.double ? hx0 : hx0 - 0.03
+  const x1 = lf.double ? hx0 + op.w : x0 + 2 * lw
+  const a = Math.max(x0, -place.w / 2)
+  const b = Math.min(x1, place.w / 2)
+  if (b - a < 0.05) return
+  const zc = zIn - ((n - 1) * (LEAF_T + SLIDE_GAP)) / 2
+  const zd = n * LEAF_T + (n - 1) * SLIDE_GAP + 0.024
+  const key = ctx.cache.frameKey(lf.color)
+  ctx.cache.ensureFrameMat(lf.color)
+  let bucket = ctx.buckets.get(key)
+  if (!bucket) {
+    bucket = []
+    ctx.buckets.set(key, bucket)
+  }
+  const bk = bucket // const cho closure — TS không giữ narrowing của `let` trong closure
+  const mtx = new THREE.Matrix4()
+    .makeRotationY((place.rotationY * Math.PI) / 180)
+    .setPosition(place.xOffset, place.yBase, place.zOffset)
+  const rail = (cy: number, h: number): void => {
+    const g = new THREE.BoxGeometry(b - a, h, zd)
+    g.translate((a + b) / 2, cy, zc)
+    g.applyMatrix4(mtx)
+    bk.push(g)
+  }
+  rail(y0 + lh + 0.028, 0.04) // ray trên (header track)
+  rail(y0 + 0.008, 0.016) // ray dưới (ngưỡng dẫn hướng)
 }
 
 function assembleSurface(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {

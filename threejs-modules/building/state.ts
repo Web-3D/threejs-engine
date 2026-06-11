@@ -30,10 +30,10 @@ export interface OpeningState {
   frameW?: number // mm — bản khung (face width). undefined → FRAME_DEFAULTS theo style
   frameOut?: number // mm — khung nhô khỏi mặt tường MỖI BÊN. undefined → default style
   frameColor?: number // hex. undefined → default style
-  // ── CÁNH CỬA (C2 joinery 2026-06-11) — OPTIONAL parse-tolerant. Chỉ lỗ CHỮ NHẬT kind door/loading_door ──
-  leafType?: 'none' | 'wood' // cánh gỗ panel (rails/stiles + ô lõm); C3/C4 thêm steel/glass-slide/shoji-slide
-  leafDouble?: boolean // French đôi — 2 cánh bản lề 2 má, mở từ giữa
-  leafOpen?: number // % mở 0–100 (100 = 110°) — LIVE transform xoay pivot, KHÔNG rebuild
+  // ── CÁNH CỬA (C2 xoay + C4 trượt) — OPTIONAL parse-tolerant. Chỉ lỗ CHỮ NHẬT kind door/loading_door ──
+  leafType?: 'none' | 'wood' | 'glass-slide' | 'shoji-slide' // wood = xoay bản lề; *-slide = trượt ray (C4)
+  leafDouble?: boolean // wood: French đôi 2 bản lề · slide: 2 panel 2 ray (panel 0 trượt đè panel 1)
+  leafOpen?: number // % mở 0–100 — LIVE transform pivot (wood: xoay, 100=110°; slide: translate), KHÔNG rebuild
   leafColor?: number // hex. undefined → 0x7a5a3a (gỗ nâu)
 }
 

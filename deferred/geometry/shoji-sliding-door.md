@@ -1,6 +1,11 @@
 # Cửa trượt Shoji (障子) — sliding door element (#12b)
 
-> Status: **WANTED 2026-06-05**, chưa build. Đi kèm tường shoji (`jp-shoji` đã build). Đây là ELEMENT cửa, KHÁC material tường.
+> Status: **✅ BUILD XONG 2026-06-11** (C4 joinery — commit cùng ngày). Triển khai KHÁC plan dưới ở 2 điểm:
+> (1) gắn vào hệ CÁNH C2 (`leafType: 'shoji-slide' | 'glass-slide'`) thay vì door-style riêng — reuse
+> trọn leafDouble/leafOpen/leafColor + tuneLeafLive (slide = translate pivot thay xoay);
+> (2) kumiko = **GEOMETRY thật** (parts/Leaf.ts), KHÔNG reuse shader ShojiScreen — shader đó triplanar
+> WORLD-SPACE, cánh trượt đi thì hoạ tiết đứng yên trong không gian = "bơi" sai thấy ngay.
+> File giữ làm sử liệu plan-vs-thực. Chi tiết sống: playbook `window.md` §5.
 
 ## Mục tiêu
 Bộ cửa TRƯỢT shoji: 1–2 cánh lưới kumiko + giấy washi, trượt ngang trên ray (cảm giác cửa Nhật). Đặt vào opening tường.

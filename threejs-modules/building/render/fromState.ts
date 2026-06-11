@@ -50,6 +50,7 @@ import {
 } from '../state'
 import { type PartResult } from '../tokens'
 import {
+  type AsmOpening,
   assembleWall,
   mergeWalls,
   type WallAsmCtx,
@@ -117,11 +118,17 @@ function frameOf(op: OpeningState): { w: number; out: number; color: number } | 
   }
 }
 
-// C2 cánh cửa: resolve leaf→spec; none/undefined = không cánh (save cũ nguyên trạng).
-function leafOf(op: OpeningState): { double: boolean; open: number; color: number } | undefined {
+// C2/C4 cánh cửa: resolve leaf→spec (type luồn thẳng — wood xoay / *-slide trượt); none/undefined
+// = không cánh (save cũ nguyên trạng).
+function leafOf(op: OpeningState): AsmOpening['leaf'] | undefined {
   const t = op.leafType
   if (!t || t === 'none') return undefined
-  return { double: op.leafDouble ?? false, open: op.leafOpen ?? 0, color: op.leafColor ?? 0x7a5a3a }
+  return {
+    type: t,
+    double: op.leafDouble ?? false,
+    open: op.leafOpen ?? 0,
+    color: op.leafColor ?? 0x7a5a3a,
+  }
 }
 
 // SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
