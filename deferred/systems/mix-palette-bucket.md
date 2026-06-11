@@ -1,5 +1,20 @@
 # Mix PALETTE + xô áp 🪣 — "click palette nền mix rồi chỉ thẳng vào tường/nền/fence"
 
+> ## ✅ HOÀN THÀNH 2026-06-11 — trọn 6 bước / 1 phiên
+> Mảnh −1 (MixManager, archplan `be1f9dc`) → Factory thumb (assets `1ab108a` + Factory `b80f222`)
+> → Mảnh 0 (tex-palette.ts, `81e575b`) → Mảnh 1-2 (presets + PresetPanel, `80bdccb`) → Mảnh 3-4
+> (bucket 🪣, `654929e`). Chi tiết kỹ thuật: `playbooks/ground.md` entry 2026-06-11 (palette).
+>
+> **Lệch plan (có lý do):**
+> - Thumb ẢNH THẬT ngay v1 — Factory script làm TRƯỚC Mảnh 0 nên bỏ bước swatch màu tạm.
+> - `presetId` CHƯA ghi khi áp: cần +1 field optional vào `GroundMixParams`
+>   (threejs-modules/site/state.ts) — file đang trong tay luồng tách fromState song song
+>   → làm 1 dòng sau khi luồng đó chốt. Đường nâng REF giữ nguyên thiết kế dưới.
+> - Bucket KHÔNG áp zone path/paving/wall (renderer addKindZone không tiêu mix — né "click
+>   không thấy đổi"); chỉ zone surface.
+>
+> **Còn treo:** nghiệm thu ảnh WebGPU toàn hệ (NgQuan `2). Phần dưới giữ làm tư liệu thiết kế.
+
 > NgQuan 2026-06-11, sau khi mix phủ 8 đích: "thay vì cài đặt vào từng cái, tạo 1 palette giống màu
 > đã làm — cần ở đâu click palette rồi chỉ thẳng vào phần tường/nền/fence". = SketchUp paint-bucket /
 > Unity material-apply / CHÍNH palette màu atelier (paintColor brush) của app. Validate: ĐÚNG pattern.
