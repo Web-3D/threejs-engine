@@ -14,6 +14,7 @@
 import type {
   BorderMaterialKey,
   FenceConfig,
+  FishSchool,
   Grass3DConfig,
   GroundLayer,
   GroundMaterialKey,
@@ -40,6 +41,7 @@ import {
   GROUND_THICK_MAX,
   GROUND_THICK_MIN,
   makeFence,
+  makeFishSchool,
   makeGroundMixParams,
   makePavingParams,
   makeStonePathParams,
@@ -368,10 +370,6 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     kind: parseKind(r.kind, d.kind),
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     surfaceOn: typeof r.surfaceOn === 'boolean' ? r.surfaceOn : d.surfaceOn, // 💧 save cũ thiếu → true (bật)
-    fishOn: typeof r.fishOn === 'boolean' ? r.fishOn : d.fishOn, // 🐟 save cũ thiếu → false (tắt)
-    fishCount: clamp(num(r.fishCount, d.fishCount), 1, 30),
-    fishSpeed: clamp(num(r.fishSpeed, d.fishSpeed), 0.05, 0.8),
-    fishSeed: num(r.fishSeed, d.fishSeed),
     shape: r.shape === 'free' || r.shape === 'circle' || r.shape === 'ellipse' ? r.shape : 'rect',
     width: clamp(num(r.width, d.width), 1000, 30000),
     depth: clamp(num(r.depth, d.depth), 1000, 30000),
@@ -452,8 +450,51 @@ export function parseSite(raw: unknown): SiteState {
     terrain: parseTerrain(o.terrain, d.terrain ?? defaultTerrain()),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
     waters: parseWaters(o.waters, o.water),
+    fishSchools: parseFishSchools(o.fishSchools, o.waters), // 🐟 + migrate fishOn per-hồ (bản 1 ngày 2026-06-11)
     fences: parseFences(o.fences, o.fence, d.fences[0]),
     // key `rocks` (non bộ cũ, gỡ 2026-06-09) trong design lưu cũ: KHÔNG parse → biến mất khi save lại (an toàn)
+  }
+}
+
+// 🐟 Bầy cá: parse mảng tolerant + MIGRATE save có fishOn per-hồ (kiến trúc 1-ngày 2026-06-11 — đổi sang
+// bầy độc lập cùng ngày): hồ nào raw fishOn=true → 1 bầy đặt tại tâm hồ đó, radius nội tiếp, sâu giữa basin.
+function parseFishSchools(raw: unknown, rawWaters: unknown): FishSchool[] {
+  const out: FishSchool[] = []
+  if (Array.isArray(raw)) for (const r of raw) out.push(parseFishSchool(r))
+  if (out.length === 0 && Array.isArray(rawWaters)) {
+    for (const rw of rawWaters) {
+      const r = rw as Record<string, unknown>
+      if (r.fishOn !== true) continue
+      out.push(
+        parseFishSchool({
+          offsetX: r.offsetX,
+          offsetZ: r.offsetZ,
+          radius: Math.min(num(r.width, 4000), num(r.depth, 3000)) * 0.45,
+          depth: num(r.depthY, 600) * 0.55 + 30,
+          count: r.fishCount,
+          speed: r.fishSpeed,
+          seed: r.fishSeed,
+        })
+      )
+    }
+  }
+  return out
+}
+
+function parseFishSchool(raw: unknown): FishSchool {
+  const d = makeFishSchool()
+  if (!raw || typeof raw !== 'object') return d
+  const r = raw as Partial<FishSchool>
+  return {
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    offsetX: clamp(num(r.offsetX, d.offsetX), -20000, 20000),
+    offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
+    radius: clamp(num(r.radius, d.radius), 300, 10000),
+    depth: clamp(num(r.depth, d.depth), 50, 2000),
+    count: clamp(Math.round(num(r.count, d.count)), 1, 30),
+    size: clamp(num(r.size, d.size), 80, 500),
+    speed: clamp(num(r.speed, d.speed), 0.05, 0.8),
+    seed: num(r.seed, d.seed),
   }
 }
 

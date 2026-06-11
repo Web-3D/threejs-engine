@@ -148,11 +148,8 @@ export interface WaterConfig {
   // 💧 BẬT/TẮT riêng MẶT NƯỚC (perf): false = hồ giữ nguyên (đáy/lỗ/viền) nhưng mesh nước ẨN → reflector
   // KHÔNG render RTT (đỡ 1 lần render scene/frame; RTT lazy nên cũng không cấp VRAM). Khác `enabled` (tắt CẢ hồ).
   surfaceOn: boolean
-  // ── 🐟 ĐÀN CÁ KOI trong lòng hồ (PondFish Phase B 2026-06-11) — chỉ pool/pond (có basin); puddle bỏ qua ──
-  fishOn: boolean // bật đàn cá — rebuild commit (tạo/huỷ PondFish)
-  fishCount: number // số cá 1..30 (module cap 40) — rebuild commit
-  fishSpeed: number // m/s tốc bơi gốc — LIVE setSpeed (CPU-param + uniform tần vẫy, 0 rebuild)
-  fishSeed: number // xáo bộ màu cam/đốm cả đàn — LIVE setColorSeed (uniform)
+  // (fishOn/fishCount/fishSpeed/fishSeed per-hồ GỠ 2026-06-11 cùng ngày ship — NgQuan đổi kiến trúc: bầy cá
+  //  = INSTANCE ĐỘC LẬP `SiteState.fishSchools` (tab riêng mỗi bầy); save có field cũ được parse MIGRATE.)
   shape: 'rect' | 'circle' | 'ellipse' | 'free' // chữ nhật | tròn | ellipse | polygon-bezier (kéo đỉnh+tay-cầm 3D)
   width: number // mm — bề ngang hồ (X): rect 2 cạnh / ellipse trục-X / circle đường-kính (=min width,depth)
   depth: number // mm — chiều sâu hồ (Z): rect 2 cạnh / ellipse trục-Z. (circle dùng min của 2)
@@ -371,6 +368,20 @@ export interface TerrainConfig {
   mounds: TerrainMound[] // gò nặn-tay (Phase 3); Phase 1 = []
 }
 
+// 🐟 1 BẦY CÁ KOI (PondFish) — instance độc lập với hồ: vùng bơi tròn đặt TỰ DO trong lô (thường thả
+// vào lòng hồ). Gốc bầy tại MẶT NỀN (rim) — depth đo xuống dưới. Mỗi bầy 1 tab GUI (F1 F2…) chỉnh riêng.
+export interface FishSchool {
+  enabled: boolean
+  offsetX: number // mm — tâm vùng bơi lệch tâm lô (X) — LIVE move mesh
+  offsetZ: number // mm — (Z)
+  radius: number // mm — bán kính vùng bơi — LIVE setAreaRadius
+  depth: number // mm — độ sâu bơi DƯỚI mặt nền (rim) — LIVE setDepthY
+  count: number // số cá 1..30 — REBUILD commit (tạo/huỷ instance)
+  size: number // mm — chiều dài cá (per-con ±20%) — LIVE setFishLength
+  speed: number // m/s tốc bơi gốc — LIVE setSpeed
+  seed: number // xáo bộ màu cam/đốm cả đàn — LIVE setColorSeed
+}
+
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
   lotWidth: number // mm — bề ngang lô (trục X)
@@ -386,6 +397,7 @@ export interface SiteState {
   terrain?: TerrainConfig // 🏔️ nền sân vườn lồi-lõm (height-field). Optional → backward-compat (cũ = phẳng/tắt)
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
+  fishSchools: FishSchool[] // 🐟 bầy cá koi đa-instance ĐỘC LẬP hồ (tab F1 F2… — đặt tự do, thường thả vào lòng hồ)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
   // (rocks?: RockConfig[] đã GỠ 2026-06-09 — non bộ procedural "chưa ra dáng", thay bằng Houdini-bake asset
   //  → deferred/systems/houdini-bake-accents.md. Key `rocks` trong design cũ được parseSite bỏ qua an toàn.)
@@ -506,7 +518,24 @@ export function defaultSiteState(): SiteState {
       contactRadius: 0.07, // 7cm rộng ngang (phủ kín khe giữa lá → nền gốc liền mảng tối)
     },
     waters: defaultWaters(),
+    fishSchools: [], // 🐟 chưa có bầy nào — thêm qua ＋ ở tab Cá
     fences: [makeFence()],
+  }
+}
+
+// 🐟 Factory 1 bầy cá koi — instance ĐỘC LẬP hồ (PondFish). Default thả tại vị trí hồ default
+// (offsetZ 5000 = tâm pool đầu) → bấm ＋ là cá rơi đúng lòng hồ; user kéo X/Z đặt lại tuỳ ý.
+export function makeFishSchool(): FishSchool {
+  return {
+    enabled: true, // bầy mới hiện ngay (rẻ — 1 draw; khác hồ enabled=false vì hồ +1 RTT)
+    offsetX: 0,
+    offsetZ: 5000,
+    radius: 1500,
+    depth: 300,
+    count: 8,
+    size: 240,
+    speed: 0.25,
+    seed: 0,
   }
 }
 
@@ -574,10 +603,6 @@ export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
     kind,
     enabled,
     surfaceOn: true, // 💧 mặt nước bật mặc định; tắt = perf toggle (giữ hồ, ẩn mesh nước → RTT đứng)
-    fishOn: false, // 🐟 đàn cá tắt mặc định — bật trong tab Surface
-    fishCount: 8,
-    fishSpeed: 0.25,
-    fishSeed: 0,
     shape: 'rect', // mặc định chữ nhật; đổi 'free' để kéo đỉnh polygon trong 3D
     width: kind === 'puddle' ? 1500 : 4000, // puddle nhỏ; pool/pond 4m ngang
     depth: kind === 'puddle' ? 1200 : 3000, // puddle nông/nhỏ; pool/pond 3m sâu

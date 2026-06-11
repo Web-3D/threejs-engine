@@ -30,6 +30,7 @@ import type { TexturedSurfaceMaps } from '../../shaders/surface/TexturedSurface'
 import { shapeToLocalPolygon } from '../shapes' // tessellate shape→polygon
 import {
   type FenceConfig,
+  type FishSchool,
   GROUND_PRESETS,
   type GroundLayer,
   type GroundMaterialKey,
@@ -48,7 +49,7 @@ import { buildSiteFence } from './fence'
 import { buildVegetation } from './grass'
 import {
   allWaterCarvePolygons,
-  buildPondFish,
+  buildFishSchool,
   buildPuddle,
   buildWater,
   waterPolygons,
@@ -70,9 +71,9 @@ export interface SiteHandle {
   grass: GrassBlades | null
   waters: WaterSurface[] // 1 WaterSurface mỗi hồ ĐANG BẬT (cùng thứ tự renderWaters(site)) — caller zip cfg↔surf
   ground: THREE.Mesh | null // mesh nền base (G0) — caller giữ ref để LIVE-rebuild geometry-only (terrain drag, né water-RTT)
-  // 🐟 Đàn cá mỗi hồ fishOn (kèm cfg — caller tune live theo identity, KHÔNG zip index vì chỉ hồ bật cá
-  // mới có). Caller drive update(dt) mỗi frame; dispose theo ctx.shaders.
-  fish: { cfg: WaterConfig; fish: PondFish }[]
+  // 🐟 Bầy cá mỗi FishSchool enabled (kèm cfg — caller tune live theo identity). Caller drive update(dt)
+  // mỗi frame; dispose theo ctx.shaders.
+  fish: { cfg: FishSchool; fish: PondFish }[]
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -142,10 +143,10 @@ export function renderSiteState(
   // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
   const waters = pools.map((w) => buildWater(w, site, ctx, opts)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
-  // 🐟 đàn cá CHỈ hồ lõm fishOn (puddle không lòng) — caller update(dt)/tune qua handle.fish (theo cfg).
-  const fish = pools
-    .filter((w) => w.fishOn)
-    .map((w) => ({ cfg: w, fish: buildPondFish(w, site, ctx) }))
+  // 🐟 bầy cá = instance ĐỘC LẬP hồ (site.fishSchools) — caller update(dt)/tune qua handle.fish (theo cfg).
+  const fish = site.fishSchools
+    .filter((f) => f.enabled)
+    .map((f) => ({ cfg: f, fish: buildFishSchool(f, site, ctx) }))
   // Rào ĐA-LỚP: dựng mỗi lớp enabled (vòng đồng tâm ở inset riêng). skipFence → editor tự dựng (_syncFence)
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
   if (!opts.skipFence)

@@ -22,6 +22,7 @@ import { WaterSurface } from '../../components/WaterSurface'
 import { arcLength } from '../../ops/resample' // op #1 — viền đá hồ đặt theo chiều-dài-thật, khép kín
 import { offsetPolygon, shapeToLocalPolygon } from '../shapes'
 import {
+  type FishSchool,
   renderPuddles,
   renderWaters,
   type SiteState,
@@ -107,29 +108,21 @@ export function buildWater(
   return water
 }
 
-// 🐟 Đàn cá koi trong LÒNG hồ (chỉ pool/pond — puddle phẳng không có lòng). Gốc mesh = TÂM hồ tại MẶT
-// nước (khớp baseY của buildWater); cá bơi depthY ÂM = giữa cột nước (kẹp không chạm đáy/mặt). areaRadius
-// nội tiếp footprint × 0.9 (NgQuan 2026-06-11 "bơi rộng hơn" — steer-về-tâm kích từ 85% nên mép thật ~0.97;
-// circle/ellipse nội tiếp = bbox halfMin nên vẫn lọt lòng; free lõm dùng bbox → chấp nhận v1). Cỡ cá theo
-// hồ nhỏ. Caller (editor) drive update(dt) mỗi frame qua handle.fish; dispose theo ctx.shaders chain.
-export function buildPondFish(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): PondFish {
-  const rimY = site.groundThick / 1000
-  const yBot = rimY - w.depthY / 1000
-  const baseY = Math.max(yBot + 0.03, rimY - 0.03) // = mặt nước (cùng công thức buildWater)
-  const halfMin = Math.min(w.width, w.depth) / 2000
-  const span = baseY - yBot // bề dày cột nước (m)
-  const fishLength = Math.min(0.28, Math.max(0.08, halfMin * 0.3, span * 0.5))
+// 🐟 1 BẦY CÁ KOI (FishSchool — instance ĐỘC LẬP hồ, NgQuan 2026-06-11 "mỗi tab 1 bầy chỉnh riêng"):
+// vùng bơi tròn đặt tự do trong lô (thường thả vào lòng hồ). Gốc mesh = (offsetX, MẶT NỀN rim, offsetZ);
+// depth đo XUỐNG dưới rim (slider — user tự canh vào cột nước hồ). Mọi tham số trừ count = LIVE (move
+// mesh / setter PondFish). Caller (editor) drive update(dt) qua handle.fish; dispose theo ctx.shaders.
+export function buildFishSchool(fs: FishSchool, site: SiteState, ctx: SiteRenderCtx): PondFish {
   const fish = new PondFish({
-    count: w.fishCount,
-    areaRadius: Math.max(0.3, halfMin * 0.9),
-    depthY: -Math.min(Math.max(0.05, span * 0.55), span - 0.04), // giữa cột nước, không chạm đáy
-    fishLength,
-    speed: w.fishSpeed,
-    colorSeed: w.fishSeed,
+    count: fs.count,
+    areaRadius: fs.radius / 1000,
+    depthY: -fs.depth / 1000,
+    fishLength: fs.size / 1000,
+    speed: fs.speed,
+    colorSeed: fs.seed,
   })
-  const m = fish.getMesh()
-  m.position.set(w.offsetX / 1000, baseY, w.offsetZ / 1000)
-  ctx.group.add(m)
+  fish.getMesh().position.set(fs.offsetX / 1000, site.groundThick / 1000, fs.offsetZ / 1000)
+  ctx.group.add(fish.getMesh())
   ctx.shaders.push(fish) // dispose chain của site (PondFish có dispose())
   return fish
 }
