@@ -83,8 +83,10 @@ thả thêm **vật trang trí** / **cá có rig + animation di chuyển** vào 
 
 - **Nền móng = B3 (basin thể tích thật)** + B1 (nước trong suốt/refraction) → ĐÃ đủ để mesh đặt trong basin
   hiện ra qua nước (refraction) + lọt vào reflection. Basin nên là **Group container** để chứa contents sau.
-- **Contents system** (deferred): đặt/kéo vật trong basin (như site decor) + asset **cá rig** (GLTF skinned +
-  AnimationMixer, đường bơi). Tái dùng Move-tool + pattern instanced. Cá = component riêng (`PondFish`?).
+- **Contents system** (deferred): đặt/kéo vật trong basin (như site decor). Tái dùng Move-tool + pattern instanced.
+- **Cá = `components/PondFish` ✅ Phase A 2026-06-11** — đi đường PROCEDURAL thay "GLTF skinned + AnimationMixer"
+  ghi cũ ở trên (industry: đàn cá realtime = vertex sine-bend, skinned chỉ cho hero cận cảnh; 0 asset/0 download
+  production-web). Đàn instanced 1 draw, vẫy GPU, màu koi per-con. Phase B = ráp basin + GUI (chưa làm).
 - **Physics riêng theo hồ (BÀN SAU — NgQuan sẽ báo):** mỗi hồ có **trọng lực G** + **độ khúc xạ (IOR)** riêng →
   vật/cá trong hồ rơi/bơi theo G của hồ, nước bẻ tia theo IOR. Đây là lúc cân nhắc **C (PBR transmission/IOR thật)**
   vì IOR vật lý khớp "đổi độ khúc xạ". → C revisit chính ở đây, không phải để "đẹp hơn B".

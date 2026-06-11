@@ -1,0 +1,22 @@
+{
+  "name": "PondFish",
+  "category": "components",
+  "version": "1.0.0",
+  "description": "Đàn cá koi procedural bơi trong vùng tròn (lòng hồ) — thân low-poly ~131 tri/con, đuôi vẫy TSL vertex-bend GPU (0 rig/0 asset), màu koi trắng+cam+đốm đen per-con (hash+triNoise3D), wander CPU rẻ, cả đàn 1 draw",
+  "tags": ["fish", "koi", "pond", "water", "instanced", "vertex-animation", "site-kit", "cá"],
+  "complexity": "low",
+  "performance-cost": "low",
+  "performance": "InstancedMesh 1 draw; 8 con × 131 tri ≈ 1k tri (cap 40 con ≈ 5.2k). Vẫy đuôi = vertex shader (0 CPU); di chuyển = wander CPU ≤40 matrix compose/frame (không đáng kể). Không texture, không shadow (cá chìm — castShadow false). Màu/seed/speed = uniform live 0 rebuild; count = constructor-only (đổi = tạo instance mới).",
+  "three-version": ">=0.174",
+  "status": "stable",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "count",      "type": "number", "default": "8",     "description": "Số cá (cap 40). Constructor-only — đổi = tạo instance mới" },
+    { "name": "areaRadius", "type": "number", "default": "1.6",   "description": "Bán kính vùng bơi (m, quanh gốc mesh) — live setAreaRadius" },
+    { "name": "depthY",     "type": "number", "default": "-0.25", "description": "Cao độ bơi so với gốc mesh (m, âm = chìm) — live setDepthY" },
+    { "name": "fishLength", "type": "number", "default": "0.28",  "description": "Chiều dài cá (m), per-con ±20% — live setFishLength" },
+    { "name": "speed",      "type": "number", "default": "0.25",  "description": "Tốc độ bơi gốc (m/s), tần vẫy đuôi theo tốc — live setSpeed" },
+    { "name": "colorSeed",  "type": "number", "default": "0",     "description": "Xáo bộ mảng màu cam/đốm cả đàn — live setColorSeed (uniform)" }
+  ],
+  "usage": "const f = new PondFish({ count: 8, areaRadius: 1.6 }); scene.add(f.getMesh()); /* mỗi frame */ f.update(dt)"
+}
