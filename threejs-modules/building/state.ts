@@ -35,6 +35,9 @@ export interface OpeningState {
   leafDouble?: boolean // wood: French đôi 2 bản lề · slide: 2 panel 2 ray (panel 0 trượt đè panel 1)
   leafOpen?: number // % mở 0–100 — LIVE transform pivot (wood: xoay, 100=110°; slide: translate), KHÔNG rebuild
   leafColor?: number // hex. undefined → 0x7a5a3a (gỗ nâu)
+  // ── SONG SẮT cửa sổ (C3 joinery 2026-06-11) — OPTIONAL parse-tolerant. Chỉ kind window (cả lỗ tròn) ──
+  barStyle?: 'none' | 'vert' | 'grid' // vert = thanh dọc; grid = + thanh ngang dẹt (ô lưới)
+  barColor?: number // hex. undefined → 0x30343a (thép sẫm)
 }
 
 // Default khung theo style — GUI fill khi user chọn style; render fallback khi save thiếu field.

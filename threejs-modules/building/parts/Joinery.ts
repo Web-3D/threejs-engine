@@ -1,8 +1,8 @@
 /**
  * VỊ TRÍ   — building-kit/parts/Joinery.ts
  * VAI TRÒ  — Hệ joinery quanh lỗ opening, geometry thuần hệ LOCAL tường (x dọc thân tính từ TÂM,
- *            y 0..h, z ±depth/2, mặt ngoài +Z): C1 KHUNG BAO (frame/architrave). Cánh cửa (C2+C4)
- *            ở parts/Leaf.ts (barrel re-export dưới).
+ *            y 0..h, z ±depth/2, mặt ngoài +Z): C1 KHUNG BAO (frame/architrave) + C3 SONG SẮT
+ *            (barsGeosLocal). Cánh cửa (C2+C4) ở parts/Leaf.ts (barrel re-export dưới).
  * LIÊN HỆ  — Consumer kệ ops: lỗ TRÒN/bán nguyệt = sweep (op #2) profile dọc spine ellipse đã
  *            resample đốt đều (op #1). Lỗ CHỮ NHẬT = box butt-joint (đầu ngang GỐI lên 2 má dọc —
  *            mộc cổ điển; sweep qua spine vuông pinch góc 45° nên KHÔNG ép op vào chỗ thẳng).
@@ -75,6 +75,93 @@ function rectFrame(
   if (op.yOffset + op.h <= wallH + EPS) box(op.w + 2 * fw, fw, (x0 + x1) / 2, y1 + fw / 2) // đầu ngang
   if (op.yOffset > 0.02) box(op.w + 2 * fw, fw, (x0 + x1) / 2, y0 - fw / 2) // bậu dưới (window)
   return out
+}
+
+// ── C3 SONG SẮT ──────────────────────────────────────────────────────────────
+
+const BAR_R = 0.008 // m — bán kính thanh sắt dọc tròn
+const BAR_STEP = 0.13 // m — khoảng cách tâm thanh dọc (song sắt thật <13cm — an toàn)
+const STRAP_STEP = 0.45 // m — khoảng cách thanh ngang dẹt ('grid')
+
+// Khoảng [lo,hi] thanh DỌC tại x trong lỗ: chữ nhật = suốt lỗ (đã clip biên tường); tròn = CHORD
+// ellipse tại x (khớp lỗ carve fit-bbox _holeChord) rồi kẹp biên. null = ngoài lỗ.
+function barSpanAt(
+  op: FrameOpening,
+  x: number,
+  wallW: number,
+  wallH: number
+): { lo: number; hi: number } | null {
+  const y0 = Math.max(0, op.yOffset)
+  const y1 = Math.min(wallH, op.yOffset + op.h)
+  if (!op.round) return { lo: y0, hi: y1 }
+  const a = op.w / 2
+  const b = op.h / 2
+  const cx = op.x + op.w / 2 - wallW / 2
+  const cy = op.yOffset + op.h / 2
+  const t = 1 - ((x - cx) / a) ** 2
+  if (t <= 0) return null
+  const dy = b * Math.sqrt(t)
+  return { lo: Math.max(y0, cy - dy), hi: Math.min(y1, cy + dy) }
+}
+
+// SONG SẮT (C3) trong lỗ cửa sổ — thanh DỌC tròn cắm suốt lỗ; 'grid' thêm thanh NGANG dẹt. Lỗ tròn:
+// từng thanh cắt theo chord ellipse (barSpanAt). Geometry hệ local tường, z=0 (giữa bề dày — nằm
+// trong reveal). Cylinder openEnded (đầu thanh chìm vào mép lỗ) + Box đều indexed pos/normal/uv —
+// caller đẩy bucket frame:color merge chung khung (0 draw mới nếu trùng màu).
+export function barsGeosLocal(
+  op: FrameOpening,
+  wallW: number,
+  wallH: number,
+  style: 'vert' | 'grid'
+): THREE.BufferGeometry[] {
+  const x0 = op.x - wallW / 2
+  const y0 = Math.max(0, op.yOffset)
+  const y1 = Math.min(wallH, op.yOffset + op.h)
+  if (y1 - y0 < 0.08 || op.w < 0.08) return []
+  const out: THREE.BufferGeometry[] = []
+  const nv = Math.max(1, Math.round(op.w / BAR_STEP) - 1)
+  for (let i = 1; i <= nv; i++) {
+    const x = x0 + (op.w * i) / (nv + 1)
+    const span = barSpanAt(op, x, wallW, wallH)
+    if (!span || span.hi - span.lo < 0.04) continue
+    const g = new THREE.CylinderGeometry(BAR_R, BAR_R, span.hi - span.lo, 8, 1, true)
+    g.translate(x, (span.lo + span.hi) / 2, 0)
+    out.push(g)
+  }
+  if (style === 'grid') strapGeos(op, wallW, y0, y1, out)
+  return out
+}
+
+// Thanh NGANG dẹt 25×6mm mỗi ~45cm ('grid'): chữ nhật = suốt bề ngang lỗ; tròn = chord ngang tại y.
+function strapGeos(
+  op: FrameOpening,
+  wallW: number,
+  y0: number,
+  y1: number,
+  out: THREE.BufferGeometry[]
+): void {
+  const x0 = op.x - wallW / 2
+  const a = op.w / 2
+  const b = op.h / 2
+  const cx = x0 + a
+  const cy = op.yOffset + op.h / 2
+  const nh = Math.max(1, Math.round((y1 - y0) / STRAP_STEP) - 1)
+  for (let j = 1; j <= nh; j++) {
+    const y = y0 + ((y1 - y0) * j) / (nh + 1)
+    let lo = x0
+    let hi = x0 + op.w
+    if (op.round) {
+      const t = 1 - ((y - cy) / b) ** 2
+      if (t <= 0) continue
+      const dx = a * Math.sqrt(t)
+      lo = cx - dx
+      hi = cx + dx
+    }
+    if (hi - lo < 0.04) continue
+    const g = new THREE.BoxGeometry(hi - lo, 0.025, 0.006)
+    g.translate((lo + hi) / 2, y, 0)
+    out.push(g)
+  }
 }
 
 // N điểm trên ELLIPSE (tâm cx,cy bán trục a,b) trong mặt phẳng tường z=0 — KHÔNG lặp điểm cuối.

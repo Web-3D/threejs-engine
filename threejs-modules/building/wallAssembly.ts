@@ -23,7 +23,7 @@ import { type BrickOpening, InstancedBrickWall } from '../components/InstancedBr
 import { WoodSidingStrip } from '../components/WoodSidingStrip'
 import { WoodSidingWall } from '../components/WoodSidingWall'
 import type { GroundMixParams } from '../site/state' // 🎨 mix mặt tường (schema chung site-kit)
-import { frameGeosLocal, LEAF_T, leafGeoLocal, slideLeafGeos } from './parts/Joinery'
+import { barsGeosLocal, frameGeosLocal, LEAF_T, leafGeoLocal, slideLeafGeos } from './parts/Joinery'
 import {
   makePositionedWall,
   type PositionedOpening,
@@ -49,6 +49,7 @@ export interface AsmOpening {
     open: number
     color: number
   }
+  bars?: { style: 'vert' | 'grid'; color: number } // C3 song sắt cửa sổ — undefined = không song
   key?: string // `${instId}:${segIdx}:${opIdx}` — editor live-tune cánh (tuneLeafLive); headless bỏ qua
 }
 export interface AsmPanel {
@@ -102,7 +103,8 @@ export interface WallAsmCtx {
 // còn lại = mesh phẳng + material cache → bake vào bucket để merge sau (mergeWalls).
 export function assembleWall(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
   assembleFrames(place, spec, ctx) // khung opening TRƯỚC dispatch — mọi loại tường đều có khung
-  assembleLeaves(place, spec, ctx) // cánh cửa (C2) — mesh riêng trên pivot, không theo material tường
+  assembleBars(place, spec, ctx) // song sắt cửa sổ (C3) — bake bucket như khung
+  assembleLeaves(place, spec, ctx) // cánh cửa (C2 xoay + C4 trượt) — mesh riêng trên pivot
   if (spec.material === 'brick-3d') return assembleBrick3d(place, spec, ctx)
   if (spec.material === 'wood-3d') return assembleWood3d(place, spec, ctx)
   if (spec.material === 'wood-strip') return assembleWoodStrip(place, spec, ctx)
@@ -142,6 +144,31 @@ function assembleFrames(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void
       ctx.buckets.set(key, bucket)
     }
     for (const g of frameGeosLocal(op, place.w, place.h, place.depth, fr)) {
+      g.applyMatrix4(mtx)
+      bucket.push(g) // bucket SỞ HỮU — mergeWalls dispose sau merge
+    }
+  }
+}
+
+// SONG SẮT cửa sổ (C3 Joinery): geos hệ local tường → transform theo place → bake bucket
+// frame:color (merge chung khung — 0 draw mới nếu trùng màu; static, không live-tune).
+function assembleBars(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
+  const barred = spec.openings.filter((op) => op.bars)
+  if (barred.length === 0) return
+  const mtx = new THREE.Matrix4()
+    .makeRotationY((place.rotationY * Math.PI) / 180)
+    .setPosition(place.xOffset, place.yBase, place.zOffset)
+  for (const op of barred) {
+    const bar = op.bars
+    if (!bar) continue
+    const key = ctx.cache.frameKey(bar.color)
+    ctx.cache.ensureFrameMat(bar.color)
+    let bucket = ctx.buckets.get(key)
+    if (!bucket) {
+      bucket = []
+      ctx.buckets.set(key, bucket)
+    }
+    for (const g of barsGeosLocal(op, place.w, place.h, bar.style)) {
       g.applyMatrix4(mtx)
       bucket.push(g) // bucket SỞ HỮU — mergeWalls dispose sau merge
     }

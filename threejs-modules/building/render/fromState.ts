@@ -131,6 +131,13 @@ function leafOf(op: OpeningState): AsmOpening['leaf'] | undefined {
   }
 }
 
+// C3 song sắt cửa sổ: resolve bars→spec; none/undefined = không song (save cũ nguyên trạng).
+function barsOf(op: OpeningState): AsmOpening['bars'] | undefined {
+  const st = op.barStyle
+  if (!st || st === 'none' || op.kind !== 'window') return undefined
+  return { style: st, color: op.barColor ?? 0x30343a }
+}
+
 // SegmentState (mm) → WallSpec (m) cho shared assembler. (Lift _segToSpec — đơn vị /1000 ở biên.)
 // keyBase = `${instId}:${segIdx}` (editor) → key per-opening cho live-tune cánh; headless bỏ trống.
 function segToSpec(seg: SegmentState, keyBase?: string): WallSpec {
@@ -153,7 +160,8 @@ function segToSpec(seg: SegmentState, keyBase?: string): WallSpec {
       yOffset: op.yOffset / 1000,
       round: op.round,
       frame: frameOf(op), // C1 khung bao — undefined = không khung
-      leaf: leafOf(op), // C2 cánh cửa — undefined = không cánh
+      bars: barsOf(op), // C3 song sắt cửa sổ — undefined = không song
+      leaf: leafOf(op), // C2/C4 cánh cửa — undefined = không cánh
       key: keyBase ? `${keyBase}:${i}` : undefined,
     })),
     panels: seg.panels.map((p) => ({
