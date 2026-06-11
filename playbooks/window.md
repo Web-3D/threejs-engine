@@ -70,6 +70,7 @@ band [ya,yb] × trapezoid đặc (lB,lT,rB,rT) = phần TƯỜNG; phần thiếu
 | Lỗ tròn méo / cung không khép | ellipse chord chưa kẹp `[y0,y1]` | commit e51f569 (round → bán nguyệt + clamp) |
 | KHUNG tròn thò ra ngoài tường / lơ lửng trên mép, lệch khỏi lỗ | khung vẽ TRỌN ellipse, KHÔNG clip biên tường như lỗ carve | `Joinery.clipToWall` — clip spine vào `[x0,x1]×[0,h]`, tách cung, sweep từng cung caps-on (2026-06-11, từ ảnh) |
 | KHUNG tròn THỦNG / nhìn xuyên qua lỗ (lớp lót trong mất nửa) | khung = vòng ỐNG, mặt lót trong nửa-xa quay lưng camera → single-side CULL | material khung **DoubleSide** riêng (`cache.ensureFrameMat`); tường giữ single-side. Verify bằng Chrome headless render (2026-06-11) |
+| MÁ KHUNG dọc "mất sơn" trên tường ván/gạch (chỉ ló mẩu ở khe ván) | vỏ tường geometry thật NHÔ khỏi depth/2 (strip butt·cos(tilt) ~45mm > khung nhô 15mm) → ván che má | `wallAssembly.wallProud(spec)` — khung tự cộng độ nhô vỏ: strip = butt·cos(tilt)+4mm · wood-3d 42mm · brick-3d 14mm (2026-06-11, từ ảnh) |
 
 ## 5. Lịch sử nâng cấp
 

@@ -94,17 +94,31 @@ export function assembleWall(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx):
   assembleSurface(place, spec, ctx)
 }
 
+// Tường GEOMETRY THẬT có bề mặt NHÔ khỏi depth/2 (ván/gạch) → khung phải dày thêm bấy nhiêu kẻo má
+// bị ván che mất (ảnh 2026-06-11: má khung wood-strip chỉ ló ở khe giữa các tấm). Số đo: strip =
+// butt·cos(tilt) (mép proud, công thức zP của WoodSidingStrip); wood-3d ≈ thick+protrude default
+// component (~40mm); brick-3d = brickProtrude 12mm. Surface-shader phẳng = 0.
+function wallProud(spec: WallSpec): number {
+  if (spec.material === 'wood-strip')
+    return spec.woodButt * Math.cos((spec.woodStepTilt * Math.PI) / 180) + 0.004
+  if (spec.material === 'wood-3d') return 0.042
+  if (spec.material === 'brick-3d') return 0.014
+  return 0
+}
+
 // KHUNG BAO opening (C1 Joinery): geos hệ local tường → transform theo place → đẩy THẲNG vào bucket
 // màu phẳng `n:color` (mergeWalls merge + dispose) — khung cùng màu toàn nhà gộp 1 draw, 0 lifecycle mới.
 function assembleFrames(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): void {
   const framed = spec.openings.filter((op) => op.frame)
   if (framed.length === 0) return
+  const proud = wallProud(spec) // vỏ tường nhô (ván/gạch) → cộng vào nhô khung
   const mtx = new THREE.Matrix4()
     .makeRotationY((place.rotationY * Math.PI) / 180)
     .setPosition(place.xOffset, place.yBase, place.zOffset)
   for (const op of framed) {
-    const fr = op.frame
-    if (!fr) continue
+    const fr0 = op.frame
+    if (!fr0) continue
+    const fr = proud > 0 ? { ...fr0, out: fr0.out + proud } : fr0
     const key = ctx.cache.frameKey(fr.color) // material DoubleSide riêng (né cull lớp lót trong)
     ctx.cache.ensureFrameMat(fr.color)
     let bucket = ctx.buckets.get(key)
