@@ -147,6 +147,7 @@ export interface PositionedFoundationOpts {
   rotY: number // degrees
   openings?: SlabOpening[] // lỗ khoét móng — shape LỒNG (#3): khoét móng shape lớn để nhét shape nhỏ (né z-fight)
   outline?: [number, number][] // m, local centered (tim-tường) — shape 'round': móng đa giác thay bbox; chỉ nhánh concrete dùng (deck/stone-pillar giữ rect/radial)
+  material?: THREE.Material // 🎨 override vật liệu móng CONCRETE (mix caller-owned — KHÔNG push mats); thiếu → MeshToon
   foundType?: 'concrete' | 'wood-deck' | 'stone-pillar' // bê tông khối | sàn gỗ Nhật (lưới cột) | sàn gỗ trên 1 trụ đá giữa + váy
   deckPostSpacing?: number // m? KHÔNG — mm (đồng bộ state); #10 khoảng cách lưới cột deck (default 1500mm)
   deckPostInset?: number // mm — cột chống (wood-deck) LÙI vào từ mép deck mỗi cạnh → cột không sát mép sàn. Default 50
@@ -670,18 +671,27 @@ export function makePositionedFoundation(opts: PositionedFoundationOpts): PartRe
     opts.openings?.length || outline
       ? makeSlabWithHoles(fw, fd, opts.h, opts.openings ?? [], cx, cz, outline)
       : boxFoundationGeo(fw, opts.h, fd, cx, cz)
-  const mat = new THREE.MeshToonMaterial({
-    color: COL_FOUNDATION,
-    polygonOffset: true,
-    polygonOffsetFactor: 2,
-    polygonOffsetUnits: 2,
-  })
+  // 🎨 material override (mix caller-owned) → KHÔNG push mats (caller dispose); thiếu → MeshToon bê tông.
+  const mat = concreteFoundMat(opts)
   const m = new THREE.Mesh(geo, mat)
   m.rotation.y = (opts.rotY * Math.PI) / 180
   // Bottom tại y=0 — toàn bộ foundation nằm trên mặt phẳng XZ
   m.position.set(opts.worldX, opts.h / 2, opts.worldZ)
   m.receiveShadow = true
-  return { geos: [geo], mats: [mat], meshes: [m] }
+  return { geos: [geo], mats: opts.material ? [] : [mat], meshes: [m] }
+}
+
+// 🎨 Material móng concrete: override (mix caller-owned) hoặc MeshToon bê tông tự tạo. Tách hàm (complexity).
+function concreteFoundMat(opts: PositionedFoundationOpts): THREE.Material {
+  return (
+    opts.material ??
+    new THREE.MeshToonMaterial({
+      color: COL_FOUNDATION,
+      polygonOffset: true,
+      polygonOffsetFactor: 2,
+      polygonOffsetUnits: 2,
+    })
+  )
 }
 
 // Biên ngoài slab/móng: đa giác outline (shape round N-gon) hoặc rect w×d. Quy ước shape.y = -localZ

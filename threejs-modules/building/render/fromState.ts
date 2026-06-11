@@ -96,6 +96,13 @@ export interface BuildRenderCtx {
   // Vùng nền tụt (lòng hồ pool/pond) trong WORLD mét — caller (integrator) tính từ site.waters rồi bơm vào.
   // Cột chống móng (wood-deck post / stone-pillar trụ giữa) nằm trên đâm sâu tới đáy hồ. Thiếu → cột tới rim.
   groundDrops?: GroundDrop[]
+  // 🎨 MIX mặt tường (seg.mix bật — PhotoGroundMix mapping 'wall'): caller (editor Lab) resolve material
+  // cached + set wall-range (rule trọng lực). null/thiếu → tường material thường (headless bỏ qua được).
+  wallMixMat?: WallAsmCtx['mixMat']
+  // 🎨 MIX sàn (structure.slabMix — mapping 'xz' sàn nằm) + móng concrete (structure.foundMix — mapping
+  // 'wall' + range cho rule trọng lực). Cùng giao kèo: caller-owned, null → material thường.
+  slabMixMat?: (mix: NonNullable<SegmentState['mix']>) => THREE.Material | null
+  foundMixMat?: WallAsmCtx['mixMat']
 }
 
 // C1 khung opening: resolve style→spec mét (field thiếu → FRAME_DEFAULTS); none/undefined = không khung.
@@ -152,6 +159,7 @@ function segToSpec(seg: SegmentState, keyBase?: string): WallSpec {
       material: p.material,
       colorIndex: p.colorIndex,
     })),
+    mix: seg.mix, // 🎨 pass REF (mix key/cache theo object) — assembler override material surface
   }
 }
 
@@ -188,6 +196,7 @@ class StateRenderer {
       brick3d: this.ctx.brick3d,
       wood: this.ctx.wood,
       strip: this.ctx.strip,
+      mixMat: this.ctx.wallMixMat, // 🎨 mix mặt tường (editor bơm; headless undefined → fallback)
     }
     const stairHoles = this.collectStairHoles(state)
     let yAcc = 0
@@ -262,7 +271,7 @@ class StateRenderer {
     let spec = segToSpec(cfg.seg, keyBase)
     // LOD live-drag: tường phẳng 'none' (giữ MÀU) + bỏ panel decor → KHÔNG dựng brick-3d/gỗ instanced
     // (per-brick matrices = thủ phạm CPU). Khúc xạ/khoét cửa vẫn giữ. Full chi tiết khi buông (rebuild thường).
-    if (this.plainWalls) spec = { ...spec, material: 'none', panels: [] }
+    if (this.plainWalls) spec = { ...spec, material: 'none', panels: [], mix: undefined } // LOD bỏ cả mix
     assembleWall(place, spec, this.asm)
   }
 
@@ -355,6 +364,13 @@ class StateRenderer {
         strutSegments: inst.structure.strutSegments, // số đốt thanh chống xiên (stone-pillar)
         strutCurve: inst.structure.strutCurve, // độ cong thanh chống xiên (stone-pillar)
         woodMaterial: this.foundWoodMaterial(inst), // gỗ móng 'wood-tex' (TexturedSurface) hoặc undefined = MeshToon
+        // 🎨 foundMix (chỉ nhánh concrete dùng): mapping 'wall' + range (chân móng wallBase−fh, cao fh)
+        material: inst.structure.foundMix
+          ? (this.ctx.foundMixMat?.(inst.structure.foundMix, {
+              footY: wallBase - fh,
+              h: fh,
+            }) ?? undefined)
+          : undefined,
         postRadius: inst.structure.postRadius, // bán kính 8 cột trụ (stone-pillar)
         postLength: inst.structure.postLength, // chiều dài cột = gap 2 tầng xà (xà dưới + xiên đi theo)
         understructHalf: (inst.structure.understructSize ?? 5000) / 2000, // nửa-span khung-dưới (ĐỘC LẬP deck)
@@ -407,6 +423,12 @@ class StateRenderer {
   // procedural TỪ CACHE (gỗ demo: nâu + scale 1) + ghi key vào slabMatKeys (sweep keep-set kẻo bị evict =
   // recompile mỗi frame / dispose nhầm). Cache sở hữu dispose → makePositionedSlab KHÔNG đưa vào ctx.mats.
   private slabMaterial(inst: ShapeInstance): THREE.Material | undefined {
+    // 🎨 slabMix THẮNG slabMaterial (mapping 'xz' — sàn nằm như nền); null (texture đang load) → fallback dưới.
+    const mix = inst.structure.slabMix
+    if (mix) {
+      const m = this.ctx.slabMixMat?.(mix)
+      if (m) return m
+    }
     const sm = inst.structure.slabMaterial ?? 'none'
     if (sm === 'none') return undefined
     // 'walnut-tex' = material texture ảnh do caller bơm (PhotoGround cache, KHÔNG qua wallCache → KHÔNG push

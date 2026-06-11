@@ -22,6 +22,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { type BrickOpening, InstancedBrickWall } from '../components/InstancedBrickWall'
 import { WoodSidingStrip } from '../components/WoodSidingStrip'
 import { WoodSidingWall } from '../components/WoodSidingWall'
+import type { GroundMixParams } from '../site/state' // 🎨 mix mặt tường (schema chung site-kit)
 import { frameGeosLocal, leafGeoLocal } from './parts/Joinery'
 import {
   makePositionedWall,
@@ -61,6 +62,9 @@ export interface WallSpec extends WallMatInput {
   woodStepTilt: number // deg — wood-strip
   openings: AsmOpening[]
   panels: AsmPanel[]
+  // 🎨 MIX mặt tường (PhotoGroundMix — caller bơm material qua ctx.mixMat). Chỉ nhánh SURFACE
+  // (brick-3d/wood-3d/wood-strip giữ geometry thật — mix bỏ qua). undefined / ctx.mixMat null → như cũ.
+  mix?: GroundMixParams
 }
 // Vị trí + kích thước tường trong world (mét, độ).
 export interface WallPlace {
@@ -81,6 +85,11 @@ export interface WallAsmCtx {
   brick3d: InstancedBrickWall[]
   wood: WoodSidingWall[]
   strip: WoodSidingStrip[]
+  // 🎨 MIX: caller (editor Lab) resolve material cho spec.mix (PhotoGroundMix cached, CALLER sở hữu — KHÔNG
+  // dispose ở đây) + range (footY/h world) cho rule trọng lực. null = chưa sẵn → fallback material thường.
+  mixMat?: (mix: GroundMixParams, range: { footY: number; h: number }) => THREE.Material | null
+  // Material NGOÀI cache (mix per-segment) theo bucket key — mergeWalls tra đây khi cache miss.
+  extraMats?: Map<string, THREE.Material>
 }
 
 // Dựng 1 tường: dispatch theo material. brick-3d/wood-3d/wood-strip = geometry thật (add thẳng group);
@@ -188,7 +197,13 @@ function assembleSurface(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): voi
     yOffset: op.yOffset, // pass thẳng (kể cả ÂM) → bán nguyệt khi kéo xuống dưới sàn
     round: op.round,
   }))
-  const key = ctx.cache.wallKey(spec)
+  // 🎨 MIX thắng material thường: key riêng theo params object (per-segment — không merge chéo mix khác
+  // nhau; các mảnh CÙNG segment vẫn merge). Material caller-owned → extraMats (mergeWalls tra khi cache miss).
+  const mixMat = spec.mix
+    ? (ctx.mixMat?.(spec.mix, { footY: place.yBase, h: place.h }) ?? null)
+    : null
+  const key = mixMat ? mixKeyOf(spec.mix as GroundMixParams) : ctx.cache.wallKey(spec)
+  if (mixMat) (ctx.extraMats ??= new Map()).set(key, mixMat)
   const result = makePositionedWall({
     w: place.w,
     h: place.h,
@@ -199,17 +214,25 @@ function assembleSurface(place: WallPlace, spec: WallSpec, ctx: WallAsmCtx): voi
     yBase: place.yBase,
     rotationY: place.rotationY,
     openings,
-    wallMaterial: ctx.cache.ensureMat(
-      key,
-      spec.material,
-      wallColor(spec),
-      spec.matScale,
-      brickOptsOf(spec)
-    ),
+    wallMaterial:
+      mixMat ??
+      ctx.cache.ensureMat(key, spec.material, wallColor(spec), spec.matScale, brickOptsOf(spec)),
     panels: resolvePanels(spec, ctx.cache),
   })
   bakeToBucket(ctx.buckets, key, result.meshes)
   for (const geo of result.geos) geo.dispose()
+}
+
+// 🎨 Bucket key ổn định per GroundMixParams object (WeakMap id) — mix per-segment không merge chéo.
+const mixIds = new WeakMap<GroundMixParams, number>()
+let mixIdSeq = 0
+function mixKeyOf(m: GroundMixParams): string {
+  let id = mixIds.get(m)
+  if (id === undefined) {
+    id = ++mixIdSeq
+    mixIds.set(m, id)
+  }
+  return `mix:${id}`
 }
 
 // Panel decor → PositionedPanel (material/matKey từ cache chung; merge cùng vật liệu, ít draw call).
@@ -323,10 +346,11 @@ export function mergeWalls(ctx: WallAsmCtx): void {
     if (geos.length === 0) continue
     const merged = mergeGeometries(geos, false)
     for (const g of geos) g.dispose() // clones đã copy vào merged → giải phóng
-    const entry = ctx.cache.getEntry(key)
-    if (!merged || !entry) continue
+    // 🎨 mix key → material caller-owned (extraMats, KHÔNG dispose); còn lại → cache như cũ.
+    const mat = ctx.cache.getEntry(key)?.mat ?? ctx.extraMats?.get(key)
+    if (!merged || !mat) continue
     ctx.geos.push(merged)
-    const mesh = new THREE.Mesh(merged, entry.mat)
+    const mesh = new THREE.Mesh(merged, mat)
     mesh.castShadow = true
     mesh.receiveShadow = true
     ctx.group.add(mesh)

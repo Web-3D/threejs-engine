@@ -9,6 +9,7 @@
  * Tất cả kích thước lưu bằng mm. Renderer ÷1000 ở biên trước Three.js (boundary _segToSpec).
  */
 
+import type { GroundMixParams } from '../site/state' // 🎨 mix mặt tường (schema dùng chung site-kit)
 import type { RoofOverhang, RoofType } from './parts/RoofShape'
 import type { WallMaterial } from './wallMaterials'
 
@@ -83,6 +84,9 @@ export interface SegmentState {
   nanCell?: number // m — khoảng cách nan gỗ (jp-shoji*). Optional
   woodGrain?: number // 0–1 — độ nhiễu vân gỗ / nhám koshita (jp-shoji*). Optional
   paintColor: number | null // hex sơn từ palette atelier (brush). null = dùng colorIndex/WALL_COLORS
+  // 🎨 MIX mặt tường (PhotoGroundMix mapping 'wall' — NgQuan 2026-06-11 "kể cả tường wall trong building").
+  // Bật = THAY material surface (chỉ nhánh surface; *-3d giữ geometry thật). Optional → backward-compat.
+  mix?: GroundMixParams
 }
 
 export interface ColumnState {
@@ -140,6 +144,10 @@ export interface StructureState {
   postLength?: number // mm — chiều dài 8 cột trụ = khoảng cách 2 tầng xà (xà dưới + xiên đi theo). Optional, default 1500
   understructSize?: number // mm — KÍCH THƯỚC khung-dưới (xà/trụ/xiên) ĐỘC LẬP deck — kéo deck KHÔNG ảnh hưởng. Optional, default 5000
   understructMaterial?: 'none' | 'wood-tex' | 'bark-tex' // texture RIÊNG khung-dưới (tách deck): 'wood-tex' = Old Plywood; 'bark-tex' = Tree Bark. Optional, default 'none'
+  // 🎨 MIX (PhotoGroundMix): slabMix = mặt SÀN (mapping 'xz' world — sàn nằm); foundMix = MÓNG khối bê tông
+  // (mapping 'wall' — chỉ nhánh concrete; wood-deck/stone-pillar giữ gỗ). Optional → backward-compat.
+  slabMix?: GroundMixParams
+  foundMix?: GroundMixParams
   deckRailShow?: boolean // bật LAN CAN 4 mặt quanh deck (stone-pillar). Optional, default false
   deckRailH?: number // mm — cao lan can. Optional, default 900
   deckRailLength?: number // mm — DÀI (trục X) khung lan can chữ nhật, độc lập. Optional, default 5000
@@ -344,6 +352,7 @@ function copySegExtras(to: SegmentState[], from: SegmentState[] | undefined): vo
     s.woodButt = from[i].woodButt
     s.woodStepTilt = from[i].woodStepTilt
     s.paintColor = from[i].paintColor
+    s.mix = from[i].mix // 🎨 mix mặt tường sống qua reshape dims (toSegments dựng segs mới)
   })
 }
 
