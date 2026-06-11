@@ -50,6 +50,9 @@ export function frameGeosLocal(
 
 // Khung chữ nhật: 2 má dọc + đầu ngang GỐI lên má (butt-joint mộc); bậu dưới CHỈ khi lỗ treo cao
 // (cửa sổ). Mọi thanh CLIP vào biên tường [x0,x1]×[0,h] — phần ngoài tường bỏ (khớp lỗ carve).
+// VÀNH TRONG lấn LIP vào lòng lỗ: mặt trong khung từng kết thúc ĐÚNG mép lỗ → ĐỒNG PHẲNG với
+// reveal tường (cùng x/y, dải z giao nhau) = z-fight lốm đốm sát má (ảnh 2026-06-11). Lip đè vào
+// trong che hẳn reveal — cùng vai trò FRAME_LIP của khung tròn (trước ghi "rect không cần" — sai).
 function rectFrame(
   op: FrameOpening,
   wallW: number,
@@ -63,6 +66,7 @@ function rectFrame(
   const y0 = Math.max(0, op.yOffset)
   const y1 = Math.min(wallH, op.yOffset + op.h)
   if (y1 - y0 < 0.01 || op.w < 0.01) return []
+  const lip = Math.min(FRAME_LIP, op.w / 6, (y1 - y0) / 6) // kẹp theo lỗ nhỏ — không nuốt lỗ
   const out: THREE.BufferGeometry[] = []
   const box = (bw: number, bh: number, cx: number, cy: number): void => {
     if (bw < EPS || bh < EPS) return
@@ -70,10 +74,11 @@ function rectFrame(
     g.translate(cx, cy, 0)
     out.push(g)
   }
-  box(fw, y1 - y0, x0 - fw / 2, (y0 + y1) / 2) // má trái
-  box(fw, y1 - y0, x1 + fw / 2, (y0 + y1) / 2) // má phải
-  if (op.yOffset + op.h <= wallH + EPS) box(op.w + 2 * fw, fw, (x0 + x1) / 2, y1 + fw / 2) // đầu ngang
-  if (op.yOffset > 0.02) box(op.w + 2 * fw, fw, (x0 + x1) / 2, y0 - fw / 2) // bậu dưới (window)
+  box(fw + lip, y1 - y0, x0 - (fw - lip) / 2, (y0 + y1) / 2) // má trái (mặt ngoài giữ, vành trong +lip)
+  box(fw + lip, y1 - y0, x1 + (fw - lip) / 2, (y0 + y1) / 2) // má phải
+  if (op.yOffset + op.h <= wallH + EPS)
+    box(op.w + 2 * fw, fw + lip, (x0 + x1) / 2, y1 + (fw - lip) / 2) // đầu ngang
+  if (op.yOffset > 0.02) box(op.w + 2 * fw, fw + lip, (x0 + x1) / 2, y0 - (fw - lip) / 2) // bậu dưới (window)
   return out
 }
 
