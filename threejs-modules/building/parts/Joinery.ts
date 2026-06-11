@@ -153,9 +153,15 @@ function clipToWall(
   return { runs, closed: false }
 }
 
+// Lỗ tròn carve bằng BAND ngang ~25mm (playbook window §2) → ở 2 CỰC lỗ thật NHỎ hơn ellipse lý
+// tưởng 1 sliver tường — thò vào lòng vòng khung = khe sáng "thủng khung" (ảnh 2026-06-11). Khung
+// đè LIP vào trong mép lỗ để che răng cưa carve — đúng vai trò architrave thật.
+const FRAME_LIP = 0.025 // m — ≥ bước band carve
+
 // Lỗ ELLIP (fit bbox w×h, tâm cy = yOffset+h/2 — KHỚP carve _holeChord): spine = ellipse NỞ fs.w/2
-// (mép trong khung = mép lỗ) CLIP vào biên tường → sweep (op #2) profile fs.w×fd mỗi cung. up=+Z
-// (pháp tuyến tường) → parallel-transport giữ profile phẳng trong mặt phẳng tường, đối xứng quanh z=0.
+// rồi THỤT FRAME_LIP (mép trong khung đè lên mép lỗ — che sliver band) CLIP vào biên tường → sweep
+// (op #2) profile fs.w×fd mỗi cung. up=+Z (pháp tuyến tường) → parallel-transport giữ profile phẳng
+// trong mặt phẳng tường, đối xứng quanh z=0.
 function ellipseFrame(
   op: FrameOpening,
   wallW: number,
@@ -163,8 +169,8 @@ function ellipseFrame(
   fd: number,
   fs: FrameSpec
 ): THREE.BufferGeometry[] {
-  const a = op.w / 2 + fs.w / 2
-  const b = op.h / 2 + fs.w / 2
+  const a = Math.max(0.01, op.w / 2 + fs.w / 2 - FRAME_LIP)
+  const b = Math.max(0.01, op.h / 2 + fs.w / 2 - FRAME_LIP)
   const cx = op.x + op.w / 2 - wallW / 2
   const cy = op.yOffset + op.h / 2
   if (a < 0.01 || b < 0.01) return []
