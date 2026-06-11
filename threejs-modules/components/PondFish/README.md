@@ -34,11 +34,15 @@ fish.update(dt) // tiến vẫy đuôi + dời đàn (CPU rẻ)
 
 API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
 
-## Hành vi bơi
+## Hành vi bơi (v1.1)
 
-- Wander random-walk (quay có kẹp) trong đĩa bán kính `areaRadius`; ra gần biên (80%) tự lượn về tâm.
-- Mỗi con: tốc/cỡ/pha vẫy/bộ màu riêng (deterministic — LCG seed cố định, tái lập).
+- **Lượn chữ S liên tục** (sine heading per-con — cá thật không bao giờ bơi thẳng) + wander random-walk
+  mạnh (đổi hướng bất chợt) trong đĩa `areaRadius`; sát biên (85%) tự lượn về tâm.
+- **Tốc nhấp nhô** theo thời gian (lướt ↔ rướn) — phá đều tăm tắp giữa các con.
+- Mỗi con: tốc/cỡ/pha vẫy/tần lượn/bộ màu riêng (deterministic — LCG seed cố định, tái lập).
 - Nhấp nhô Y nhẹ ±3cm. Heading → `rotation.y` (forward local = +X).
+- ⚠️ Gotcha TSL đã vá (v1.1): pattern màu phải sample `positionGeometry` (attribute gốc) — `positionLocal`
+  là varying bị `positionNode` ghi đè → sample theo toạ độ đang vẫy = hoạ tiết "trượt khỏi thân".
 
 ## Performance
 

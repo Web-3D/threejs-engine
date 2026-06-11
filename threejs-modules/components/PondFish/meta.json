@@ -1,7 +1,7 @@
 {
   "name": "PondFish",
   "category": "components",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Đàn cá koi procedural bơi trong vùng tròn (lòng hồ) — thân low-poly ~131 tri/con, đuôi vẫy TSL vertex-bend GPU (0 rig/0 asset), màu koi trắng+cam+đốm đen per-con (hash+triNoise3D), wander CPU rẻ, cả đàn 1 draw",
   "tags": ["fish", "koi", "pond", "water", "instanced", "vertex-animation", "site-kit", "cá"],
   "complexity": "low",

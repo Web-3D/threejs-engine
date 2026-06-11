@@ -90,6 +90,7 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 | Không thấy đáy / nước lơ lửng dưới nền | basin merge trả null (trộn index) + 2–3 lớp nền đặc che | `known-issues/KI-004` |
 | Sọc lưới ngang/dọc đè lòng hồ | GridHelper ở y=0 (trên mặt nước), không hole được | `KI-004` (occluder thứ 3) |
 | Gương "đứng hình" khi orbit thấp/ngang | reflector bỏ render RTT khi camera ở mặt sau (isFacingAway) | WaterSurface README §Performance — fix `forceUpdate` mỗi frame + `frustumCulled=false` |
+| 🐟 Hoạ tiết màu TRƯỢT trên thân cá khi bơi (vertex-anim) | `positionLocal` là VARYING bị `positionNode` GHI ĐÈ (Position.js toVarying + NodeMaterial assign) → colorNode sample theo toạ độ ĐANG vẫy | dùng `positionGeometry` (attribute gốc pre-displacement) cho pattern màu — PondFish v1.1 (2026-06-11) |
 | Đáy mờ tịt không thấy | `tint` (Đục%) cao + bottomColor tối | kéo "Đục %" xuống; chỉnh bottomColor |
 | Console ngập WebGPU validation (depth MSAA / copy out-of-bounds); nước MẤT phản chiếu | MSAA (`antialias:true`) ✗ reflector RTT → GPU từ chối pass | `known-issues/KI-007` — renderer `antialias:false` + FXAA post |
 | Gương đứng hình VĨNH VIỄN sau khi camera chui dưới mặt nước 1 lần | bỏ `forceUpdate` → `_inReflector` kẹt true (bug three) | `known-issues/KI-008` — giữ forceUpdate + shader tắt gương khi dưới nước |

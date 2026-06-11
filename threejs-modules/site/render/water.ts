@@ -109,7 +109,8 @@ export function buildWater(
 
 // 🐟 Đàn cá koi trong LÒNG hồ (chỉ pool/pond — puddle phẳng không có lòng). Gốc mesh = TÂM hồ tại MẶT
 // nước (khớp baseY của buildWater); cá bơi depthY ÂM = giữa cột nước (kẹp không chạm đáy/mặt). areaRadius
-// nội tiếp footprint × 0.75 — shape cong/free dùng bbox nên hệ số chừa lề, cá không thò vành. Cỡ cá theo
+// nội tiếp footprint × 0.9 (NgQuan 2026-06-11 "bơi rộng hơn" — steer-về-tâm kích từ 85% nên mép thật ~0.97;
+// circle/ellipse nội tiếp = bbox halfMin nên vẫn lọt lòng; free lõm dùng bbox → chấp nhận v1). Cỡ cá theo
 // hồ nhỏ. Caller (editor) drive update(dt) mỗi frame qua handle.fish; dispose theo ctx.shaders chain.
 export function buildPondFish(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): PondFish {
   const rimY = site.groundThick / 1000
@@ -120,7 +121,7 @@ export function buildPondFish(w: WaterConfig, site: SiteState, ctx: SiteRenderCt
   const fishLength = Math.min(0.28, Math.max(0.08, halfMin * 0.3, span * 0.5))
   const fish = new PondFish({
     count: w.fishCount,
-    areaRadius: Math.max(0.3, halfMin * 0.75),
+    areaRadius: Math.max(0.3, halfMin * 0.9),
     depthY: -Math.min(Math.max(0.05, span * 0.55), span - 0.04), // giữa cột nước, không chạm đáy
     fishLength,
     speed: w.fishSpeed,

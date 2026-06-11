@@ -22,6 +22,7 @@ import {
   hash,
   instanceIndex,
   mix,
+  positionGeometry,
   positionLocal,
   smoothstep,
   step,
@@ -54,9 +55,10 @@ interface FishState {
   z: number
   heading: number // rad — hướng bơi; forward local = +X, dir world = (cos h, 0, -sin h)
   wander: number // rad/s — tốc quay hiện tại (random walk có kẹp)
+  swayF: number // rad/s — tần lượn chữ S per-con (cá không bao giờ bơi thẳng)
   speed: number // hệ số per-con × speed gốc
   size: number // hệ số per-con × fishLength
-  bob: number // pha nhấp nhô dọc Y
+  bob: number // pha nhấp nhô dọc Y + pha lượn/tốc
 }
 
 const MAX_FISH = 40
@@ -211,7 +213,10 @@ export class PondFish {
     const phase = hash(fi.add(float(31.7))).mul(6.2832)
     const wave = p.x.mul(6).sub(this.uTime.mul(this.uFlap)).add(phase).sin()
     mat.positionNode = positionLocal.add(vec3(0, 0, wave.mul(amp))) // KI-003: ADD giữ instanceMatrix
-    mat.colorNode = this._koiColor(fi, p)
+    // Pattern màu sample theo positionGeometry (ATTRIBUTE GỐC pre-displacement) — positionLocal là
+    // VARYING bị positionNode GHI ĐÈ (Position.js: toVarying + NodeMaterial assign) → dùng nó trong
+    // colorNode = sample theo toạ độ ĐANG VẪY = hoạ tiết "trượt khỏi thân" khi bơi (NgQuan thấy 2026-06-11).
+    mat.colorNode = this._koiColor(fi, positionGeometry as unknown as TSLNode)
     return mat
   }
 
@@ -241,16 +246,17 @@ export class PondFish {
     return mix(col, vec3(0.95, 0.94, 0.9), belly) as TSLNode
   }
 
-  // Rải đàn trong đĩa (r = R·√u — phân bố đều theo diện tích), mỗi con 1 hướng/tốc/cỡ/pha riêng.
+  // Rải đàn TRẢI RỘNG cả vùng (r = R·√u — phân bố đều theo diện tích), mỗi con 1 hướng/tốc/cỡ/pha/tần lượn riêng.
   private _spawn(count: number): void {
     for (let i = 0; i < count; i++) {
       const a = this.rng() * Math.PI * 2
-      const r = Math.sqrt(this.rng()) * this.areaRadius * 0.7
+      const r = Math.sqrt(this.rng()) * this.areaRadius * 0.9
       this.fish.push({
         x: Math.cos(a) * r,
         z: Math.sin(a) * r,
         heading: this.rng() * Math.PI * 2,
         wander: 0,
+        swayF: 0.5 + this.rng() * 0.7,
         speed: 0.75 + this.rng() * 0.5,
         size: 0.8 + this.rng() * 0.4,
         bob: this.rng() * Math.PI * 2,
@@ -258,17 +264,18 @@ export class PondFish {
     }
   }
 
-  // Lái 1 con: gần biên vùng bơi → quay đầu về tâm (lerp góc); trong vùng → wander random-walk có kẹp.
-  private _steer(f: FishState, dt: number): void {
+  // Lái 1 con: sát biên vùng bơi (85%) → quay đầu về tâm (lerp góc); trong vùng = LƯỢN CHỮ S liên tục
+  // (sine per-con — cá thật không bao giờ bơi thẳng) + wander random-walk mạnh (đổi hướng bất chợt).
+  private _steer(f: FishState, dt: number, t: number): void {
     const r = Math.hypot(f.x, f.z)
-    if (r > this.areaRadius * 0.8) {
+    if (r > this.areaRadius * 0.85) {
       const desired = Math.atan2(f.z, -f.x) // hướng về tâm (dir = (cos h, -sin h))
-      f.heading += angleDelta(desired, f.heading) * Math.min(1, 2.2 * dt)
+      f.heading += angleDelta(desired, f.heading) * Math.min(1, 2.5 * dt)
       return
     }
-    f.wander += (this.rng() - 0.5) * 3 * dt
-    f.wander = Math.max(-0.9, Math.min(0.9, f.wander))
-    f.heading += f.wander * dt
+    f.wander += (this.rng() - 0.5) * 7 * dt
+    f.wander = Math.max(-1.5, Math.min(1.5, f.wander))
+    f.heading += (f.wander + Math.sin(t * f.swayF + f.bob) * 0.9) * dt
   }
 
   /** Gọi mỗi frame với dt giây — tiến thời gian vẫy + dời đàn (CPU rẻ, ≤40 matrix compose). */
@@ -279,9 +286,11 @@ export class PondFish {
     const t = this.uTime.value as number
     for (let i = 0; i < this.fish.length; i++) {
       const f = this.fish[i]
-      this._steer(f, d)
-      f.x += Math.cos(f.heading) * f.speed * this.speed * d
-      f.z -= Math.sin(f.heading) * f.speed * this.speed * d
+      this._steer(f, d, t)
+      // tốc NHẤP NHÔ theo thời gian (lướt ↔ rướn) — phá đều tăm tắp khi cả đàn cùng speed gốc
+      const sp = f.speed * (0.8 + 0.25 * Math.sin(t * 0.6 + f.bob * 2)) * this.speed
+      f.x += Math.cos(f.heading) * sp * d
+      f.z -= Math.sin(f.heading) * sp * d
       _pos.set(f.x, this.depthY + Math.sin(t * 0.7 + f.bob) * 0.03, f.z)
       _quat.setFromAxisAngle(_UP, f.heading)
       _scl.setScalar(this.fishLength * f.size)
