@@ -42,6 +42,7 @@ deferred/
 | [future-postprocessing.md](rendering/future-postprocessing.md) | SSAOPass · MotionBlurPass | Scene geometry phức tạp hoặc object di chuyển nhanh |
 | [perception-tricks-compact-spaces.md](rendering/perception-tricks-compact-spaces.md) | Phòng nhỏ thấy rộng: forced perspective · vista · verticality · fog · InteriorMapping · cảnh báo FOV. Ortho để thiết kế, perspective để trình bày | Dựng interior thật trong World, hoặc làm camera system (chốt FOV) |
 | [water-bottom-refraction.md](rendering/water-bottom-refraction.md) | Đáy hồ (Shape-holes khoét nền + basin extrude) + mặt nước vừa phản chiếu vừa nhìn xuyên (Fresnel reflect↔refract: trong suốt / `viewportSharedTexture` / PBR transmission) | Chốt mức refraction + chấp nhận cost tier-C++ |
+| [underwater-immersive.md](rendering/underwater-immersive.md) | **DEFERRED 2026-06-11** — môi trường NGẬP NƯỚC nhập vai (B): camera LẶN xuống dưới mặt nước. Paradigm khác A (mặt nước 2-mặt/Snell window · fog volumetric toàn cục · godray · caustics mọi mặt) | Có môi trường nước RỘNG thật (hồ lớn/biển) — sau E-series, KHÔNG hợp lô nhà |
 | [per-zone-vuilap-detail.md](rendering/per-zone-vuilap-detail.md) | **2026-06-08** — toggle "vùi lấp" (detail-normal sần) RIÊNG mỗi zone — vướng per-key-material-cache (cần 2 variant/key). Loang-lổ geometry (drape) đã che phần lớn nhu cầu | Cần bề-mặt-cát-mịn-sần TÁCH BIỆT patches (chấp nhận 2-variant cache) |
 
 ---
