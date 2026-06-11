@@ -28,13 +28,15 @@ function archY(x: number, halfSpan: number, rise: number): number {
 }
 
 // Box 1 chi tiết: tạo mesh đặt local (position + xoay quanh Z) → push geo + add vào group. KHÔNG bake matrix.
+// ud = userData (vd tag pick mặt ván cầu cho 🎯 mix). Trả mesh nếu caller cần thêm tag.
 function addBox(
   g: THREE.Group,
   ctx: SiteRenderCtx,
   mat: THREE.Material,
   size: [number, number, number],
   pos: [number, number, number],
-  rotZ = 0
+  rotZ = 0,
+  ud?: Record<string, unknown>
 ): void {
   const geo = new THREE.BoxGeometry(size[0], size[1], size[2])
   ctx.geos.push(geo)
@@ -43,27 +45,31 @@ function addBox(
   m.rotation.z = rotZ
   m.castShadow = true
   m.receiveShadow = true
+  if (ud) m.userData = ud
   g.add(m)
 }
 
-// VÒM VÁN: plankCount tấm box bám parabola (nghiêng theo độ dốc). Top ván = đường vòm.
+// VÒM VÁN: plankCount tấm box bám parabola (nghiêng theo độ dốc). Top ván = đường vòm. deckMat = mix material
+// (nếu b.mix) — null = mat gỗ/đá chung. Tag userData.bridgeRef → 🎯 mix resolve được mặt ván.
 function deckPlanks(
   g: THREE.Group,
   ctx: SiteRenderCtx,
   mat: THREE.Material,
-  b: BridgeConfig
+  b: BridgeConfig,
+  deckMat: THREE.Material | null
 ): void {
   const span = b.span / 1000
   const w = b.deckWidth / 1000
   const rise = b.rise / 1000
   const half = span / 2
   const step = span / b.plankCount
+  const ud = { bridgeRef: b, bridgeDeck: true }
   for (let i = 0; i < b.plankCount; i++) {
     const x = -half + (i + 0.5) * step
     const y = archY(x, half, rise)
     const slope = half > 0 ? (-2 * rise * x) / (half * half) : 0 // dy/dx parabola
     const ang = Math.atan(slope)
-    addBox(g, ctx, mat, [step / Math.cos(ang) + 0.01, DECK_T, w], [x, y, 0], ang)
+    addBox(g, ctx, deckMat ?? mat, [step / Math.cos(ang) + 0.01, DECK_T, w], [x, y, 0], ang, ud)
   }
 }
 
@@ -115,7 +121,13 @@ function piers(g: THREE.Group, ctx: SiteRenderCtx, mat: THREE.Material, b: Bridg
 }
 
 // Dựng 1 cầu vào ctx.group: sub-group đặt (offsetX/Z, mặt nền) + xoay rotDeg → vòm ván + lan can + trụ đỡ.
-export function buildSiteBridge(b: BridgeConfig, site: SiteState, ctx: SiteRenderCtx): void {
+// deckMat = material MIX cho mặt ván (caller resolve từ b.mix qua MixManager) — null = gỗ/đá đơn.
+export function buildSiteBridge(
+  b: BridgeConfig,
+  site: SiteState,
+  ctx: SiteRenderCtx,
+  deckMat: THREE.Material | null = null
+): void {
   const mat = new THREE.MeshStandardMaterial({
     color: b.material === 'stone' ? 0x8f8c86 : 0x8a5a2b,
     roughness: b.material === 'stone' ? 0.95 : 0.85,
@@ -125,7 +137,7 @@ export function buildSiteBridge(b: BridgeConfig, site: SiteState, ctx: SiteRende
   const sub = new THREE.Group()
   sub.position.set(b.offsetX / 1000, site.groundThick / 1000, b.offsetZ / 1000)
   sub.rotation.y = (b.rotDeg * Math.PI) / 180
-  deckPlanks(sub, ctx, mat, b)
+  deckPlanks(sub, ctx, mat, b, deckMat)
   if (b.railOn) {
     railSide(sub, ctx, mat, b, 1)
     railSide(sub, ctx, mat, b, -1)

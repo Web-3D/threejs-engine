@@ -400,6 +400,7 @@ export interface BridgeConfig {
   postCount: number // số trụ con lan can mỗi bên
   pierOn: boolean
   pierCount: number // số trụ đỡ dưới gầm (đứng từ mặt nền lên đáy ván)
+  mix?: GroundMixParams // 🎨 MIX phủ mặt ván (PhotoGroundMix 'xz' — áp preset qua 🎯). undefined = gỗ/đá đơn
 }
 
 export interface SiteState {

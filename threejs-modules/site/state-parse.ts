@@ -525,6 +525,7 @@ function parseBridge(raw: unknown): BridgeConfig {
     postCount: clamp(Math.round(num(r.postCount, d.postCount)), 0, 20),
     pierOn: typeof r.pierOn === 'boolean' ? r.pierOn : d.pierOn,
     pierCount: clamp(Math.round(num(r.pierCount, d.pierCount)), 0, 6),
+    mix: optMix(r.mix), // 🎨 mix mặt ván — thiếu = gỗ/đá đơn
   }
 }
 
