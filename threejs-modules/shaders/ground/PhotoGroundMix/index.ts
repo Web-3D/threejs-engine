@@ -16,6 +16,8 @@
  * dời zone KHÔNG recompile; chỉ đổi TEXTURE/số slot mới dựng lại graph). paint = 1 DataTexture caller đưa vào.
  * STAGE 4 (2026-06-11): mapping 'xz'|'uv'|'wall' — mix lên MẶT ĐỨNG (vách hồ uv mét chu-vi×cao / tường rào
  * planar đứng theo normal); normal frame TBN tại-mặt khi không phải 'xz'. Móng cho mix tường rêu phong.
+ * STAGE 4.1 (2026-06-11): 'wall' + mặt NGỬA/ÚP (|N.y|>CAP_NY — mặt trên tường/lanh-tô/bậu cửa) → chiếu XZ
+ * như nền + TBN ref −Z + rule tắt (trị sọc 1D + mip aliasing nhấp nháy khi orbit — triplanar 2-trục).
  * CHI PHÍ: nặng nhất hệ ground (4 tap × A+N × 5 bộ + far) — chỉ mặt bật mix mới trả.
  *
  * CÁCH DÙNG: const g = new PhotoGroundMix({ base: maps, slots: [{ maps, bias: 0.5, seed: 13.7 }], paint: tex })
@@ -90,6 +92,12 @@ export interface PhotoGroundMixOptions {
 
 const CH = ['r', 'g', 'b', 'a'] as const // kênh paint theo slot
 
+// 🔼 Ngưỡng |N.y| coi là mặt NGỬA/ÚP trong mapping 'wall' (mặt trên tường, đáy lanh-tô, bậu cửa quanh
+// khung): các mặt này y = hằng → (horiz, y) suy biến thành SỌC 1D + mip aliasing lóe nhấp nháy khi
+// orbit (NgQuan 2026-06-11 "mép trên wall + vành khung cửa sổ nhấp nháy") → chuyển chiếu XZ như nền
+// (triplanar 2-trục, hard-select; mesh tường = box nên mặt gần như thuần đứng/ngang, seam không lộ).
+const CAP_NY = 0.7
+
 export class PhotoGroundMix {
   private material: MeshStandardNodeMaterial | null = null
   private isDisposed = false
@@ -134,7 +142,8 @@ export class PhotoGroundMix {
   }
 
   // Tọa độ 2D (MÉT) trải texture + fbm mask theo mapping: 'xz' world nằm · 'uv' attribute mét (vách hồ) ·
-  // 'wall' planar đứng chọn trục theo normal (|N.x|>|N.z| → mặt nhìn ±X → (z,y); ngược lại (x,y)).
+  // 'wall' planar đứng chọn trục theo normal (|N.x|>|N.z| → mặt nhìn ±X → (z,y); ngược lại (x,y));
+  // mặt NGỬA/ÚP (|N.y| > CAP_NY: mặt trên tường, lanh-tô/bậu quanh cửa) → chiếu XZ như nền (hết sọc 1D).
   private _surfUV(): TSLNode {
     if (this.mapping === 'uv') return uv() as unknown as TSLNode
     if (this.mapping === 'wall') {
@@ -143,20 +152,25 @@ export class PhotoGroundMix {
         positionWorld.z,
         positionWorld.x
       )
-      return vec2(horiz, positionWorld.y) as TSLNode
+      return select(
+        normalWorld.y.abs().greaterThan(CAP_NY),
+        positionWorld.xz,
+        vec2(horiz, positionWorld.y)
+      ) as TSLNode
     }
     return positionWorld.xz as TSLNode
   }
 
   // Normal tangent-space (nrm: x,y = đỏ/lục, z = blue) → world. 'xz': frame cứng T=+X B=+Z N=+Y (mặt nằm,
-  // như PhotoGround). 'uv'/'wall': TBN tại-mặt từ normalWorld — T = cross(up,N) ngang tường (+eps né suy biến
-  // ở mặt ngửa như đỉnh tường rào), B = cross(N,T) ≈ +Y. Hướng T có thể lật trên vài cạnh (đá gần isotropic —
-  // chấp nhận v1).
+  // như PhotoGround). 'uv'/'wall': TBN tại-mặt từ normalWorld — T = cross(ref,N) ngang tường; ref = up cho
+  // mặt đứng, đổi sang −Z khi mặt NGỬA/ÚP (|N.y| > CAP_NY — cross(up,N)≈0 suy biến; −Z cho T≈+X khớp trục
+  // u của chiếu XZ trên cap), B = cross(N,T). Hướng T có thể lật trên vài cạnh (đá gần isotropic — chấp nhận v1).
   private _worldNormal(nrm: TSLNode): TSLNode {
     const s = this.u.normalScale
     if (this.mapping === 'xz') return vec3(nrm.x.mul(s), nrm.z, nrm.y.mul(s)).normalize() as TSLNode
     const N = normalWorld
-    const T = cross(vec3(0, 1, 0), N)
+    const ref = select(normalWorld.y.abs().greaterThan(CAP_NY), vec3(0, 0, -1), vec3(0, 1, 0))
+    const T = cross(ref, N)
       .add(vec3(1e-5, 0, 0))
       .normalize() as TSLNode
     const B = cross(N, T) as TSLNode
@@ -258,10 +272,13 @@ export class PhotoGroundMix {
       .mul(0.5)
       .add(0.5) as TSLNode
     let raw = fb.add(luminance(A).sub(luminance(col)).mul(this.u.heightK)) as TSLNode
-    if (rule && this.mapping !== 'xz')
-      raw = raw.add(
-        this._ruleMask(rule, wxz, su.seed).sub(0.5).mul(this.u.gravity.mul(2))
-      ) as TSLNode
+    if (rule && this.mapping !== 'xz') {
+      let rm = this._ruleMask(rule, wxz, su.seed).sub(0.5).mul(this.u.gravity.mul(2)) as TSLNode
+      // 'wall' + mặt ngửa/úp: wxz = chiếu XZ → p.y không còn là cao độ — rule vô nghĩa, tắt trên cap.
+      if (this.mapping === 'wall')
+        rm = rm.mul(select(normalWorld.y.abs().greaterThan(CAP_NY), float(0), float(1))) as TSLNode
+      raw = raw.add(rm) as TSLNode
+    }
     const m = smoothstep(su.bias.sub(this.u.maskSoft), su.bias.add(this.u.maskSoft), raw) as TSLNode
     return max(m, pv) as TSLNode
   }
