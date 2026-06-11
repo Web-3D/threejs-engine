@@ -215,7 +215,8 @@
 
 | Mục | Mô tả |
 | --- | ----- |
-| `site/state` | `SiteState` (nền + cỏ-3D + **hồ nước** + rào) + factory + `GROUND_PRESETS` + `coverageStats` (建ぺい率 đối chiếu nhà/lô) + `parseSite`. Lô mặc định 15×14.4m |
+| `site/state` | `SiteState` (nền + cỏ-3D + **hồ nước** + rào) + factory + `GROUND_PRESETS` + `coverageStats` (建ぺい率 đối chiếu nhà/lô) + `parseSite` (impl ở `site/state-parse.ts` — re-export barrel). Lô mặc định 15×14.4m |
+| `site/state-parse` | Tầng deserialization tolerant cho `SiteState` (`parse*` default-fill + clamp + migrate format cũ) — tách khỏi `state.ts`; chỉ `parseSite` public, còn lại nội bộ |
 | `site/render/fromState` | `renderSiteState(site, ctx)` headless — nền slab (có hồ → ExtrudeGeometry **khoét lỗ** `Shape.holes`) + **cỏ 3D** (`GrassBlades`, mọi nền, 2 màu mặt trong/ngoài) + **hồ nước** (`WaterSurface` reflect+refract + **basin** đáy vách+sàn theo polygon; cỏ né footprint) + hàng rào (merged) |
 
 - **Phases:** G0 nền+rào ✅ · **G1a cỏ 3D `GrassBlades` — rebuild tăng dần (B0 lá phẳng+1 màu ✅; B1 thon → B9 đổ-bóng ⏳)** · G1b cây/bụi ⏳ · G2 đá triplanar ⏳ · **G3 hồ nước (tier C) `WaterSurface` — ✅ reflect+refract (nhìn xuyên đáy) + basin + form tự do; wired site/render + GUI archplan**.
