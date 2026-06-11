@@ -225,6 +225,10 @@ function buildWater(
   const mesh = water.getMesh()
   mesh.position.x = w.offsetX / 1000
   mesh.position.z = w.offsetZ / 1000
+  // 💧 surfaceOn=false → ẨN mesh nước (hồ cạn: đáy/lỗ/viền giữ nguyên). Mesh ẩn không vào render list
+  // (Renderer.projectObject) → ReflectorNode.updateBefore KHÔNG chạy → RTT không render + không cấp (lazy).
+  // VẪN build WaterSurface (không skip) để handle.waters giữ THẲNG HÀNG với renderWaters (caller zip theo index).
+  mesh.visible = w.surfaceOn
   ctx.group.add(mesh)
   ctx.shaders.push(water)
   return water
@@ -252,6 +256,7 @@ function buildPuddle(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): Water
   const mesh = water.getMesh()
   mesh.position.x = w.offsetX / 1000
   mesh.position.z = w.offsetZ / 1000
+  mesh.visible = w.surfaceOn // 💧 perf toggle — như buildWater (puddle chỉ có mặt nước nên ẩn = biến cả vũng)
   ctx.group.add(mesh)
   ctx.shaders.push(water)
   return water

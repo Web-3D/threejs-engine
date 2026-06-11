@@ -367,6 +367,7 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
   return {
     kind: parseKind(r.kind, d.kind),
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    surfaceOn: typeof r.surfaceOn === 'boolean' ? r.surfaceOn : d.surfaceOn, // 💧 save cũ thiếu → true (bật)
     shape: r.shape === 'free' || r.shape === 'circle' || r.shape === 'ellipse' ? r.shape : 'rect',
     width: clamp(num(r.width, d.width), 1000, 30000),
     depth: clamp(num(r.depth, d.depth), 1000, 30000),

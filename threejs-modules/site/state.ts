@@ -145,6 +145,9 @@ export interface WaterPoint {
 export interface WaterConfig {
   kind: WaterKind // pool = hồ gương (render); pond/puddle = placeholder, chưa render (lọc bởi renderPools)
   enabled: boolean
+  // 💧 BẬT/TẮT riêng MẶT NƯỚC (perf): false = hồ giữ nguyên (đáy/lỗ/viền) nhưng mesh nước ẨN → reflector
+  // KHÔNG render RTT (đỡ 1 lần render scene/frame; RTT lazy nên cũng không cấp VRAM). Khác `enabled` (tắt CẢ hồ).
+  surfaceOn: boolean
   shape: 'rect' | 'circle' | 'ellipse' | 'free' // chữ nhật | tròn | ellipse | polygon-bezier (kéo đỉnh+tay-cầm 3D)
   width: number // mm — bề ngang hồ (X): rect 2 cạnh / ellipse trục-X / circle đường-kính (=min width,depth)
   depth: number // mm — chiều sâu hồ (Z): rect 2 cạnh / ellipse trục-Z. (circle dùng min của 2)
@@ -565,6 +568,7 @@ export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
   return {
     kind,
     enabled,
+    surfaceOn: true, // 💧 mặt nước bật mặc định; tắt = perf toggle (giữ hồ, ẩn mesh nước → RTT đứng)
     shape: 'rect', // mặc định chữ nhật; đổi 'free' để kéo đỉnh polygon trong 3D
     width: kind === 'puddle' ? 1500 : 4000, // puddle nhỏ; pool/pond 4m ngang
     depth: kind === 'puddle' ? 1200 : 3000, // puddle nông/nhỏ; pool/pond 3m sâu
