@@ -88,6 +88,12 @@ export interface SiteRenderOpts {
   // 🎨 Material MIX cho G0 BASE (site.groundMix bật) — cùng giao kèo groundMixMat (caller cache/dispose,
   // null = chưa sẵn → fallback groundMaterial texture đơn).
   groundBaseMixMat?: () => THREE.Material | null
+  // 🎨 Material MIX đáy/vách hồ (w.floorMix/wallMix bật — floor mapping 'xz', wall 'uv' chu-vi×cao) — cùng
+  // giao kèo groundMixMat (caller cache/dispose; null = chưa sẵn/tắt → fallback basinMaterial như cũ).
+  waterMixMat?: (w: WaterConfig, face: 'floor' | 'wall') => THREE.Material | null
+  // 🎨 Material MIX mặt tường rào (fence.mix bật, chỉ type='wall' — mapping 'wall' planar đứng) — cùng giao
+  // kèo (null = chưa sẵn/tắt → fallback fenceMaterialFor: triplanar wallTex / màu phẳng).
+  fenceMixMat?: (f: FenceConfig) => THREE.Material | null
   // 🪨 Material RÀO/VIỀN hồ (TexturedSurface triplanar) theo borderMaterial key. Caller CACHE 1 lần/key (lab-
   // lifetime, KHÔNG push/dispose ở lõi). Thiếu/'none' → rào dùng màu phẳng borderColor. Triplanar áp được cả đá/gỗ.
   borderMatByKey?: Partial<Record<string, THREE.Material>>
@@ -479,18 +485,33 @@ function buildBasin(
   const yBot = rimY - w.depthY / 1000 // floor dưới rim depthY
   const pts = pondWorldXZ(w)
   // basinMaterial tự push ctx.mats nếu OWNED ('none'/'tile'); texture injected (groundMatByKey) = caller-owned,
-  // KHÔNG push. Share 1 instance khi wall≡floor (né compile tile 2 lần / né push trùng).
-  const floorMat = basinMaterial(w.floorMaterial, w, ctx, opts)
+  // KHÔNG push. Share 1 instance khi wall≡floor (né compile tile 2 lần / né push trùng). 🎨 MIX (floorMix/
+  // wallMix bật + caller bơm waterMixMat) THẮNG material đơn; null (đang load/tắt) → fallback như cũ.
+  const floorMix = opts.waterMixMat?.(w, 'floor') ?? null
+  const wallMix = opts.waterMixMat?.(w, 'wall') ?? null
+  const floorMat = floorMix ?? basinMaterial(w.floorMaterial, w, ctx, opts)
   const wallMat =
-    w.wallMaterial === w.floorMaterial ? floorMat : basinMaterial(w.wallMaterial, w, ctx, opts)
-  addBasinMesh(basinFloorGeometry(pts, yBot), floorMat, ctx)
-  addBasinMesh(basinWallsGeometry(pts, rimY, yBot), wallMat, ctx)
+    wallMix ??
+    (w.wallMaterial === w.floorMaterial && !floorMix
+      ? floorMat
+      : basinMaterial(w.wallMaterial, w, ctx, opts))
+  addBasinMesh(basinFloorGeometry(pts, yBot), floorMat, ctx, w, 'floor')
+  addBasinMesh(basinWallsGeometry(pts, rimY, yBot), wallMat, ctx, w, 'wall')
 }
 
 // 1 mesh basin (floor hoặc walls): nhận bóng, track geo (material đã push ở caller — có thể share).
-function addBasinMesh(geo: THREE.BufferGeometry, mat: THREE.Material, ctx: SiteRenderCtx): void {
+// Tag userData (w ref + face) → editor raycast cọ vẽ mask mix đáy/vách (như isBaseGround của nền).
+function addBasinMesh(
+  geo: THREE.BufferGeometry,
+  mat: THREE.Material,
+  ctx: SiteRenderCtx,
+  w: WaterConfig,
+  face: 'floor' | 'wall'
+): void {
   const mesh = new THREE.Mesh(geo, mat)
   mesh.receiveShadow = true
+  mesh.userData.waterMixRef = w // 🖌 editor stamp: so ref WaterConfig (sống trong site.waters)
+  mesh.userData.waterMixFace = face
   ctx.geos.push(geo)
   ctx.group.add(mesh)
 }
@@ -1988,7 +2009,9 @@ export function buildSiteFence(
   const merged = mergeGeometries(geos, false)
   for (const g of geos) g.dispose()
   if (!merged) return
-  const mesh = new THREE.Mesh(merged, fenceMaterialFor(fence, ctx, opts))
+  // 🎨 MIX mặt tường (fence.mix bật, chỉ type='wall') THẮNG wallTex; null (đang load/tắt) → fallback như cũ.
+  const mixMat = fence.type === 'wall' ? (opts.fenceMixMat?.(fence) ?? null) : null
+  const mesh = new THREE.Mesh(merged, mixMat ?? fenceMaterialFor(fence, ctx, opts))
   mesh.castShadow = true
   mesh.receiveShadow = true
   ctx.geos.push(merged)

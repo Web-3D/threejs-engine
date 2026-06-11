@@ -30,9 +30,13 @@ export type GroundMaterialKey =
   | 'thai-beach-sand-2k'
   | 'thai-beach-sand-4k'
   | 'cobblestone'
+  | 'cinder-blocks-wall'
+  | 'stone-wall'
 
 // Ground key dùng TEXTURE ảnh (PhotoGround) — caller (archplan) bơm opts.groundTextures theo key. Thiếu
 // texture → fallback màu phẳng GROUND_PRESETS. 'grass'(procedural)/'soil'/'gravel' KHÔNG ở đây (màu/shader).
+// 🧱 cinder/stone-wall = bộ TƯỜNG (assets/textures/wall/) NHÓM CHUNG kho nền (NgQuan 2026-06-11 — mix fence
+// mất cinder/stone) → chọn được ở MIX board lẫn ground select (nền lát đá/blocks cũng hợp).
 const GROUND_TEX_KEYS = new Set<GroundMaterialKey>([
   'grass-tex',
   'rippled-sand',
@@ -46,6 +50,8 @@ const GROUND_TEX_KEYS = new Set<GroundMaterialKey>([
   'thai-beach-sand-2k',
   'thai-beach-sand-4k',
   'cobblestone',
+  'cinder-blocks-wall',
+  'stone-wall',
 ])
 export function isGroundTexKey(k: GroundMaterialKey): boolean {
   return GROUND_TEX_KEYS.has(k)
@@ -65,6 +71,9 @@ export interface FenceConfig {
   gateWidth?: number // mm — bề rộng khoảng trống cổng
   gatePos?: number // mm — dời tâm cổng dọc cạnh (0 = giữa cạnh)
   gatePostH?: number // mm — chiều cao 2 cột cổng (độc lập chiều cao tường — trụ cổng thường cao hơn)
+  // 🎨 MIX mặt tường rào (chỉ type='wall' — PhotoGroundMix mapping 'wall', NgQuan 2026-06-11 "bỏ nền mix vào
+  // tất cả tường"). Bật = THAY wallTex; KHÔNG cọ vẽ tay (planar đứng không có uv chu-vi). Optional → tắt.
+  mix?: GroundMixParams
 }
 
 // Factory 1 lớp rào. ĐA-LỚP: site.fences[] — mỗi lớp = 1 vòng rào đồng tâm ở inset RIÊNG (lớp ngoài inset
@@ -166,6 +175,11 @@ export interface WaterConfig {
   borderMaterial: BorderMaterialKey // 'none' = màu phẳng; texture đá (triplanar) → áp lên geometry rào/đá
   borderStoneVar: number // % 0..100 — đá TO-NHỎ xen kẽ (bán kính mỗi viên lệch ±45%×var; 0 = đều cỡ). Chỉ đá cuội
   borderStoneJag: number // % 0..100 — GÓC CẠNH: đỉnh đá lệch bán kính random từ tâm (0 = tròn icosa). Chỉ đá cuội
+  // 🎨 MIX đáy/vách hồ (PhotoGroundMix — NgQuan 2026-06-11 "bỏ nền mix vào thành hồ bơi + bottom"). Bật =
+  // THAY floorMaterial/wallMaterial. floor mapping 'xz' (đáy nằm, cọ vẽ world-XZ); wall mapping 'uv'
+  // (vách đứng — uv mét chu-vi×cao baked, cọ vẽ theo isect.uv). Optional → tắt (material đơn như cũ).
+  floorMix?: GroundMixParams
+  wallMix?: GroundMixParams
 }
 
 // Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural
@@ -262,11 +276,18 @@ export interface GroundLayer {
   mix?: GroundMixParams
 }
 
+// 🧱 Quy luật TRỌNG LỰC/VỊ TRÍ cho 1 slot mix trên MẶT ĐỨNG (tường rêu phong — kiểu Substance generators):
+// 'foot' = bùn đất bám CHÂN tường (gradient 1−y/h) · 'streak' = vệt nước CHẢY DỌC (fbm nén trục y) ·
+// 'moss' = rêu ẨM (chân + mép loang nham nhở). undefined = không rule (mask fbm thuần như nền).
+// CHỈ hiệu lực khi mix nằm trên mặt đứng (vách hồ/tường rào — mapping 'uv'/'wall'); mặt nằm bỏ qua.
+export type MixGravityRule = 'foot' | 'streak' | 'moss'
+
 // 🎨 1 SLOT lớp trộn của mix nền: texture kho (CHỈ key texture — isGroundTexKey) + ngưỡng + seed fbm riêng.
 export interface GroundMixSlot {
   key: GroundMaterialKey
   bias: number // ngưỡng mask 0..1 (cao = ít xuất hiện)
   seed: number // seed fbm riêng slot (loang khác chỗ)
+  rule?: MixGravityRule // 🧱 quy luật trọng lực (mặt đứng) — undefined = none. Đổi = rebuild graph (structural)
 }
 
 // 🎨 Tham số mix nền per-zone — khớp 1-1 uniforms PhotoGroundMix (shaders/ground/PhotoGroundMix).
@@ -285,6 +306,8 @@ export interface GroundMixParams {
   margin: number // mép trộn 4 ô
   farOn: number // trộn xa dual-scale
   farRange: number // m — khoảng cách đạt trộn đầy
+  // 🧱 Cường độ quy luật trọng lực (slot.rule, mặt đứng) 0..1 — uniform live. 0 = rule tắt hẳn.
+  gravity: number
   // 🖌 Mask VẼ TAY (stage 3): base64 raw RGBA 128² (PaintMask), kênh R/G/B/A = slot 0..3, uv = bbox zone.
   // undefined = chưa vẽ (mask chỉ fbm). Ghi khi BUÔNG nét cọ (~87KB/zone — chỉ zone có vẽ mới mang).
   paint?: string
@@ -307,7 +330,13 @@ export function makeGroundMixParams(base: GroundMaterialKey = 'grass-o'): Ground
     margin: 0.12,
     farOn: 0.6,
     farRange: 16,
+    gravity: 0.6, // 🧱 cường độ rule trọng lực (chỉ ăn khi slot có rule + mặt đứng)
   }
+}
+
+// 🎨 Field mix OPTIONAL (fence/water/zone) — thiếu = tắt (undefined, KHÔNG default-fill: backward-compat).
+function optMix(v: unknown): GroundMixParams | undefined {
+  return v !== undefined ? parseGroundMix(v) : undefined
 }
 
 // Parse mix nền — số sai/thiếu → default; slots cap 4, key texture sai → construction-gravel. Backward-safe.
@@ -322,6 +351,9 @@ function parseGroundMix(raw: unknown): GroundMixParams {
           key: parseGround(so.key, 'construction-gravel'),
           bias: f(so.bias, 0.5, 0, 1),
           seed: num(so.seed, 13.7),
+          // 🧱 rule trọng lực — giá trị lạ/thiếu → undefined (none)
+          rule:
+            so.rule === 'foot' || so.rule === 'streak' || so.rule === 'moss' ? so.rule : undefined,
         }
       })
     : d.slots
@@ -340,6 +372,7 @@ function parseGroundMix(raw: unknown): GroundMixParams {
     margin: f(o.margin, d.margin, 0.02, 0.49),
     farOn: f(o.farOn, d.farOn, 0, 1),
     farRange: f(o.farRange, d.farRange, 4, 60),
+    gravity: f(o.gravity, d.gravity, 0, 1), // 🧱 file cũ thiếu → default 0.6
     // 🖌 mask vẽ tay — chuỗi base64 giữ nguyên (PaintMask.loadBase64 tự bỏ qua nếu hỏng/lệch size)
     paint: typeof o.paint === 'string' && o.paint !== '' ? o.paint : undefined,
   }
@@ -441,6 +474,8 @@ export const GROUND_PRESETS: Record<GroundMaterialKey, { color: number; roughnes
   'thai-beach-sand-2k': { color: 0xd6c5a0, roughness: 1.0 }, // cát biển Thái rám ấm — fallback
   'thai-beach-sand-4k': { color: 0xd6c5a0, roughness: 1.0 }, // cát biển Thái 4K (cùng màu fallback)
   cobblestone: { color: 0x626263, roughness: 0.95 }, // đá cobblestone xám — fallback khi thiếu texture
+  'cinder-blocks-wall': { color: 0x9a9690, roughness: 0.95 }, // 🧱 blocks xi măng (bộ tường nhóm chung kho) — fallback
+  'stone-wall': { color: 0x8d8579, roughness: 0.92 }, // 🧱 đá xếp tường (bộ tường nhóm chung kho) — fallback
 }
 
 // 🏔️ Terrain mặc định: TẮT (nền phẳng như cũ). Bật → gò ~25cm, freq 0.12 (gò ~8m, vài gò trên lô 15m), 4 octave,
@@ -786,6 +821,7 @@ function parseFence(raw: Partial<FenceConfig> | undefined, d: FenceConfig): Fenc
     gateWidth: clamp(num(r.gateWidth, 1400), 600, 6000),
     gatePos: num(r.gatePos, 0),
     gatePostH: clamp(num(r.gatePostH, 1600), 600, 3500),
+    mix: optMix(r.mix), // 🎨 mix mặt tường rào — thiếu = tắt
   }
 }
 
@@ -926,6 +962,9 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     borderStoneJag: clamp(num(r.borderStoneJag, d.borderStoneJag), 0, 100),
     borderColor: parseColor(r.borderColor, d.borderColor),
     borderMaterial: parseBorderMat(r.borderMaterial),
+    // 🎨 mix đáy/vách hồ — thiếu = tắt (material đơn floorMaterial/wallMaterial như cũ)
+    floorMix: optMix(r.floorMix),
+    wallMix: optMix(r.wallMix),
   }
 }
 
