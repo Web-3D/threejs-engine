@@ -17,6 +17,7 @@ import { float, floor, fract, min, mix, smoothstep, uv, vec3 } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import type { GrassExcludeRect } from '../../components/GrassBlades'
+import { PondFish } from '../../components/PondFish'
 import { WaterSurface } from '../../components/WaterSurface'
 import { arcLength } from '../../ops/resample' // op #1 — viền đá hồ đặt theo chiều-dài-thật, khép kín
 import { offsetPolygon, shapeToLocalPolygon } from '../shapes'
@@ -104,6 +105,32 @@ export function buildWater(
   ctx.group.add(mesh)
   ctx.shaders.push(water)
   return water
+}
+
+// 🐟 Đàn cá koi trong LÒNG hồ (chỉ pool/pond — puddle phẳng không có lòng). Gốc mesh = TÂM hồ tại MẶT
+// nước (khớp baseY của buildWater); cá bơi depthY ÂM = giữa cột nước (kẹp không chạm đáy/mặt). areaRadius
+// nội tiếp footprint × 0.75 — shape cong/free dùng bbox nên hệ số chừa lề, cá không thò vành. Cỡ cá theo
+// hồ nhỏ. Caller (editor) drive update(dt) mỗi frame qua handle.fish; dispose theo ctx.shaders chain.
+export function buildPondFish(w: WaterConfig, site: SiteState, ctx: SiteRenderCtx): PondFish {
+  const rimY = site.groundThick / 1000
+  const yBot = rimY - w.depthY / 1000
+  const baseY = Math.max(yBot + 0.03, rimY - 0.03) // = mặt nước (cùng công thức buildWater)
+  const halfMin = Math.min(w.width, w.depth) / 2000
+  const span = baseY - yBot // bề dày cột nước (m)
+  const fishLength = Math.min(0.28, Math.max(0.08, halfMin * 0.3, span * 0.5))
+  const fish = new PondFish({
+    count: w.fishCount,
+    areaRadius: Math.max(0.3, halfMin * 0.75),
+    depthY: -Math.min(Math.max(0.05, span * 0.55), span - 0.04), // giữa cột nước, không chạm đáy
+    fishLength,
+    speed: w.fishSpeed,
+    colorSeed: w.fishSeed,
+  })
+  const m = fish.getMesh()
+  m.position.set(w.offsetX / 1000, baseY, w.offsetZ / 1000)
+  ctx.group.add(m)
+  ctx.shaders.push(fish) // dispose chain của site (PondFish có dispose())
+  return fish
 }
 
 // Vũng nước (puddle) = mặt nước PHẲNG đặt TRÊN nền — KHÔNG basin (đáy/vách), KHÔNG coping, KHÔNG khoét lỗ

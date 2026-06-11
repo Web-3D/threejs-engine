@@ -21,6 +21,7 @@ import * as THREE from 'three'
 import { BrickPaving } from '../../components/BrickPaving' // 🧱 sân gạch bond đều (paving-zone, consumer op #3)
 import { CurvedBrickWall } from '../../components/CurvedBrickWall' // 🧱 tường cong (wall-zone — op #1+#2+#3+#5)
 import type { GrassBlades, GrassExcludeRect } from '../../components/GrassBlades'
+import type { PondFish } from '../../components/PondFish' // 🐟 type-only — instance dựng ở render/water.ts
 import { StoneScatter } from '../../components/StoneScatter'
 import type { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
@@ -45,7 +46,14 @@ import {
 import { heightAt, type HeightField, makeHeightField, type MaskRect } from '../terrain' // 🏔️ height-field gò
 import { buildSiteFence } from './fence'
 import { buildVegetation } from './grass'
-import { allWaterCarvePolygons, buildPuddle, buildWater, waterPolygons, waterRect } from './water'
+import {
+  allWaterCarvePolygons,
+  buildPondFish,
+  buildPuddle,
+  buildWater,
+  waterPolygons,
+  waterRect,
+} from './water'
 
 // Resource caller sở hữu — renderer build vào đây, KHÔNG dispose (giống building BuildRenderCtx).
 // shaders: vật liệu procedural (vd GrassGround) có dispose() riêng (ngoài mats phẳng).
@@ -62,6 +70,9 @@ export interface SiteHandle {
   grass: GrassBlades | null
   waters: WaterSurface[] // 1 WaterSurface mỗi hồ ĐANG BẬT (cùng thứ tự renderWaters(site)) — caller zip cfg↔surf
   ground: THREE.Mesh | null // mesh nền base (G0) — caller giữ ref để LIVE-rebuild geometry-only (terrain drag, né water-RTT)
+  // 🐟 Đàn cá mỗi hồ fishOn (kèm cfg — caller tune live theo identity, KHÔNG zip index vì chỉ hồ bật cá
+  // mới có). Caller drive update(dt) mỗi frame; dispose theo ctx.shaders.
+  fish: { cfg: WaterConfig; fish: PondFish }[]
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -119,7 +130,7 @@ export function renderSiteState(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts = {}
 ): SiteHandle {
-  if (!site.show) return { grass: null, waters: [], ground: null }
+  if (!site.show) return { grass: null, waters: [], ground: null, fish: [] }
   const ground = buildGround(site, ctx, opts)
   buildGroundLayers(site, ctx, opts) // TẦNG surface chồng (xếp lớp 3D) lên base
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
@@ -131,11 +142,15 @@ export function renderSiteState(
   // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
   const waters = pools.map((w) => buildWater(w, site, ctx, opts)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
+  // 🐟 đàn cá CHỈ hồ lõm fishOn (puddle không lòng) — caller update(dt)/tune qua handle.fish (theo cfg).
+  const fish = pools
+    .filter((w) => w.fishOn)
+    .map((w) => ({ cfg: w, fish: buildPondFish(w, site, ctx) }))
   // Rào ĐA-LỚP: dựng mỗi lớp enabled (vòng đồng tâm ở inset riêng). skipFence → editor tự dựng (_syncFence)
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
   if (!opts.skipFence)
     for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
-  return { grass, waters, ground }
+  return { grass, waters, ground, fish }
 }
 
 // Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật. (Path-zone rải

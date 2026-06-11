@@ -5,6 +5,7 @@ status: building
 tier: B
 modules:
   - threejs-modules/components/WaterSurface
+  - threejs-modules/components/PondFish     # 🐟 đàn cá koi trong lòng hồ (Phase B 2026-06-11)
   - threejs-modules/site/render/fromState   # basin + khoét lỗ nền (không phải module rời)
 issues:
   - KI-004
@@ -14,7 +15,7 @@ issues:
   - KI-008
   - KI-012
   - KI-014
-updated: 2026-06-10
+updated: 2026-06-11
 ---
 
 # Playbook — Hồ nước
@@ -98,6 +99,7 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-11` — **🐟 ĐÀN CÁ KOI trong lòng hồ (PondFish Phase B)**: `WaterConfig` +`fishOn/fishCount/fishSpeed/fishSeed` (parse tolerant 0 bump; chỉ pool/pond — puddle không lòng). `buildPondFish` (render/water.ts): gốc mesh = TÂM hồ tại MẶT nước (cùng công thức baseY buildWater), cá bơi giữa cột nước (kẹp không chạm đáy/mặt), areaRadius = nội-tiếp×0.75 (shape cong dùng bbox nên chừa lề — cá không thò vành), cỡ cá theo hồ nhỏ; dispose theo `ctx.shaders` chain. `SiteHandle.fish` (cfg+instance — KHÔNG zip index vì chỉ hồ bật cá mới có); Lab `onUpdate` gọi `fish.update(dt)` mỗi frame (vẫy = GPU vertex; CPU ≤40 matrix — rẻ). GUI tab Surface: toggle 🐟 + Số cá (commit rebuild) + Tốc bơi/Xáo màu (LIVE `tuneFish` — 0 rebuild, đúng PERFORMANCE.md). Nhìn cá QUA mặt nước = refraction sẵn có của WaterSurface — không thêm pass nào.
 - `2026-06-11` — **TOGGLE 💧 Mặt nước (perf)** (NgQuan: "nút bật tắt cho surface… để bớt lag tuột fps"): `WaterConfig.surfaceOn` (default true, parse tolerant) — false = hồ GIỮ NGUYÊN (đáy/lỗ/viền/cỏ-né) nhưng mesh nước ẨN → reflector ngừng render RTT (**đỡ 1 lần render scene/frame MỖI hồ** — nguồn lag #1). Verify source three 0.174: `projectObject` skip `visible=false` → `updateBefore` (chỗ render RTT) không chạy; RTT **lazy** (`getRenderTarget` chỉ gọi trong updateBefore) → ẩn từ đầu = không cấp VRAM. Render vẫn BUILD WaterSurface (không skip) → `handle.waters` thẳng hàng zip cfg↔surf. GUI: toggle đầu tab Surface, LIVE thuần `tuneWater` visible (0 rebuild); bật lại = frame đầu compile + cấp RTT (khựng 1 lần). Khác `enabled` (tắt CẢ hồ).
 - `2026-06-07` — **FIX 2+ hồ đơ gương** (KI-012, verify OK): mặt nước → layer riêng (`WATER_REFLECT_LAYER`) + `WaterSurface.excludeReflectionLayer` **disable layer trên virtualCamera mỗi frame** (mấu chốt: `getVirtualCamera`=`camera.clone()` COPY layers → fix đầu chỉ set layer mesh+camera là CHƯA ĐỦ, vẫn đơ). → hết render-lẫn-nhau/`_inReflector` chen. Trước đây doc khuyến nghị "1 pool reflect"; nay đa-hồ phản chiếu OK (mất nước-soi-nước, vô hại). Camera/`_ray` enable layer (vẫn click/kéo hồ).
 - `2026-06-04` — tier B: reflect + refract (`viewportSharedTexture`) + Fresnel-blend + form tự do (kéo đỉnh) + kéo-thả 3D.

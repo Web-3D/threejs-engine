@@ -368,6 +368,10 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     kind: parseKind(r.kind, d.kind),
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     surfaceOn: typeof r.surfaceOn === 'boolean' ? r.surfaceOn : d.surfaceOn, // 💧 save cũ thiếu → true (bật)
+    fishOn: typeof r.fishOn === 'boolean' ? r.fishOn : d.fishOn, // 🐟 save cũ thiếu → false (tắt)
+    fishCount: clamp(num(r.fishCount, d.fishCount), 1, 30),
+    fishSpeed: clamp(num(r.fishSpeed, d.fishSpeed), 0.05, 0.8),
+    fishSeed: num(r.fishSeed, d.fishSeed),
     shape: r.shape === 'free' || r.shape === 'circle' || r.shape === 'ellipse' ? r.shape : 'rect',
     width: clamp(num(r.width, d.width), 1000, 30000),
     depth: clamp(num(r.depth, d.depth), 1000, 30000),
