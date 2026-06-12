@@ -39,10 +39,12 @@ thấp thì mặt ngang gần như chỉ sống bằng fill: `hemi=(0.06+0.29·d
 | --- | --- | --- |
 | Nền tổng tối sầm, lô vẫn sáng | mặt ngang ăn fill bị bóp (≠ shadow-frustum — ngoài frustum trả sáng) | tăng `fill` (khay 🌅) |
 | Toggle sun lag 1–3s | đổi `visible` đèn → WebGPU recompile MỌI NodeMaterial | giữ visible, set `intensity=0` |
+| 🌙 Đêm mà trời vẫn xanh sáng | day-factor tính theo ĐỘ-CAO sun, không biết sun đã TẮT | `setDayOverride(0)` khi `enabled=false` |
 
 ## 5. Lịch sử nâng cấp
 
 - `2026-06-12` — Phase A: `fill` vào SunOpts + ENV_PRESETS (☀️🌇☁️🌙) + khay 🌅 utilTray + dock ☀ sync theo preset; chữa nền tổng tối (tier A)
+- `2026-06-13` — Sky bám preset: SkyGradient 1.1 `setOvercast` (trục u ám — xám + nuốt đĩa nắng, nền cho thời tiết) + `setDayOverride` (sun TẮT = trời đêm); `SunOpts.overcast` + slider ☁ khay 🌅
 
 ## 6. Liên hệ
 

@@ -25,12 +25,16 @@ scene.environmentIntensity = 0.05 + 0.25 * day
 | `horizonDay` | Color | `0xbcd8f0` | Chân trời ngày |
 | `zenithNight` | Color | `0x05070f` | Đỉnh trời đêm |
 | `horizonNight` | Color | `0x18203a` | Chân trời đêm |
+| `zenithOvercast` | Color | `0x5e6873` | Đỉnh trời u ám (ngày) |
+| `horizonOvercast` | Color | `0x9aa2aa` | Chân trời u ám (ngày) |
 | `sunColor` | Color | `0xfff0cf` | Màu quầng nắng |
 
 ## API
 
 - `getBackgroundNode()` — node màu gán vào `scene.backgroundNode`.
-- `setSun(x, y, z): number` — hướng tới mặt trời → cập nhật quầng + day-factor (trả [0..1]). LIVE (uniform, không recompile).
+- `setSun(x, y, z): number` — hướng tới mặt trời → cập nhật quầng + day-factor (trả [0..1], đã qua override). LIVE (uniform, không recompile).
+- `setOvercast(v)` — mức u ám [0..1]: gradient xám dần + nuốt đĩa/quầng nắng (nền cho thời tiết mưa/bão). LIVE.
+- `setDayOverride(v | null)` — ép day-factor (vd sun TẮT → `0` = trời đêm bất kể sun đang cao; cũng tắt đĩa nắng). `null` = theo độ-cao sun. LIVE.
 - `getDayFactor(): number` — day-factor hiện tại.
 - `dispose()` — KHÔNG sở hữu GPU resource (node do renderer compile); caller set `scene.backgroundNode = null`.
 
