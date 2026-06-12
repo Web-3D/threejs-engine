@@ -1,0 +1,6 @@
+[submodule "archplan"]
+	path = archplan
+	url = https://github.com/Web-3D/archplan.git
+[submodule "01-Doraemon"]
+	path = 01-Doraemon
+	url = https://github.com/Web-3D/Doraemon.git
