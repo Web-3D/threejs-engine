@@ -13,7 +13,7 @@
 |---|---|---|---|
 | **Triangle** (<500k) | brick-3d ~14k tris/tường × 10 nhà → vỡ | bake relief geometry → plane + normal/AO map | bake |
 | **Shimmer xa** | shader procedural không mipmap → alias | bake procedural → texture mipmapped | bake → [[bake-procedural-to-texture]] |
-| **Draw call** (<100) | mỗi tường geometry-material = 1 mesh, 40+ call | InstancedMesh (trùng kiểu) / merge (unique tĩnh) | gộp/nhân bản, KHÔNG phải bake |
+| **Draw call** (<100) | mỗi tường geometry-material = 1 mesh, 40+ call | InstancedMesh (trùng kiểu) / merge (unique tĩnh) / **BatchedMesh (unique + động per-căn)** | gộp/nhân bản, KHÔNG phải bake |
 
 → Bake KHÔNG hạ draw call. Draw call phải instance/merge.
 
@@ -30,9 +30,38 @@
 2. Bake: brick-3d/wood relief + shader → plane + normal+rough+AO mipmapped. 14k→~12 tris, hết shimmer.
 3. Ra "house asset" nhẹ, 2 LOD: gần=geometry thật, xa=baked-flat.
 
-**Block (quy hoạch khu phố — KHÔNG bake, mà instance/LOD):**
-4. Trùng kiểu → `InstancedMesh` (1 draw call / N căn). Unique → `mergeGeometries`.
-5. LOD theo khoảng cách camera + occlusion culling.
+**Block (quy hoạch khu phố — KHÔNG bake, mà instance/batch/LOD):**
+4. Trùng kiểu → `InstancedMesh` (1 draw call / N căn). Unique TĨNH hẳn → `mergeGeometries`.
+   **Unique + cần transform/ẩn per-căn → `BatchedMesh`** (xem mục dưới — đường chính cho 50 nhà khác dạng).
+5. LOD theo khoảng cách camera + occlusion culling (BatchedMesh có per-item frustum culling sẵn).
+
+## BatchedMesh per material-key — đường chính cho N nhà KHÁC dạng (user chốt 2026-06-12)
+
+> User: "sau này sẽ có khoảng 50 căn nhà khác dạng, không thể xài InstancedMesh được."
+> Verified 0.174: `src/objects/BatchedMesh.js` ✓ + `src/nodes/accessors/BatchNode.js` ✓
+> (TSL/WebGPU đọc `_matricesTexture`/`_colorsTexture` per-item qua `textureLoad`) — chạy đường WebGPURenderer.
+
+**Insight then chốt: building-kit ĐÃ BatchedMesh-ready.** Output kit = geometry theo bucket material-key
+(per-key material cache). Đó đúng là input BatchedMesh cần:
+
+```
+1 BatchedMesh per material-key (toàn cảnh) ← mỗi nhà addGeometry() bucket của nó
+→ ~10 draw cho cả 50 căn; mỗi nhà = N geometryId có matrix riêng
+→ kéo cả căn live (setMatrixAt) KHÔNG rebuild; ẩn/hiện per-căn (setVisibleAt)
+```
+
+**Đặt ở TẦNG nào — quyết định kiến trúc:**
+- archplan editor **giữ per-Mesh** — edit 1 lô, draw thấp sẵn; BatchedMesh phải pre-allocate
+  `maxVertexCount` cố định → khắc tinh live-edit rebuild (đổi size buffer = recreate cả batch).
+- BatchedMesh chỉ vào ở **tầng ráp cảnh production/viewer** (tầng chưa tồn tại) — nhà là output ĐÃ chốt
+  từ editor, geometry ổn định, chỉ còn transform + visibility per-căn.
+
+**Rủi ro khi làm:**
+1. Biến hoá per-nhà ngoài matrix/color (tile/tint khác) vẫn khoá theo key — cùng giới hạn
+   [[per-key-material-cache-tradeoff]], không tệ hơn hiện tại.
+2. Raycast pick trả `batchId` → tự quản sổ map batchId→căn nhà.
+3. KI-003 là gotcha của instancing (`instanceMatrix`); BatchedMesh dùng `drawIndex`/matricesTexture —
+   pattern TSL displace phải re-verify, chưa có tiền lệ trong repo.
 
 ## Lưu ý
 - wood-strip ĐÃ là plain mesh "1 khối" → mergeable xuyên nhà, nhưng wiring merge-xuyên-instance trong lab **chưa làm**.
