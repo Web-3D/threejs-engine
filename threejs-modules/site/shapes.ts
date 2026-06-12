@@ -131,3 +131,16 @@ function signedArea(poly: { x: number; z: number }[]): number {
   }
   return a / 2
 }
+
+// Ray-cast point-in-polygon (mặt phẳng XZ). poly = {x,z}[] (không lặp đỉnh cuối). Util chung site-kit
+// (lỗ nền fromState + trụ cầu dò lòng hồ) — move từ render/fromState 2026-06-12.
+export function pointInPolygon(x: number, z: number, poly: { x: number; z: number }[]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]
+    const b = poly[j]
+    const cross = a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x
+    if (cross) inside = !inside
+  }
+  return inside
+}

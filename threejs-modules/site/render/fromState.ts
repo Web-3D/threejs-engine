@@ -27,7 +27,7 @@ import type { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
 import { PhotoGround, type PhotoGroundMaps } from '../../shaders/ground/PhotoGround'
 import type { TexturedSurfaceMaps } from '../../shaders/surface/TexturedSurface'
-import { shapeToLocalPolygon } from '../shapes' // tessellate shape→polygon
+import { pointInPolygon, shapeToLocalPolygon } from '../shapes' // tessellate shape→polygon + point-in-poly
 import {
   type FenceConfig,
   type FishSchool,
@@ -406,18 +406,6 @@ function buildHeightField(
 function insideWaterHole(x: number, z: number, holes: { x: number; z: number }[][]): boolean {
   for (const poly of holes) if (pointInPolygon(x, z, poly)) return true
   return false
-}
-
-// Ray-cast point-in-polygon (mặt phẳng XZ). poly = {x,z}[] (không lặp đỉnh cuối).
-function pointInPolygon(x: number, z: number, poly: { x: number; z: number }[]): boolean {
-  let inside = false
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i]
-    const b = poly[j]
-    const cross = a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x
-    if (cross) inside = !inside
-  }
-  return inside
 }
 
 // Shape lô (XY: x=worldX, y=−worldZ) + 1 lỗ MỖI pool đang bật cho ExtrudeGeometry nền.

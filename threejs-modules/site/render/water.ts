@@ -20,7 +20,7 @@ import type { GrassExcludeRect } from '../../components/GrassBlades'
 import { PondFish } from '../../components/PondFish'
 import { WaterSurface } from '../../components/WaterSurface'
 import { arcLength } from '../../ops/resample' // op #1 — viền đá hồ đặt theo chiều-dài-thật, khép kín
-import { offsetPolygon, shapeToLocalPolygon } from '../shapes'
+import { offsetPolygon, pointInPolygon, shapeToLocalPolygon } from '../shapes'
 import {
   type FishSchool,
   renderPuddles,
@@ -168,6 +168,18 @@ export function pondWorldXZ(w: WaterConfig): { x: number; z: number }[] {
 // Polygon (world XZ) của MỌI hồ đang bật — vỏ (editor) khoét lỗ nền/lưới CÙNG các lỗ này (nhiều hồ).
 export function waterPolygons(site: SiteState): { x: number; z: number }[][] {
   return renderWaters(site).map((w) => pondWorldXZ(w))
+}
+
+// Độ TỤT đáy hồ tại điểm world (mét, dưới mặt nền): điểm trong lòng hồ nào → depthY sâu nhất + 2cm cắm xuyên
+// đáy basin (né z-fight — CÙNG quy ước GroundDrop của foundation building-kit). 0 = không trên hồ nào.
+// Trụ cầu/cột đứng trên hồ dùng để đâm chân tới đáy thay vì lơ lửng ở mặt rim.
+export function waterDropAt(site: SiteState, x: number, z: number): number {
+  let drop = 0
+  for (const w of renderWaters(site)) {
+    if (w.depthY / 1000 + 0.02 > drop && pointInPolygon(x, z, pondWorldXZ(w)))
+      drop = w.depthY / 1000 + 0.02
+  }
+  return drop
 }
 
 // Pool/pond đục lỗ GỒM dải EDGE/coping: polygon hồ NỞ ra edgeWidth (offsetPolygon) — khớp đúng vành coping bo-cong

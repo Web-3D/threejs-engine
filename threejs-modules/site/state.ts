@@ -388,18 +388,25 @@ export interface FishSchool {
 export interface BridgeConfig {
   enabled: boolean
   material: 'wood' | 'stone'
+  shape: 'arch' | 'flat' // vòm taiko-bashi | THẲNG (boardwalk đường đi trên mặt hồ — sàn phẳng nâng đều `rise`)
   offsetX: number // mm — tâm cầu lệch tâm lô (X)
   offsetZ: number // mm — (Z)
   rotDeg: number // độ — hướng bắc qua hồ (xoay quanh Y)
   span: number // mm — chiều dài nhịp (trục dọc cầu)
   deckWidth: number // mm — bề rộng mặt cầu
-  rise: number // mm — độ vồng vòm (taiko-bashi); 0 = phẳng
-  plankCount: number // số tấm ván chia mặt cầu
+  rise: number // mm — arch: độ vồng vòm; flat: cao độ sàn so mặt nền (0 = sát nền)
+  plankCount: number // số tấm ván chia mặt cầu — ván RỜI (chừa khe) cho cảm giác ván gỗ thật
+  deckThick: number // mm — DÀY mỗi tấm ván mặt cầu
+  rimSize: number // mm — tiết diện VÀNH cầu (dầm biên liền bám vòm 2 cạnh, chỗ trụ con đứng — tạo độ dày mép)
   railOn: boolean
   railHeight: number // mm — cao lan can
+  railBeam: number // mm — tiết diện dầm tay vịn lan can
   postCount: number // số trụ con lan can mỗi bên
+  postWidth: number // mm — tiết diện trụ con lan can
+  postShape: 'square' | 'round' // dáng trụ con: hộp vuông | trụ tròn
   pierOn: boolean
-  pierCount: number // số trụ đỡ dưới gầm (đứng từ mặt nền lên đáy ván)
+  pierCount: number // số HÀNG trụ đỡ dưới gầm — mỗi hàng 2 trụ 2 bên mép (dưới vành); đứng trên hồ tự đâm tới đáy
+  pierWidth: number // mm — tiết diện trụ đỡ
   mix?: GroundMixParams // 🎨 MIX phủ mặt ván (PhotoGroundMix 'xz' — áp preset qua 🎯). undefined = gỗ/đá đơn
 }
 
@@ -547,11 +554,12 @@ export function defaultSiteState(): SiteState {
 }
 
 // 🌉 Factory 1 cầu — đặt tự do (default rơi vào tâm pool đầu, offsetZ 5000 — user kéo đặt lại). Cầu vòm
-// gỗ kiểu Nhật (taiko-bashi vừa vồng), có lan can + 2 trụ đỡ.
+// gỗ kiểu Nhật (taiko-bashi vừa vồng), có lan can + 2 hàng trụ đỡ (2 trụ/hàng).
 export function makeBridge(): BridgeConfig {
   return {
     enabled: true,
     material: 'wood',
+    shape: 'arch',
     offsetX: 0,
     offsetZ: 5000,
     rotDeg: 0,
@@ -559,11 +567,17 @@ export function makeBridge(): BridgeConfig {
     deckWidth: 1400,
     rise: 600,
     plankCount: 14,
+    deckThick: 60,
+    rimSize: 140,
     railOn: true,
     railHeight: 900,
+    railBeam: 50,
     postCount: 6,
+    postWidth: 50,
+    postShape: 'square',
     pierOn: true,
     pierCount: 2,
+    pierWidth: 120,
   }
 }
 

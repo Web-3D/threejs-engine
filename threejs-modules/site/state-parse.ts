@@ -513,6 +513,7 @@ function parseBridge(raw: unknown): BridgeConfig {
   return {
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     material: r.material === 'stone' ? 'stone' : 'wood',
+    shape: r.shape === 'flat' ? 'flat' : 'arch', // design cũ không có → arch (như trước)
     offsetX: clamp(num(r.offsetX, d.offsetX), -20000, 20000),
     offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
     rotDeg: clamp(num(r.rotDeg, d.rotDeg), 0, 360),
@@ -520,11 +521,17 @@ function parseBridge(raw: unknown): BridgeConfig {
     deckWidth: clamp(num(r.deckWidth, d.deckWidth), 600, 4000),
     rise: clamp(num(r.rise, d.rise), 0, 2000),
     plankCount: clamp(Math.round(num(r.plankCount, d.plankCount)), 4, 40),
+    deckThick: clamp(num(r.deckThick, d.deckThick), 20, 200),
+    rimSize: clamp(num(r.rimSize, d.rimSize), 40, 400),
     railOn: typeof r.railOn === 'boolean' ? r.railOn : d.railOn,
     railHeight: clamp(num(r.railHeight, d.railHeight), 300, 1500),
+    railBeam: clamp(num(r.railBeam, d.railBeam), 20, 150),
     postCount: clamp(Math.round(num(r.postCount, d.postCount)), 0, 20),
+    postWidth: clamp(num(r.postWidth, d.postWidth), 20, 150),
+    postShape: r.postShape === 'round' ? 'round' : 'square',
     pierOn: typeof r.pierOn === 'boolean' ? r.pierOn : d.pierOn,
     pierCount: clamp(Math.round(num(r.pierCount, d.pierCount)), 0, 6),
+    pierWidth: clamp(num(r.pierWidth, d.pierWidth), 40, 400),
     mix: optMix(r.mix), // 🎨 mix mặt ván — thiếu = gỗ/đá đơn
   }
 }
