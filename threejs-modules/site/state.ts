@@ -408,6 +408,9 @@ export interface BridgeConfig {
   pierCount: number // số HÀNG trụ đỡ dưới gầm — mỗi hàng 2 trụ 2 bên mép (dưới vành); đứng trên hồ tự đâm tới đáy
   pierWidth: number // mm — tiết diện trụ đỡ
   mix?: GroundMixParams // 🎨 MIX phủ mặt ván (PhotoGroundMix 'xz' — áp preset qua 🎯). undefined = gỗ/đá đơn
+  rimMix?: GroundMixParams // 🎨 MIX vành biên (mapping 'wall' — box đa hướng). undefined = gỗ/đá đơn
+  railMix?: GroundMixParams // 🎨 MIX tay vịn lan can ('wall')
+  postMix?: GroundMixParams // 🎨 MIX trụ con lan can ('wall')
 }
 
 export interface SiteState {

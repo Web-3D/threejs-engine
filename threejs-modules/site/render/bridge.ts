@@ -21,6 +21,15 @@ const RAIL_INSET = 0.06 // m — vành + lan can thụt vào từ mép mặt c�
 const PLANK_FILL = 0.86 // ván chiếm 86% bước chia → khe hở giữa các tấm (ván RỜI, thấy từng tấm gỗ thật)
 const ROUND_SEG = 12 // số cạnh trụ con tròn (cylinder)
 
+// 🎨 Material MIX per-bộ-phận (caller resolve từ b.mix/rimMix/railMix/postMix qua MixManager) — null/thiếu
+// = mat gỗ/đá chung. deck mapping 'xz' (ván nằm); rim/rail/post mapping 'wall' (box đa hướng — caller lo).
+export interface BridgeMixMats {
+  deck?: THREE.Material | null
+  rim?: THREE.Material | null
+  rail?: THREE.Material | null
+  post?: THREE.Material | null
+}
+
 // Cao độ mặt cầu tại x (m, gốc tâm): arch = parabola (đỉnh giữa rise, 2 đầu 0 — đặt trên bờ/rim);
 // flat = sàn PHẲNG nâng đều rise (boardwalk đường đi trên mặt hồ — cùng bộ thông số với cầu vòm).
 function deckY(b: BridgeConfig, x: number, halfSpan: number): number {
@@ -59,17 +68,19 @@ function addBox(
 }
 
 // Trụ con lan can theo dáng: 'square' = box | 'round' = cylinder (ROUND_SEG cạnh). Tiết diện postWidth.
+// ud = tag pick 🎯 mix (bridgePart 'post').
 function addPost(
   g: THREE.Group,
   ctx: SiteRenderCtx,
   mat: THREE.Material,
   b: BridgeConfig,
   h: number,
-  pos: [number, number, number]
+  pos: [number, number, number],
+  ud?: Record<string, unknown>
 ): void {
   const pw = b.postWidth / 1000
   if (b.postShape === 'square') {
-    addBox(g, ctx, mat, [pw, h, pw], pos)
+    addBox(g, ctx, mat, [pw, h, pw], pos, 0, ud)
     return
   }
   const geo = new THREE.CylinderGeometry(pw / 2, pw / 2, h, ROUND_SEG)
@@ -78,48 +89,56 @@ function addPost(
   m.position.set(pos[0], pos[1], pos[2])
   m.castShadow = true
   m.receiveShadow = true
+  if (ud) m.userData = ud
   g.add(m)
 }
 
 // VÁN RỜI: plankCount tấm bám mặt cầu (nghiêng theo dốc), mỗi tấm chiếm PLANK_FILL bước chia → khe hở
-// giữa các tấm (cảm giác ván gỗ thật, KHÔNG phải 1 dải liền). Dày deckThick. deckMat = mix material
-// (nếu b.mix) — null = mat gỗ/đá chung. Tag userData.bridgeRef → 🎯 mix resolve được mặt ván.
+// giữa các tấm (cảm giác ván gỗ thật, KHÔNG phải 1 dải liền). Dày deckThick. mats.deck = mix material
+// (nếu b.mix) — null = mat gỗ/đá chung. Tag userData bridgeRef+bridgePart → 🎯 mix resolve đúng bộ phận.
 function deckPlanks(
   g: THREE.Group,
   ctx: SiteRenderCtx,
   mat: THREE.Material,
   b: BridgeConfig,
-  deckMat: THREE.Material | null
+  mats: BridgeMixMats
 ): void {
   const span = b.span / 1000
   const w = b.deckWidth / 1000
   const half = span / 2
   const step = span / b.plankCount
   const t = b.deckThick / 1000
-  const ud = { bridgeRef: b, bridgeDeck: true }
+  const ud = { bridgeRef: b, bridgePart: 'deck' }
   for (let i = 0; i < b.plankCount; i++) {
     const x = -half + (i + 0.5) * step
     const ang = Math.atan(deckSlope(b, x, half))
     const len = (step * PLANK_FILL) / Math.cos(ang)
-    addBox(g, ctx, deckMat ?? mat, [len, t, w], [x, deckY(b, x, half), 0], ang, ud)
+    addBox(g, ctx, mats.deck ?? mat, [len, t, w], [x, deckY(b, x, half), 0], ang, ud)
   }
 }
 
 // VÀNH biên (dầm dọc 2 cạnh cầu): dải LIỀN bám mặt cầu tại z=±railZ, tiết diện rimSize² — DÀY hơn ván →
 // nhìn nghiêng mép cầu có độ dày; trụ con lan can + trụ đỡ gầm đều bám vào vành (chỗ tiếp xúc kết cấu).
-function rims(g: THREE.Group, ctx: SiteRenderCtx, mat: THREE.Material, b: BridgeConfig): void {
+function rims(
+  g: THREE.Group,
+  ctx: SiteRenderCtx,
+  mat: THREE.Material,
+  b: BridgeConfig,
+  mats: BridgeMixMats
+): void {
   const span = b.span / 1000
   const half = span / 2
   const step = span / b.plankCount
   const rim = b.rimSize / 1000
   const z = b.deckWidth / 1000 / 2 - RAIL_INSET
+  const ud = { bridgeRef: b, bridgePart: 'rim' }
   for (let i = 0; i < b.plankCount; i++) {
     const x = -half + (i + 0.5) * step
     const ang = Math.atan(deckSlope(b, x, half))
     const len = step / Math.cos(ang) + 0.01 // LIỀN (overlap 1cm) — vành là dầm, không chia khe như ván
     const y = deckY(b, x, half)
-    addBox(g, ctx, mat, [len, rim, rim], [x, y, z], ang)
-    addBox(g, ctx, mat, [len, rim, rim], [x, y, -z], ang)
+    addBox(g, ctx, mats.rim ?? mat, [len, rim, rim], [x, y, z], ang, ud)
+    addBox(g, ctx, mats.rim ?? mat, [len, rim, rim], [x, y, -z], ang, ud)
   }
 }
 
@@ -130,7 +149,8 @@ function railSide(
   ctx: SiteRenderCtx,
   mat: THREE.Material,
   b: BridgeConfig,
-  zSign: number
+  zSign: number,
+  mats: BridgeMixMats
 ): void {
   const span = b.span / 1000
   const half = span / 2
@@ -139,17 +159,19 @@ function railSide(
   const beam = b.railBeam / 1000
   const z = zSign * (b.deckWidth / 1000 / 2 - RAIL_INSET)
   const step = span / b.plankCount
+  const udRail = { bridgeRef: b, bridgePart: 'rail' }
   for (let i = 0; i < b.plankCount; i++) {
     const x = -half + (i + 0.5) * step
     const ang = Math.atan(deckSlope(b, x, half))
     const len = step / Math.cos(ang) + 0.01
-    addBox(g, ctx, mat, [len, beam, beam], [x, deckY(b, x, half) + rh, z], ang)
+    addBox(g, ctx, mats.rail ?? mat, [len, beam, beam], [x, deckY(b, x, half) + rh, z], ang, udRail)
   }
   const ph = rh - rim / 2 // chân trụ con đặt trên vành (top vành = deckY + rim/2) → đỉnh chạm tay vịn
   if (ph < 0.05) return
+  const udPost = { bridgeRef: b, bridgePart: 'post' }
   for (let p = 0; p < b.postCount; p++) {
     const x = b.postCount > 1 ? -half + (p / (b.postCount - 1)) * span : 0
-    addPost(g, ctx, mat, b, ph, [x, deckY(b, x, half) + rim / 2 + ph / 2, z])
+    addPost(g, ctx, mats.post ?? mat, b, ph, [x, deckY(b, x, half) + rim / 2 + ph / 2, z], udPost)
   }
 }
 
@@ -196,12 +218,12 @@ function piers(
 }
 
 // Dựng 1 cầu vào ctx.group: sub-group đặt (offsetX/Z, mặt nền) + xoay rotDeg → ván rời + vành + lan can
-// + trụ đỡ. deckMat = material MIX cho mặt ván (caller resolve từ b.mix qua MixManager) — null = gỗ/đá đơn.
+// + trụ đỡ. mats = material MIX per-bộ-phận (caller resolve từ b.*Mix qua MixManager) — thiếu = gỗ/đá đơn.
 export function buildSiteBridge(
   b: BridgeConfig,
   site: SiteState,
   ctx: SiteRenderCtx,
-  deckMat: THREE.Material | null = null
+  mats: BridgeMixMats = {}
 ): void {
   const mat = new THREE.MeshStandardMaterial({
     color: b.material === 'stone' ? 0x8f8c86 : 0x8a5a2b,
@@ -210,16 +232,16 @@ export function buildSiteBridge(
   })
   ctx.mats.push(mat)
   const sub = new THREE.Group()
-  // 👆 Focus: tag CẢ sub-group — click bất kỳ bộ phận (vành/lan can/trụ) walk-up parent ra đúng cầu.
-  // Mix 🎯 KHÔNG ảnh hưởng: _selBridge đọc userData TRỰC TIẾP trên mesh trúng (chỉ ván được tag riêng).
+  // 👆 Focus + 🤚 Move: tag sub-group — click/nhấn bất kỳ bộ phận walk-up parent ra đúng cầu.
+  // Mix 🎯 đọc userData TRỰC TIẾP trên mesh trúng (bridgePart per-bộ-phận) — không lẫn với tag này.
   sub.userData = { bridgeRef: b }
   sub.position.set(b.offsetX / 1000, site.groundThick / 1000, b.offsetZ / 1000)
   sub.rotation.y = (b.rotDeg * Math.PI) / 180
-  deckPlanks(sub, ctx, mat, b, deckMat)
-  rims(sub, ctx, mat, b)
+  deckPlanks(sub, ctx, mat, b, mats)
+  rims(sub, ctx, mat, b, mats)
   if (b.railOn) {
-    railSide(sub, ctx, mat, b, 1)
-    railSide(sub, ctx, mat, b, -1)
+    railSide(sub, ctx, mat, b, 1, mats)
+    railSide(sub, ctx, mat, b, -1, mats)
   }
   if (b.pierOn) piers(sub, ctx, mat, b, site)
   ctx.group.add(sub)

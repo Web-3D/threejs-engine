@@ -533,6 +533,9 @@ function parseBridge(raw: unknown): BridgeConfig {
     pierCount: clamp(Math.round(num(r.pierCount, d.pierCount)), 0, 6),
     pierWidth: clamp(num(r.pierWidth, d.pierWidth), 40, 400),
     mix: optMix(r.mix), // 🎨 mix mặt ván — thiếu = gỗ/đá đơn
+    rimMix: optMix(r.rimMix), // 🎨 mix vành / tay vịn / trụ con — thiếu = gỗ/đá đơn
+    railMix: optMix(r.railMix),
+    postMix: optMix(r.postMix),
   }
 }
 
