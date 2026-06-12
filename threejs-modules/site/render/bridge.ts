@@ -210,6 +210,9 @@ export function buildSiteBridge(
   })
   ctx.mats.push(mat)
   const sub = new THREE.Group()
+  // 👆 Focus: tag CẢ sub-group — click bất kỳ bộ phận (vành/lan can/trụ) walk-up parent ra đúng cầu.
+  // Mix 🎯 KHÔNG ảnh hưởng: _selBridge đọc userData TRỰC TIẾP trên mesh trúng (chỉ ván được tag riêng).
+  sub.userData = { bridgeRef: b }
   sub.position.set(b.offsetX / 1000, site.groundThick / 1000, b.offsetZ / 1000)
   sub.rotation.y = (b.rotDeg * Math.PI) / 180
   deckPlanks(sub, ctx, mat, b, deckMat)
