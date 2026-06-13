@@ -180,6 +180,9 @@ function buildGround(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts):
   const mesh = new THREE.Mesh(geo, baseMixMaterial(site, opts) ?? groundMaterial(site, ctx, opts))
   mesh.userData.isBaseGround = true // 🖌 editor raycast cọ vẽ mask mix G0 (target 'base')
   mesh.receiveShadow = true
+  // 🌑 Nền cast bóng: vành hồ (mép lỗ) + gò terrain che nắng thấp → hết "nắng rọi xuyên mép xuống đáy hồ".
+  // Mặt phẳng ngang cast gần như vô hại trên nền bằng (tia song song), chỉ mép lỗ/gò mới sinh bóng. NgQuan 2026-06-13.
+  mesh.castShadow = true
   ctx.geos.push(geo)
   ctx.group.add(mesh)
   return mesh

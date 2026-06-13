@@ -26,9 +26,11 @@ import {
   renderPuddles,
   renderWaters,
   type SiteState,
+  type TerrainConfig,
   type WaterConfig,
   type WaterMaterialKey,
 } from '../state'
+import { heightAt, makeHeightField } from '../terrain'
 import type { SiteRenderCtx, SiteRenderOpts } from './fromState'
 
 // Rect 1 hồ (m, world XZ) cho cỏ né — cỏ KHÔNG mọc xuyên mặt nước LẪN dải coping. Mở rộng halfW/D theo
@@ -420,8 +422,21 @@ function buildBasin(
     (w.wallMaterial === w.floorMaterial && !floorMix
       ? floorMat
       : basinMaterial(w.wallMaterial, w, ctx, opts))
-  addBasinMesh(basinFloorGeometry(pts, yBot), floorMat, ctx, w, 'floor')
+  addBasinMesh(basinFloorGeo(w, pts, yBot, rimY), floorMat, ctx, w, 'floor')
   addBasinMesh(basinWallsGeometry(pts, rimY, yBot), wallMat, ctx, w, 'wall')
+}
+
+// Chọn geometry đáy: floorTerrain bật → đáy GÒ (grid+displace); tắt = ShapeGeometry phẳng (backward-compat).
+// Tách khỏi buildBasin giữ complexity ≤10.
+function basinFloorGeo(
+  w: WaterConfig,
+  pts: { x: number; z: number }[],
+  yBot: number,
+  rimY: number
+): THREE.BufferGeometry {
+  return w.floorTerrain?.enabled
+    ? basinFloorTerrainGeometry(pts, yBot, rimY, w.floorTerrain)
+    : basinFloorGeometry(pts, yBot)
 }
 
 // 1 mesh basin (floor hoặc walls): nhận bóng, track geo (material đã push ở caller — có thể share).
@@ -435,6 +450,10 @@ function addBasinMesh(
 ): void {
   const mesh = new THREE.Mesh(geo, mat)
   mesh.receiveShadow = true
+  // 🌑 VÁCH cast bóng: nắng thấp → vách gần (phía mặt trời) đổ bóng xuống đáy + vách xa = pit tự che đúng vật lý
+  // (trước CHỈ receive → nắng rọi thẳng tới đáy, path/viền hắt bóng "xuyên" xuống đáy. NgQuan 2026-06-13).
+  // Floor KHÔNG cast (dưới đáy không có gì để che — đỡ 1 lượt depth-pass).
+  if (face === 'wall') mesh.castShadow = true
   mesh.userData.waterMixRef = w // 🖌 editor stamp: so ref WaterConfig (sống trong site.waters)
   mesh.userData.waterMixFace = face
   ctx.geos.push(geo)
@@ -504,6 +523,104 @@ function basinFloorGeometry(pts: { x: number; z: number }[], yBot: number): THRE
   g.rotateX(-Math.PI / 2)
   g.translate(0, yBot, 0)
   return g
+}
+
+// 🏔️ Khoảng cách (m) từ điểm (x,z) tới CẠNH polygon gần nhất NẾU điểm nằm TRONG poly; ngoài → 0. Dùng làm
+// taper: đáy gò nhô cao ở giữa, lả về 0 ở chân vách (gặp wall phẳng, không hở khe). point-to-segment min.
+function distInsidePoly(x: number, z: number, pts: { x: number; z: number }[]): number {
+  if (!pointInPolygon(x, z, pts)) return 0
+  let best = Infinity
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const len2 = dx * dx + dz * dz || 1
+    const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2))
+    best = Math.min(best, Math.hypot(x - (a.x + t * dx), z - (a.z + t * dz)))
+  }
+  return best
+}
+
+// 🏔️ Đáy hồ GÒ: lưới res×res trên bbox polygon, đẩy Y = yBot + heightAt(FBM/gò) × taper-mép, KẸP dưới rim
+// (mound ngầm không phá mặt nước). DÙNG CHUNG TerrainConfig + heightAt với nền sân vườn (heightAt sample world
+// XZ). HeightField KHÔNG mask (maskRects rỗng + lotHalf khổng lồ → mask≈1 toàn đáy); taper riêng theo
+// distInsidePoly. Cell giữ nếu tâm trong poly NỞ 1 ô (overshoot chui dưới vách → hết khe mép). uv=(x,−z) như
+// đáy phẳng (caro/texture lát khớp). NgQuan 2026-06-13.
+function basinFloorTerrainGeometry(
+  pts: { x: number; z: number }[],
+  yBot: number,
+  rimY: number,
+  terrain: TerrainConfig
+): THREE.BufferGeometry {
+  if (pts.length < 3) return basinFloorGeometry(pts, yBot)
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const p of pts) {
+    minX = Math.min(minX, p.x)
+    maxX = Math.max(maxX, p.x)
+    minZ = Math.min(minZ, p.z)
+    maxZ = Math.max(maxZ, p.z)
+  }
+  const res = Math.max(8, Math.min(terrain.resolution, 128))
+  const cell = Math.max((maxX - minX) / res, (maxZ - minZ) / res) || 0.1
+  const keep = offsetPolygon(pts, cell) // nở 1 ô → đáy overshoot chui dưới vách (né khe mép)
+  const taperBand = Math.max(0.3, Math.min(maxX - minX, maxZ - minZ) * 0.18) // dải lả mép → chân vách phẳng
+  const capDy = Math.max(0, rimY - yBot - 0.05) // mound kẹp ≥5cm dưới rim (không phá mặt nước)
+  const hf = makeHeightField(terrain, [], 1e6, 1e6) // không mask → gò đầy toàn đáy
+  const box = { minX, maxX, minZ, maxZ, res, yBot, capDy, taperBand }
+  const { pos, uvs, idx } = emitBasinFloorGrid(box, pts, keep, hf)
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
+}
+
+interface BasinFloorBox {
+  minX: number
+  maxX: number
+  minZ: number
+  maxZ: number
+  res: number
+  yBot: number
+  capDy: number
+  taperBand: number
+}
+
+// Sinh vertex (displace+taper+kẹp) + index (ô có tâm trong poly-nở) cho đáy gò. Tách giữ rule-50.
+function emitBasinFloorGrid(
+  b: BasinFloorBox,
+  pts: { x: number; z: number }[],
+  keep: { x: number; z: number }[],
+  hf: ReturnType<typeof makeHeightField>
+): { pos: number[]; uvs: number[]; idx: number[] } {
+  const { minX, maxX, minZ, maxZ, res, yBot, capDy, taperBand } = b
+  const nx = res + 1
+  const pos: number[] = []
+  const uvs: number[] = []
+  for (let j = 0; j <= res; j++)
+    for (let i = 0; i <= res; i++) {
+      const x = minX + (i / res) * (maxX - minX)
+      const z = minZ + (j / res) * (maxZ - minZ)
+      const taper = Math.min(distInsidePoly(x, z, pts) / taperBand, 1)
+      const dy = Math.min(heightAt(hf, x, z) * taper, capDy)
+      pos.push(x, yBot + dy, z)
+      uvs.push(x, -z) // mét world-XZ (khớp ShapeGeometry phẳng)
+    }
+  const idx: number[] = []
+  for (let j = 0; j < res; j++)
+    for (let i = 0; i < res; i++) {
+      const cx = minX + ((i + 0.5) / res) * (maxX - minX)
+      const cz = minZ + ((j + 0.5) / res) * (maxZ - minZ)
+      if (!pointInPolygon(cx, cz, keep)) continue // chỉ ô trong poly (đã nở) → đáy bám hình hồ
+      const a = j * nx + i
+      idx.push(a, a + nx, a + 1, a + 1, a + nx, a + nx + 1)
+    }
+  return { pos, uvs, idx }
 }
 
 // Geometry VÁCH hồ = quad mỗi cạnh (yTop→yBot). uv = (chu-vi tích luỹ, cao Y) mét → caro lát dọc tường,
