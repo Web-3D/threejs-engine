@@ -143,7 +143,7 @@ export function renderSiteState(
   // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
   const waters = pools.map((w) => buildWater(w, site, ctx, opts)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
-  // 🐟 bầy cá = CON của hồ pond (w.fish) — chỉ pond đang bật & có fish.enabled. Vùng bơi = lòng hồ thật.
+  // 🐟 đàn cá = CON của hồ pond (w.fishSchools[]) — chỉ pond đang bật, mỗi đàn enabled. Vùng bơi = lòng hồ thật.
   const fish = buildFishSchools(pools, site, ctx)
   // Rào ĐA-LỚP: dựng mỗi lớp enabled (vòng đồng tâm ở inset riêng). skipFence → editor tự dựng (_syncFence)
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
@@ -152,8 +152,9 @@ export function renderSiteState(
   return { grass, waters, ground, fish }
 }
 
-// 🐟 Dựng cá cho mọi hồ pond đang bật có fish.enabled (pool/puddle bỏ qua). Tách khỏi renderSiteState (rule-50 +
-// complexity). Trả mảng {cfg, water, fish} thẳng hàng cho caller update(dt)/tune/navigate.
+// 🐟 Dựng cá cho mọi hồ pond đang bật: loop w.fishSchools[] (NHIỀU đàn/hồ — chuỗi bậc), mỗi đàn enabled = 1 PondFish
+// (pool/puddle không có fishSchools). Tách khỏi renderSiteState (rule-50). Trả mảng {cfg, water, fish} thẳng hàng
+// cho caller update(dt)/tune/navigate (cfg = FishSchool ref — _tuneFish/_previewFish khớp theo ref, đa đàn OK).
 function buildFishSchools(
   pools: WaterConfig[],
   site: SiteState,
@@ -161,9 +162,10 @@ function buildFishSchools(
 ): SiteHandle['fish'] {
   const fish: SiteHandle['fish'] = []
   for (const w of pools) {
-    if (!w.fish?.enabled) continue // pool/puddle không cá; pond tắt cá thì bỏ
-    const built = buildFishSchool(w, site, ctx)
-    if (built) fish.push({ cfg: w.fish, water: w, fish: built })
+    for (const fs of w.fishSchools ?? []) {
+      if (!fs.enabled) continue // đàn tắt thì bỏ
+      fish.push({ cfg: fs, water: w, fish: buildFishSchool(w, fs, site, ctx) })
+    }
   }
   return fish
 }

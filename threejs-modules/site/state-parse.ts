@@ -407,16 +407,21 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     // 🏔️ gò đáy hồ — thiếu (save cũ) = undefined (đáy phẳng); có = parse như terrain zone (backward-compat)
     floorTerrain:
       r.floorTerrain !== undefined ? parseTerrain(r.floorTerrain, defaultTerrain()) : undefined,
-    // 🐟 cá là con của hồ (parseWaterFish): có field = parse; thiếu thì pond mặc định mang bầy mới, pool/puddle
-    // = undefined. Save cũ (cá top-level fishSchools) migrate sau ở migrateLegacyFish.
-    fish: parseWaterFish(r, kind),
+    // 🐟 đàn cá = con của hồ (parseWaterFish → MẢNG): có field = parse; thiếu thì pond mặc định 1 đàn bậc 4,
+    // pool/puddle = undefined. Save cũ (cá top-level fishSchools) migrate sau ở migrateLegacyFish.
+    fishSchools: parseWaterFish(r, kind),
   }
 }
 
-// 🐟 Cá của 1 hồ: field có → parse; thiếu → pond mang bầy mặc định (hồ thiên nhiên có cá), pool/puddle undefined.
-function parseWaterFish(r: Partial<WaterConfig>, kind: WaterKind): FishSchool | undefined {
-  if (r.fish !== undefined) return parseFishSchool(r.fish)
-  return kind === 'pond' ? makeFishSchool() : undefined
+// 🐟 Đàn cá của 1 hồ → MẢNG: fishSchools[] (mới, cap 8) → fish đơn (save phiên trước, MIGRATE → [1]) → pond mặc
+// định 1 đàn bậc 4 → pool/puddle undefined. Legacy cá top-level (độc lập cũ) migrate riêng ở migrateLegacyFish.
+function parseWaterFish(
+  r: Partial<WaterConfig> & { fish?: unknown },
+  kind: WaterKind
+): FishSchool[] | undefined {
+  if (Array.isArray(r.fishSchools)) return r.fishSchools.slice(0, 8).map(parseFishSchool)
+  if (r.fish !== undefined) return [parseFishSchool(r.fish)] // save phiên trước: 1 đàn đơn → mảng
+  return kind === 'pond' ? [makeFishSchool(4)] : undefined
 }
 
 // Mảng hồ — 3 nguồn (ưu tiên giảm dần): waters[] (format mới) → water đơn cũ (MIGRATE → 1 pool + placeholder
@@ -485,7 +490,7 @@ function migrateLegacyFish(waters: WaterConfig[], rawSchools: unknown): void {
     const pond = nearestPond(ponds, used, raw)
     if (!pond) break // hết pond rảnh → bỏ bầy thừa
     used.add(pond)
-    pond.fish = parseFishSchool(raw) // giữ tuning cũ (count/màu/hành vi)
+    pond.fishSchools = [parseFishSchool(raw)] // giữ tuning cũ (count/màu/hành vi) → 1 đàn
     pond.enabled = true // cá cũ đang hiện → bật pond cho koi khỏi biến mất
   }
 }
@@ -513,13 +518,14 @@ function nearestPond(
 }
 
 function parseFishSchool(raw: unknown): FishSchool {
-  const d = makeFishSchool()
-  if (!raw || typeof raw !== 'object') return d
-  const r = raw as Partial<FishSchool>
+  const r = (raw ?? {}) as Partial<FishSchool>
+  const tier = clamp(Math.round(num(r.tier, 4)), 1, 6) // 🐟 bậc 1..6 (thiếu/lạ → 4 = koi)
+  const d = makeFishSchool(tier) // defaults theo bậc (count/size từ FISH_TIER_PRESETS)
   return {
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
-    count: clamp(Math.round(num(r.count, d.count)), 1, 30),
-    size: clamp(num(r.size, d.size), 80, 500),
+    tier,
+    count: clamp(Math.round(num(r.count, d.count)), 1, 64), // cap 64 (chừa bậc thấp đông)
+    size: clamp(num(r.size, d.size), 20, 600), // 20mm (tép bậc 6) → 600mm (koi to)
     speed: clamp(num(r.speed, d.speed), 0.05, 0.8),
     seed: num(r.seed, d.seed),
     bodyWidth: clamp(num(r.bodyWidth, d.bodyWidth), 0.2, 2.5), // 🐟 độ mập — save cũ → 1

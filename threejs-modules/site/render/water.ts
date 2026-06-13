@@ -22,6 +22,7 @@ import { WaterSurface } from '../../components/WaterSurface'
 import { arcLength } from '../../ops/resample' // op #1 — viền đá hồ đặt theo chiều-dài-thật, khép kín
 import { offsetPolygon, pointInPolygon, shapeToLocalPolygon } from '../shapes'
 import {
+  type FishSchool,
   renderPuddles,
   renderWaters,
   type SiteState,
@@ -109,19 +110,19 @@ export function buildWater(
   return water
 }
 
-// 🐟 1 BẦY CÁ KOI = CON của hồ pond (w.fish, NgQuan 2026-06-13 "cá thuộc pond"): vùng bơi = LÒNG HỒ THẬT
-// (polygon form + depthY + gò đáy floorTerrain), cá đụng vách quay lại. Gốc mesh = (offsetX, MẶT NỀN rim,
-// offsetZ) = tâm hồ. Mọi tham số trừ count = LIVE (setter PondFish). Caller drive update(dt) qua handle.fish;
-// dispose theo ctx.shaders. Trả null nếu hồ không có fish (defensive — caller đã lọc w.fish.enabled).
+// 🐟 1 ĐÀN CÁ = CON của hồ pond (1 phần tử w.fishSchools[], NgQuan 2026-06-13): vùng bơi = LÒNG HỒ THẬT
+// (polygon form + depthY + gò đáy floorTerrain) dùng CHUNG mọi đàn, cá đụng vách quay lại. Gốc mesh = (offsetX,
+// MẶT NỀN rim, offsetZ) = tâm hồ. Mọi tham số trừ count = LIVE (setter PondFish). Caller (buildFishSchools) loop
+// w.fishSchools truyền từng `fs`. tier = lưu (predation Phase 3). dispose theo ctx.shaders.
 export function buildFishSchool(
   w: WaterConfig,
+  fs: FishSchool,
   site: SiteState,
   ctx: SiteRenderCtx
-): PondFish | null {
-  const fs = w.fish
-  if (!fs) return null
+): PondFish {
   const fish = new PondFish({
     count: fs.count,
+    tier: fs.tier, // 🐟 bậc (Phase 1 chỉ lưu; predation lớn-ăn-bé = Phase 3)
     fishLength: fs.size / 1000,
     speed: fs.speed,
     colorSeed: fs.seed,
@@ -135,7 +136,7 @@ export function buildFishSchool(
     bobAmp: fs.bobAmp,
     burstRate: fs.burstRate, // 🐟 bứt tốc
     satiation: fs.satiation, // 🐟 độ no (0 = chết phơi bụng)
-    bounds: fishBoundsFor(w, site), // 🐟 vùng bơi = lòng hồ (polygon + mặt + đáy theo gò)
+    bounds: fishBoundsFor(w, site), // 🐟 vùng bơi = lòng hồ (polygon + mặt + đáy theo gò) — chung mọi đàn
   })
   fish.getMesh().position.set(w.offsetX / 1000, site.groundThick / 1000, w.offsetZ / 1000)
   ctx.group.add(fish.getMesh())
