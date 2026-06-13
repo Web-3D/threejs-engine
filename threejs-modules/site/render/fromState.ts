@@ -1075,4 +1075,4 @@ function resolveGroundMat(
 // ── Barrel re-export — sub-domain tách file 2026-06-11, consumer giữ NGUYÊN import từ fromState ──
 export { buildSiteFence, type GateWorldSpec, gateWorldSpec } from './fence'
 export { buildSiteGrass, grassBuildSig } from './grass'
-export { pondWorldXZ, waterPolygons } from './water'
+export { buildBasinFloorGeometry, pondWorldXZ, waterPolygons } from './water'

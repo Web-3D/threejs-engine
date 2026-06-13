@@ -439,6 +439,14 @@ function basinFloorGeo(
     : basinFloorGeometry(pts, yBot)
 }
 
+// 🏔️ EXPORT cho editor LIVE-swap geometry đáy (kéo slider gò → KHÔNG rebuild cả site/water-RTT = né tụt fps).
+// Tự tính rimY/yBot/pts từ w+site → trả geometry đáy (gò nếu floorTerrain bật, else phẳng). 1 NGUỒN với buildBasin.
+export function buildBasinFloorGeometry(w: WaterConfig, site: SiteState): THREE.BufferGeometry {
+  const rimY = site.groundThick / 1000
+  const yBot = rimY - w.depthY / 1000
+  return basinFloorGeo(w, pondWorldXZ(w), yBot, rimY)
+}
+
 // 1 mesh basin (floor hoặc walls): nhận bóng, track geo (material đã push ở caller — có thể share).
 // Tag userData (w ref + face) → editor raycast cọ vẽ mask mix đáy/vách (như isBaseGround của nền).
 function addBasinMesh(
