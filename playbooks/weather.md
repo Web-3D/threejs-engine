@@ -46,6 +46,7 @@ suốt nhờ depthWrite=false. Storm dùng cột cao 30m + radius 32 + gió 6.5.
 
 - `2026-06-13` — Phase A: module `effects/Precipitation` (mưa/tuyết Points field, vertex-shader rơi) + tab 🧪 Lab preview (tier A)
 - `2026-06-13` — Phase B: ráp scene archplan (1 instance) + hàng nút khay 🌅 (☀️🌧️❄️⛈️ + slider Nặng) + ⛈️ Bão combo liên động overcast SkyGradient; persist `archplan:weather` (tier A)
+- `2026-06-13` — Precipitation 1.1: cỡ hạt GẦN camera = max, XA = min (×0.28) theo `distance()` shader (sizeAttenuation=false, tự clamp); default ×2 (rain 3.2/snow 8); slider 🔍 Cỡ hạt (× hệ số) khay 🌅
 
 ## 6. Liên hệ
 

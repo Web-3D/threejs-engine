@@ -31,7 +31,7 @@ rain.setOpacity(0.5)
 | `height` | number | 22 | Chiều cao cột rơi (m) — live |
 | `groundY` | number | 0 | Cao độ đáy world (m) — live |
 | `speed` | number | 17 / 2.4 | Tốc độ rơi (m/s) — live |
-| `size` | number | 1.6 / 4 | Cỡ hạt (px, sizeAttenuation) — live |
+| `size` | number | 3.2 / 8 | Cỡ hạt GẦN camera (px max) — xa thu nhỏ ×0.28 theo distance — live |
 | `color` | Color | 0xaeb8c4 / 0xfafcff | Màu hạt — live |
 | `opacity` | number | 0.35 / 0.8 | Độ mờ — live |
 | `wind` | [number, number] | [2.4,0] / [0.6,0] | Gió ngang (m) lệch theo quãng rơi — live |
@@ -47,7 +47,8 @@ rain.dispose() // geometry + material + gỡ points khỏi parent
 
 ## Performance
 
-- **1 draw** (Points). Rơi/wrap/gió/drift = vertex shader → **0 CPU/frame** ngoài 1 ghi uniform `time`.
+- **1 draw** (Points). Rơi/wrap/gió/drift/cỡ-theo-distance = vertex shader → **0 CPU/frame** ngoài 1 ghi uniform `time`.
+- Cỡ hạt: `sizeAttenuation=false` + tự nhân `mix(1, 0.28, smoothstep(near, radius, dist))` → gần camera = `size` (max), rìa trụ = `size×0.28` (min). Clamp rõ ràng, không bị perspective chia 2 lần.
 - Chi phí thật = **overdraw transparent** → cap `count`. `depthWrite=false`, `frustumCulled=false` (trụ bám camera).
 - Mọi prop trừ `count`/`mode` = **uniform live** (0 recompile). `cameraPosition` (uniform three auto) → hạt luôn quanh người xem, tịnh tiến cứng theo cam (không trượt trong khung nhìn).
 

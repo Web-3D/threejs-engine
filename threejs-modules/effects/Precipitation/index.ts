@@ -17,7 +17,18 @@
 import * as THREE from 'three'
 import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
-import { attribute, cameraPosition, float, fract, sin, smoothstep, uniform, vec3 } from 'three/tsl'
+import {
+  attribute,
+  cameraPosition,
+  distance,
+  float,
+  fract,
+  mix,
+  sin,
+  smoothstep,
+  uniform,
+  vec3,
+} from 'three/tsl'
 import { PointsNodeMaterial } from 'three/webgpu'
 
 type TSLNode = ShaderNodeObject<Node>
@@ -37,7 +48,7 @@ export interface PrecipitationOptions {
   groundY?: number
   /** Tốc độ rơi (m/s). LIVE. Default: rain 17 / snow 2.4 */
   speed?: number
-  /** Cỡ hạt (px, sizeAttenuation). LIVE. Default: rain 1.6 / snow 4 */
+  /** Cỡ hạt GẦN camera (px, max — xa thu nhỏ về size×SIZE_MIN_RATIO theo khoảng cách). LIVE. Default: rain 3.2 / snow 8 */
   size?: number
   /** Màu hạt. LIVE. Default: rain 0xaeb8c4 / snow 0xfafcff */
   color?: THREE.ColorRepresentation
@@ -50,8 +61,10 @@ export interface PrecipitationOptions {
 }
 
 const MAX_PARTICLES = 30000
+const SIZE_NEAR = 3 // m — hạt gần hơn mức này = cỡ MAX (uSize)
+const SIZE_MIN_RATIO = 0.28 // hạt ở rìa trụ (xa = uRadius) thu về size × tỉ lệ này
 
-// Mặc định theo mode — caller override từng prop.
+// Mặc định theo mode — caller override từng prop. size = cỡ GẦN camera (gấp đôi bản cũ 1.6/4 → 3.2/8).
 const PRESETS: Record<PrecipMode, Required<Omit<PrecipitationOptions, 'mode'>>> = {
   rain: {
     count: 6000,
@@ -59,7 +72,7 @@ const PRESETS: Record<PrecipMode, Required<Omit<PrecipitationOptions, 'mode'>>> 
     height: 22,
     groundY: 0,
     speed: 17,
-    size: 1.6,
+    size: 3.2,
     color: 0xaeb8c4,
     opacity: 0.35,
     wind: [2.4, 0],
@@ -71,7 +84,7 @@ const PRESETS: Record<PrecipMode, Required<Omit<PrecipitationOptions, 'mode'>>> 
     height: 22,
     groundY: 0,
     speed: 2.4,
-    size: 4,
+    size: 8,
     color: 0xfafcff,
     opacity: 0.8,
     wind: [0.6, 0],
@@ -95,7 +108,7 @@ export class Precipitation {
   private readonly uHeight = uniform(22)
   private readonly uGroundY = uniform(0)
   private readonly uSpeed = uniform(17)
-  private readonly uSize = uniform(1.6)
+  private readonly uSize = uniform(3.2) // cỡ MAX (gần camera) — xa thu nhỏ theo distance
   private readonly uColor = uniform(new THREE.Color(1, 1, 1)) // .value = Color (có .set/.copy)
   private readonly uOpacity = uniform(0.35)
   private readonly uWind = uniform(new THREE.Vector2(0, 0)) // .value = Vector2 (có .set)
@@ -160,20 +173,27 @@ export class Precipitation {
     const driftZ = sin(this.uTime.mul(float(1.1)).add(phase.mul(float(9.42)))).mul(this.uDrift)
     const px = cameraPosition.x.add(sx.mul(this.uRadius)).add(windOff.x).add(driftX)
     const pz = cameraPosition.z.add(sz.mul(this.uRadius)).add(windOff.y).add(driftZ)
+    const worldPos = vec3(px, y, pz)
 
     // Fade 2 đầu để hạt KHÔNG pop khi wrap (mờ lúc mới sinh + lúc sắp chạm đáy).
     const fade = smoothstep(float(0), float(0.06), tFall).mul(
       smoothstep(float(1), float(0.92), tFall)
     )
 
+    // Cỡ theo KHOẢNG CÁCH tới camera: gần (≤SIZE_NEAR) = uSize (max), xa (≥uRadius) = uSize×MIN_RATIO.
+    // sizeAttenuation=false để TỰ kiểm soát hoàn toàn (px screen-space), clamp min/max rõ ràng theo ý.
+    const dist = distance(worldPos, cameraPosition) as TSLNode
+    const farT = smoothstep(float(SIZE_NEAR), this.uRadius, dist) // 0 gần .. 1 rìa trụ
+    const sizePx = this.uSize.mul(mix(float(1), float(SIZE_MIN_RATIO), farT))
+
     const mat = new PointsNodeMaterial()
-    mat.positionNode = vec3(px, y, pz)
+    mat.positionNode = worldPos
     mat.colorNode = this.uColor
-    mat.sizeNode = this.uSize
+    mat.sizeNode = sizePx
     mat.opacityNode = this.uOpacity.mul(fade)
     mat.transparent = true
     mat.depthWrite = false // hạt trong suốt — đừng ghi depth (né tự che lẫn nhau)
-    mat.sizeAttenuation = true // hạt xa nhỏ dần (phối cảnh thật)
+    mat.sizeAttenuation = false // tự control cỡ theo distance (clamp max gần / min xa) — KHÔNG để perspective chia thêm
     return mat
   }
 
@@ -210,7 +230,7 @@ export class Precipitation {
     if (!this.isDisposed) this.uGroundY.value = v
   }
 
-  /** Cỡ hạt (px). Min 0.1. LIVE. */
+  /** Cỡ hạt GẦN camera (px, max — xa thu nhỏ theo distance). Min 0.1. LIVE. */
   setSize(v: number): void {
     if (!this.isDisposed) this.uSize.value = Math.max(0.1, v)
   }
