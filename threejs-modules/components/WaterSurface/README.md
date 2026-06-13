@@ -89,9 +89,11 @@ Pool analytic ở trên hợp cho **va chạm RỜI** (cá/vật/giọt nhấn) 
 
 ```typescript
 water.setRainWet(0.7) // ☔ cường độ mưa nền [0..1] — caller set = độ nặng mưa; 0 = khô (tắt lớp này)
-// 5 tham số HÌNH-DẠNG live (mirror bộ slider va-chạm): cell(mật độ) · amp(size) · rate(nhịp) · maxR(cỡ vòng) · waves(bước sóng)
-water.setRainCell(0.34) // nhỏ = dày hơn
-water.setRainAmp(1.4); water.setRainRate(1.3); water.setRainMaxR(0.42); water.setRainWaves(22)
+// 6 tham số HÌNH-DẠNG live (đơn vị Ô — caller quy từ mm/density): cell · amp · rate · maxR(scope) · waves(k=2π/λ) · width(dải)
+water.setRainCell(0.34) // cạnh ô (m) — nhỏ = mưa dày hơn
+water.setRainAmp(1.4); water.setRainRate(1.3)
+water.setRainMaxR(0.42) // bán kính loang (ô) — bị chặn ≤0.6 (vòng không vượt cỡ ô)
+water.setRainWaves(22) // k = 2π/λ (ô); water.setRainWidth(0.12) // bề rộng dải = số-bước-sóng × λ
 ```
 
 - Mỗi ô: `cycle = fract(uTime·RAIN_RATE + hash(ô))` (đời 1 giọt) → `front = d − cycle·RAIN_MAXR` (loang trong ô) × dải × `(1−cycle)` (giọt mới mạnh) × `cos` → nghiêng normal ra tâm. ×`uRainWet`.

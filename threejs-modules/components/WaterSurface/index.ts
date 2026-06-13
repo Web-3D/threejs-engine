@@ -182,6 +182,7 @@ export class WaterSurface {
   private readonly uRainRate = uniform(RAIN_RATE)
   private readonly uRainMaxR = uniform(RAIN_MAXR)
   private readonly uRainWaves = uniform(RAIN_WAVES)
+  private readonly uRainWidth = uniform(RAIN_WIDTH) // ☔ bề rộng dải sóng (đơn vị ô) — lab tính từ số-bước-sóng×λ
   private _rippleHead = 0
   // |uViewDirY| → 1 khi CAMERA nhìn gần thẳng đứng (top-down): virtualCamera reflector suy biến → ảnh ĐƠ.
   // Fade gương theo HƯỚNG-NHÌN-CAMERA (uniform, mọi fragment chung) — KHÔNG theo eye-tới-fragment (pool lệch
@@ -393,16 +394,22 @@ export class WaterSurface {
     this.uRainRate.value = Math.max(0.2, Math.min(5, v))
   }
 
-  /** ☔ Cỡ vòng mưa nền (bán kính max, đơn vị ô) [0.1–0.5]. Default 0.42. */
+  /** ☔ SCOPE — bán kính loang max (đơn vị ô) [0.02–0.6]. Lab tính từ scope-mm/cell (chặn theo cỡ ô). */
   setRainMaxR(v: number): void {
     if (this.isDisposed) return
-    this.uRainMaxR.value = Math.max(0.1, Math.min(0.5, v))
+    this.uRainMaxR.value = Math.max(0.02, Math.min(0.6, v))
   }
 
-  /** ☔ Bước sóng lăn-tăn mưa nền (k, đơn vị ô) [6–40]. Cao = lăn tăn dày. Default 22. */
+  /** ☔ k = 2π/λ (đơn vị ô) — tần số lăn-tăn [1–600]. Lab tính từ λ-mm. Cao = bước sóng ngắn/dày. */
   setRainWaves(v: number): void {
     if (this.isDisposed) return
-    this.uRainWaves.value = Math.max(6, Math.min(40, v))
+    this.uRainWaves.value = Math.max(1, Math.min(600, v))
+  }
+
+  /** ☔ Bề rộng dải sóng (đơn vị ô) [0.005–3] = số-bước-sóng × λ. Lab tính. Rộng = nhiều gợn trong vòng. */
+  setRainWidth(v: number): void {
+    if (this.isDisposed) return
+    this.uRainWidth.value = Math.max(0.005, Math.min(3, v))
   }
 
   /** Đổi mặt nước sang polygon tự do (m, LOCAL). <3 đỉnh → về chữ nhật. LIVE: chỉ dựng lại geometry
@@ -531,7 +538,7 @@ export class WaterSurface {
         const d = length(delta)
         const cycle = fract(this.uTime.mul(this.uRainRate).add(hash(sd))) // 0..1 đời 1 giọt
         const front = d.sub(cycle.mul(this.uRainMaxR))
-        const env = oneMinus(smoothstep(float(0), float(RAIN_WIDTH), front.abs()))
+        const env = oneMinus(smoothstep(float(0), this.uRainWidth, front.abs()))
         const slope = env.mul(oneMinus(cycle)).mul(cos(front.mul(this.uRainWaves))) // giọt mới mạnh, tắt khi cycle→1
         const dir = delta.div(max(d, float(1e-3)))
         sx = sx.add(dir.x.mul(slope))
