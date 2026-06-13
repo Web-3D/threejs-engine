@@ -29,8 +29,11 @@ import {
   dot,
   float,
   floor,
+  Fn,
   fract,
+  greaterThan,
   hash,
+  If,
   length,
   max,
   mix,
@@ -520,10 +523,26 @@ export class WaterSurface {
     const nx = nx1.add(nx2.mul(this.uDetail))
     const nz = nz1.add(nz2.mul(this.uDetail))
     const rip = this._rippleNormal() // 🌊 gợn va chạm (pool analytic) — cộng SAU amp sóng nền
-    const rn = this._rainNormal() // ☔ ambient rain-ripple thủ tục (phủ khắp khi mưa)
+    const rn = this._rainNormalGated() // ☔ ambient rain-ripple — CHỈ tính khi uRainWet>0 (khô = bỏ 2×2 loop)
     const fx = nx.mul(amp).add(rip.x).add(rn.x)
-    const fz = nz.mul(amp).add(rip.z).add(rn.z)
+    const fz = nz.mul(amp).add(rip.z).add(rn.y)
     return normalize(vec3(fx, float(1), fz)) as TSLNode
+  }
+
+  // ☔ Gate ambient rain-cell theo uRainWet: uniform → nhánh ĐỒNG BỘ mọi pixel → GPU BỎ HẲN 2×2 loop khi KHÔ
+  // (uRainWet=0). Trước đây vẫn TÍNH rồi ×0 = phí — đây là phần kéo fps khi bật nước mà không mưa. Visual y nguyên
+  // (khô thì rain vốn = 0). Bọc Fn()() để có stack cho If/toVar (graph nước dựng eager, không sẵn context). NgQuan 2026-06-13.
+  private _rainNormalGated(): TSLNode {
+    return Fn(() => {
+      const rx = float(0).toVar()
+      const rz = float(0).toVar()
+      If(greaterThan(this.uRainWet, float(0)), () => {
+        const r = this._rainNormal()
+        rx.assign(r.x)
+        rz.assign(r.z)
+      })
+      return vec2(rx, rz)
+    })() as TSLNode
   }
 
   // 💦 Slope lõi "bắn tâm": dome lồi (=0 ở tâm & rìa coreR, đỉnh ở giữa = độ nghiêng mặt dome) × pulse (tắt nhanh
@@ -691,7 +710,12 @@ export class WaterSurface {
     // Đốm nắng theo mặt trời
     const refl = reflect(this.uSunDir.negate(), n)
     const spec = pow(max(dot(eye, refl), float(0)), this.uShininess).mul(this.uSunColor)
-    const crown = this._rainGlint().mul(this.uSunColor) // 👑 loé "vương miện" tâm giọt mưa (ngẫu nhiên per-giọt)
+    // 👑 loé "vương miện" tâm giọt mưa — GATE theo uRainWet (khô = bỏ 2×2 loop glint, visual y nguyên vì ×0)
+    const crown = Fn(() => {
+      const c = float(0).toVar()
+      If(greaterThan(this.uRainWet, float(0)), () => c.assign(this._rainGlint()))
+      return c
+    })().mul(this.uSunColor)
     return mix(refr, sm.rgb, fres).add(spec).add(crown) as TSLNode
   }
 }

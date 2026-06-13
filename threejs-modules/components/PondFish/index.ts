@@ -19,6 +19,7 @@ import * as THREE from 'three'
 import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
 import {
+  attribute,
   float,
   hash,
   instanceIndex,
@@ -32,7 +33,7 @@ import {
   uniformArray,
   vec3,
 } from 'three/tsl'
-import { MeshStandardNodeMaterial } from 'three/webgpu'
+import { MeshLambertNodeMaterial } from 'three/webgpu'
 
 type TSLNode = ShaderNodeObject<Node>
 
@@ -53,6 +54,10 @@ export interface PondFishOptions {
   swimDepth?: number
   /** 🐟 Độ MẬP thân (×profile bán kính) — 1 = gốc; <1 thon, >1 mập. Default: 1 */
   bodyWidth?: number
+  /** 🎢 NGHIÊNG thân vào cua (bank, ×) — 0 = không nghiêng, cao = lượn nghiêng rõ (đẹp khi zic-zac). Default: 1 */
+  bankAmp?: number
+  /** 🎢 CHÚI mũi khi lặn/ngoi (pitch, ×) — 0 = thân luôn ngang, cao = chúi rõ khi đổi tầng sâu. Default: 1 */
+  pitchAmp?: number
   /** 🎨 Màu NỀN thân (hex). Default: kem 0xeee8db */
   baseColor?: number
   /** 🎨 Màu MẢNG (hex — koi cam). Default: 0xe36112 */
@@ -69,6 +74,8 @@ export interface PondFishOptions {
   bobAmp?: number
   /** 🐟 Tần suất BỨT TỐC ngẫu nhiên (0..1; 0 = tắt) — vài con phóng vọt rồi khựng. Default: 0 */
   burstRate?: number
+  /** 🐟 BƠI THEO ĐÀN (boids cohesion+alignment) — true = tụm cụm + bơi đồng hướng. Pond ít con → Default: false */
+  schooling?: boolean
   /** 🐟 Độ NO (0..1): 1 = no/bơi thường; 0 = đói lả → CHẾT phơi bụng (trôi dưới mặt, behavior off). Default: 1 */
   satiation?: number
   /** 🐟 VÙNG BƠI = lòng hồ THẬT (polygon local + mặt nước + đáy theo gò). Có → cá bám hình hồ, đụng vách
@@ -123,15 +130,26 @@ interface FishState {
   flee: boolean
   fx: number
   fz: number
+  fleeT: number // 🏃 giây đã CHẠY TRỐN (đếm từ lúc BẮT ĐẦU bị săn) — gate cửa sổ SPRINT 2s đầu
+  fleeBurst: number // 🏃 ×tốc NGẪU NHIÊN cho 2s sprint đầu (roll 1 lần lúc chớm flee) — số phận: thoát hay bị đớp ngay
+  spinAcc: number // 🌀 góc đã quay CỘNG DỒN (có dấu) khi flee — |acc| > 1 vòng (2π) = xoay tại chỗ → ép đi thẳng
+  straightT: number // 🌀 giây còn lại của "đi thẳng cưỡng bức" 2s (>0 = KHÔNG quay theo predator → thoát kẹt vòng)
+  // 🎢 NGHIÊNG THÂN (bank vào cua + pitch chúi mũi khi lặn/ngoi) — mượt hoá per-con, đọc tốc-quay + tốc-đứng.
+  bank: number // rad — roll quanh trục thân (+X) hiện tại (lerp tới target ∝ tốc quay)
+  pitch: number // rad — chúi mũi quanh trục bên (+Z) hiện tại (lerp tới target ∝ tốc đứng)
+  prevHeading: number // heading frame trước → suy ra tốc quay (bank)
+  py: number // yFrac (TẦNG bơi) frame trước → suy ra tốc đổi-tầng cho pitch (chúi mũi); KHÔNG dính bob/gò đáy
+  chomp: number // 🦈 giây còn lại của 1 cú CHỚP há miệng (>0 = đang há→ngậm; predator set khi đớp)
 }
 
-const MAX_FISH = 64 // cap số cá/đàn (bậc thấp đông — cá nhỏ/tép). _lifeArr/_uLife cấp theo hằng này.
+const MAX_FISH = 64 // cap số cá/đàn (bậc thấp đông — cá nhỏ/tép). _lifeArr/_uLife/_mouthArr cấp theo hằng này.
 const SEG = 8 // cạnh quanh thân
 const TAIL_AMP = 0.09 // biên độ vẫy chót đuôi (đơn vị thân) — fade về 0 khi chết (đuôi duỗi mềm, hết giật)
-// Profile thân: [x dọc trục (đầu +X), bán kính] — đơn vị thân dài 1 (đầu 0.5 → cuống đuôi -0.38).
+// Profile thân: [x dọc trục (đầu +X), bán kính] — đơn vị thân dài 1 (đầu 0.5 → cuống đuôi -0.38). 2 vòng đầu PHÌNH
+// to (lip 0.03 + snout 0.056) → đầu đầy đặn + có VOLUME cho MIỆNG mở (jaw gape) thấy rõ (NgQuan: phẫu thuật đầu cá).
 const PROFILE: [number, number][] = [
-  [0.5, 0.012],
-  [0.42, 0.05],
+  [0.5, 0.03],
+  [0.43, 0.056],
   [0.3, 0.082],
   [0.16, 0.092],
   [0.0, 0.085],
@@ -139,6 +157,22 @@ const PROFILE: [number, number][] = [
   [-0.3, 0.04],
   [-0.38, 0.02],
 ]
+// 🦈 MIỆNG mở (jaw gape): vùng x∈[MOUTH_BACK, MOUTH_FRONT] = hàm; hàm TRÊN (y>0) nhếch nhẹ, hàm DƯỚI (y<0) rớt mạnh
+// hơn (JAW_LOW > JAW_UP — "há miệng" tự nhiên). Bake vào attribute 'jaw'; shader đẩy y theo jaw × mouthOpen × MOUTH_GAPE.
+const MOUTH_FRONT = 0.5 // x đầu vùng miệng (lip ring) — mask = 1
+const MOUTH_BACK = 0.3 // x cuối vùng miệng — sau mốc này jaw = 0 (thân không mở)
+const JAW_UP = 0.5 // hệ số mở hàm TRÊN (lip trên hơi nhếch)
+const JAW_LOW = 1 // hệ số mở hàm DƯỚI (rớt mạnh hơn → gape rõ)
+const MOUTH_GAPE = 0.13 // ×đơn vị thân — biên độ MỞ tối đa (× jaw_attr × mouthOpen, đẩy theo trục y)
+const MOUTH_REST = 0.3 // 🦈 HÉ MIỆNG nghỉ (luôn hé chút → đầu THẤY RÕ là miệng, không còn 1 khối); chomp cộng thêm
+const MOUTH_DARK = 0.7 // độ TỐI vùng môi/miệng (mix theo |jaw|) → khe miệng nổi rõ trên thân sáng
+const CHOMP_DUR = 0.28 // s — 1 cú "chớp" há→ngậm (sin 0→1→0); ngắn = đớp dứt khoát
+// 👁 MẮT: 2 đĩa nhỏ 2 bên đầu (x≈0.34), tô tối qua attribute 'feat' → đầu cá "ra mặt" (cue mạnh nhất). z ĐẶT NGAY
+// MẶT THÂN (≈0.037 tại x/y này) → đĩa chìm sát vào thân, KHÔNG lơ lửng (NgQuan: mắt chưa dính). Tâm lồi nhẹ 0.006.
+const EYE_X = 0.34 // vị trí dọc trục (trên đầu)
+const EYE_Y = 0.04 // hơi cao hơn trục giữa
+const EYE_Z = 0.037 // ±z = ĐÚNG mặt thân tại (x,y) trên (ellipse rz≈0.044, ở y=0.04 còn ~0.037) → đĩa dính sát
+const EYE_R = 0.02 // bán kính đĩa mắt (nhỏ gọn, không tràn khỏi đầu)
 
 // LCG mulberry32 — wander/layout tái lập theo seed (không Math.random).
 function makeRng(seed: number): () => number {
@@ -151,21 +185,30 @@ function makeRng(seed: number): () => number {
   }
 }
 
-// Thân cá: vòng ellipse (dẹp ngang rz=0.6r — cá nén bên) dọc trục X + chóp mũi/cuống đuôi.
-function pushBody(pos: number[], idx: number[], uv: number[]): void {
-  pos.push(0.54, 0, 0) // 0 = chóp mũi
+// 🦈 jaw weight 1 vertex thân: vùng miệng (mask theo x) × hướng (hàm trên + / dưới −, |cos| để bên hông ≈ 0).
+function jawAt(x: number, cosA: number): number {
+  const mask = Math.max(0, Math.min(1, (x - MOUTH_BACK) / (MOUTH_FRONT - MOUTH_BACK)))
+  return mask * (cosA >= 0 ? cosA * JAW_UP : cosA * JAW_LOW)
+}
+
+// Thân cá: vòng ellipse (dẹp ngang rz=0.6r — cá nén bên) dọc trục X + chóp mũi/cuống đuôi. jaw[] = trọng số mở miệng.
+function pushBody(pos: number[], idx: number[], uv: number[], jaw: number[]): void {
+  pos.push(0.54, 0, 0) // 0 = chóp mũi (seam giữa miệng — jaw 0, đứng yên)
   uv.push(0, 0.5)
+  jaw.push(0)
   for (let i = 0; i < PROFILE.length; i++) {
     const [x, r] = PROFILE[i]
     for (let j = 0; j < SEG; j++) {
       const a = (j / SEG) * Math.PI * 2
       pos.push(x, Math.cos(a) * r, Math.sin(a) * r * 0.6)
       uv.push((0.54 - x) / 1.1, j / SEG)
+      jaw.push(jawAt(x, Math.cos(a))) // 🦈 mở miệng theo vùng đầu + trên/dưới
     }
   }
   const tailC = pos.length / 3
   pos.push(-0.4, 0, 0) // tâm cuống đuôi
   uv.push(0.85, 0.5)
+  jaw.push(0)
   const ring = (i: number, j: number): number => 1 + i * SEG + (j % SEG)
   for (let j = 0; j < SEG; j++) idx.push(0, ring(0, j), ring(0, j + 1)) // quạt mũi
   for (let i = 0; i < PROFILE.length - 1; i++) {
@@ -181,11 +224,12 @@ function pushBody(pos: number[], idx: number[], uv: number[]): void {
     idx.push(tailC, ring(PROFILE.length - 1, j + 1), ring(PROFILE.length - 1, j))
 }
 
-// Vây phẳng z=0 (DoubleSide): đuôi chẻ 2 thuỳ + vây lưng — nằm trong vùng bend mạnh → vẫy theo thân.
-function pushFins(pos: number[], idx: number[], uv: number[]): void {
+// Vây phẳng z=0 (DoubleSide): đuôi chẻ 2 thuỳ + vây lưng — nằm trong vùng bend mạnh → vẫy theo thân. jaw 0 (không mở).
+function pushFins(pos: number[], idx: number[], uv: number[], jaw: number[]): void {
   const v = (x: number, y: number): number => {
     pos.push(x, y, 0)
     uv.push((0.54 - x) / 1.1, 0.5)
+    jaw.push(0)
     return pos.length / 3 - 1
   }
   const b = v(-0.38, 0) // gốc cuống đuôi
@@ -199,15 +243,41 @@ function pushFins(pos: number[], idx: number[], uv: number[]): void {
   idx.push(d1, d2, d3) // vây lưng
 }
 
+// 👁 2 MẮT = 2 đĩa nhỏ (7 cạnh) 2 bên đầu, tâm hơi LỒI ra (eye bulge). jaw 0 (không mở theo miệng). Tô tối =
+// colorNode đọc 'feat' (buildFishGeometry gán feat=1 cho verts từ đây trở đi). DoubleSide nên winding không tới hạn.
+function pushEyes(pos: number[], idx: number[], uv: number[], jaw: number[]): void {
+  for (const side of [1, -1]) {
+    const ez = side * EYE_Z
+    const c = pos.length / 3
+    pos.push(EYE_X, EYE_Y, ez + side * 0.006) // tâm lồi NHẸ ra (rìa nằm sát mặt thân → dính, không lơ lửng)
+    uv.push(0.08, 0.5)
+    jaw.push(0)
+    for (let j = 0; j < 7; j++) {
+      const a = (j / 7) * Math.PI * 2
+      pos.push(EYE_X + Math.cos(a) * EYE_R, EYE_Y + Math.sin(a) * EYE_R, ez)
+      uv.push(0.08, 0.5)
+      jaw.push(0)
+    }
+    for (let j = 0; j < 7; j++) idx.push(c, c + 1 + j, c + 1 + ((j + 1) % 7)) // quạt đĩa mắt
+  }
+}
+
 function buildFishGeometry(): THREE.BufferGeometry {
   const pos: number[] = []
   const idx: number[] = []
   const uv: number[] = []
-  pushBody(pos, idx, uv)
-  pushFins(pos, idx, uv)
+  const jaw: number[] = [] // 🦈 trọng số mở miệng per-vertex (shader đẩy y khi chomp)
+  pushBody(pos, idx, uv, jaw)
+  pushFins(pos, idx, uv, jaw)
+  const eyeStart = pos.length / 3 // verts TRƯỚC mắt = thân/vây (feat 0); từ đây = mắt (feat 1)
+  pushEyes(pos, idx, uv, jaw)
+  const feat = new Array<number>(pos.length / 3).fill(0) // 👁 0 = thân, 1 = mắt (tô tối ở colorNode)
+  for (let v = eyeStart; v < pos.length / 3; v++) feat[v] = 1
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+  g.setAttribute('jaw', new THREE.Float32BufferAttribute(jaw, 1)) // 🦈 mở miệng
+  g.setAttribute('feat', new THREE.Float32BufferAttribute(feat, 1)) // 👁 đánh dấu mắt
   g.setIndex(idx)
   g.computeVertexNormals()
   return g
@@ -222,14 +292,39 @@ const _UP = new THREE.Vector3(0, 1, 0)
 // 🐟 Trục thân (+X forward) + quat roll động: chết = xoay bụng TỪ TỪ lên (roll 0→π quanh +X).
 const _XAXIS = new THREE.Vector3(1, 0, 0)
 const _qRoll = new THREE.Quaternion()
+// 🎢 Pitch (chúi mũi) = roll quanh trục BÊN (+Z, trục dẹp ngang của thân). Bank dùng chung _XAXIS với xoay bụng.
+const _ZAXIS = new THREE.Vector3(0, 0, 1)
+const _qPitch = new THREE.Quaternion()
 const DEATH_DUR = 7 // s — CHẾT/HỒI SINH chung tốc (xoay bụng hồi sinh = xoay bụng chết — NgQuan 2026-06-13);
 // nổi chậm vì NƯỚC (buoyancy G≪9.8). Hồi sinh = đảo ngược qua cùng DEATH_DUR (cùng tốc xoay).
 const WAKE_DUR = 2.6 // s — sau hồi sinh: giữ Ở MẶT (đúng XYZ chết) rồi BƠI từ từ xuống (ease, KHÔNG rớt thẳng Y).
 const HUNT_DART = 1.8 // ×tốc khi SĂN — predator lao tới mồi (vừa phải, không vọt quá nhanh). PondPredation lái + cooldown.
-const FLEE_DART = 1.65 // ×tốc khi CHẠY TRỐN — prey hoảng bơi ngược predator (tăng 1.5→1.65: chạy quyết liệt hơn); VẪN
-// nhỏ hơn HUNT_DART 1.8 → predator còn bắt kịp dần (không thoát mãi). Base prey lại chậm hơn (preset) → cân bằng.
+const FLEE_DART = 1.65 // ×tốc khi CHẠY TRỐN (đã MỆT, sau cửa sổ sprint) — prey bơi ngược predator nhưng VẪN
+// nhỏ hơn HUNT_DART 1.8 → predator bắt kịp dần → "sau 2s tốc về mặc định chậm hơn bậc 4, dễ bị đớp" (NgQuan).
+// 🏃 CỬA SỔ "VÙNG VẪY" 2s ĐẦU khi prey chớm bị săn: chạy tốc NGẪU NHIÊN (fleeBurst) thay vì FLEE_DART cố định —
+// roll thấp ≈/chậm hơn predator → BỊ ĐỚP NGAY; roll cao > predator → VỌT LÊN thoát liền. Hết 2s → về FLEE_DART (mệt).
+const SPRINT_DUR = 2 // s — độ dài cửa sổ random sprint kể từ lúc bắt đầu flee
+const SPRINT_MIN = 2.1 // ×tốc đáy roll — ≈ NGANG predator-effective → roll xui vẫn "bị đớp ngay" (khi về tốc mệt)
+const SPRINT_MAX = 3.4 // ×tốc đỉnh roll — VỌT MẠNH trên predator → "vượt lên trên liền". Cả 2 > FLEE_DART 1.65 (sprint > lúc mệt)
+const ZIG_FREQ = 9 // 🪡 rad/s — tần BẺ CUA zic-zac trong cửa sổ sprint 2s (cao = quẹo gấp liên tục để né)
+const ZIG_AMP = 1.2 // rad (~69°) — biên độ lệch hướng mỗi nhịp zic-zac (bẻ cua mạnh → đường chạy ngoằn ngoèo né mồi)
+const SPIN_LIMIT = Math.PI * 2 // 🌀 prey xoay > 1 VÒNG (2π) CÙNG CHỖ = kẹt vòng tròn với predator → buộc thoát ra
+const STRAIGHT_DUR = 2 // s — "đi thẳng cưỡng bức" sau khi xoay quá 1 vòng (phá deadlock cả 2 bậc cùng xoay tại chỗ)
 const SEP_K = 0.7 // bán kính TÁCH-THÂN = chiều dài cá × K — gần hơn ngưỡng này thì đẩy ra (cá không nhập vào nhau)
 const SEP_SPD = 1.6 // ×chiều dài cá (m/s) — tốc đẩy tách tối đa (nhân với độ chồng 0..1). Va chạm "mềm", không cứng
+// 🎢 NGHIÊNG THÂN: bank = nghiêng vào cua (∝ tốc-quay), pitch = chúi mũi khi lặn/ngoi (∝ tốc-đứng) — ×amp slider.
+const BANK_K = 0.32 // rad cho mỗi (rad/s) tốc-quay → nghiêng thân; ×bankAmp rồi kẹp BANK_MAX
+const BANK_MAX = 0.7 // rad (~40°) nghiêng tối đa (kẻo lật úp lúc bẻ cua gấp/zic-zac)
+const PITCH_K = 0.3 // rad cho mỗi (đơn-vị yFrac / s) đổi-TẦNG → chúi mũi; ×pitchAmp rồi kẹp PITCH_MAX. Đọc yFrac
+// (TẦNG bơi chủ ý) chứ KHÔNG đọc cao-độ-thật → KHÔNG gật theo bob / gò đáy / separation (NgQuan: cá gật đầu liên tục).
+const PITCH_MAX = 0.6 // rad (~34°) chúi tối đa khi lặn/ngoi nhanh (vd predator lao xuống tầng mồi)
+const TILT_LERP = 6 // /s — mượt hoá bank/pitch (lerp tới target, không giật theo nhiễu tốc-quay từng frame)
+// 🐟 BOIDS bơi-theo-đàn (Reynolds — BẬT/TẮT qua schooling): separation ĐÃ có (_separate); thêm cohesion (về tâm
+// cụm) + alignment (theo hướng chung). CHỈ áp lúc bơi thường (flee/hunt override). Pond ít con → mặc định TẮT.
+const SCHOOL_R = 4 // bán kính CẢM NHẬN đàn = chiều dài cá × K — neighbor trong tầm này mới tính cohesion/alignment
+const COH_W = 1 // trọng số COHESION (hướng về tâm cụm) khi tổng hợp hướng đàn
+const ALIGN_W = 1.4 // trọng số ALIGNMENT (theo hướng chung) — nhỉnh hơn → đàn bơi đồng hướng, mượt (không co cụm quá)
+const SCHOOL_TURN = 2.5 // /s — tốc lerp heading về hướng đàn (vừa phải, vẫn để wander/sway phá đều)
 
 // smoothstep 0..1 — "từ từ" cho lật bụng + trồi lên.
 function smooth01(t: number): number {
@@ -276,7 +371,7 @@ function distToEdges(x: number, z: number, poly: XZ[]): number {
 export class PondFish {
   private mesh: THREE.InstancedMesh | null = null
   private geometry: THREE.BufferGeometry | null = null
-  private material: MeshStandardNodeMaterial | null = null
+  private material: MeshLambertNodeMaterial | null = null
   private isDisposed = false
 
   private readonly fish: FishState[] = []
@@ -288,6 +383,9 @@ export class PondFish {
   private swayAmp = 1 // 🐟 biên độ lượn chữ S (×) — hành vi, dùng trong _steer
   private wanderAmp = 1 // 🐟 độ lăng xăng (× random dart)
   private bobAmp = 1 // 🐟 nhấp nhô dọc (× ±3cm)
+  private bankAmp = 1 // 🎢 độ nghiêng thân vào cua (×)
+  private pitchAmp = 1 // 🎢 độ chúi mũi khi lặn/ngoi (×)
+  private schooling = false // 🐟 boids bơi-theo-đàn (cohesion+alignment) — bật/tắt; separation luôn chạy
   private burstRate = 0 // 🐟 tần suất bứt tốc ngẫu nhiên (0..1; 0 = tắt)
   private satiation = 1 // 🐟 độ no (slider Đói). >6/20 = sống; 0..6/20 = vùng CHẾT theo tỉ lệ (xem _deadCount)
   private tier = 4 // 🐟 BẬC (1..6) — Phase 1 chỉ lưu (getTier); predation lớn-ăn-bé dùng ở Phase 3
@@ -295,6 +393,9 @@ export class PondFish {
   // mỗi RENDER). _lifeArr = mảng raw (mutate trực tiếp); _uLife = node đọc trong material.
   private readonly _lifeArr: number[] = new Array<number>(MAX_FISH).fill(1)
   private readonly _uLife = uniformArray(this._lifeArr, 'float')
+  // 🦈 MỞ MIỆNG per-con (0 = ngậm, 1 = há tối đa) — predator chớp 1 cú khi đớp; shader đọc theo instanceIndex.
+  private readonly _mouthArr: number[] = new Array<number>(MAX_FISH).fill(0)
+  private readonly _uMouth = uniformArray(this._mouthArr, 'float')
   // 🐟 TÁCH-THÂN (separation): scratch đẩy X/Z mỗi con — tính 2 pha (đọc hết vị trí → áp) để khỏi lệ thuộc thứ tự.
   private readonly _sepX: number[] = new Array<number>(MAX_FISH).fill(0)
   private readonly _sepZ: number[] = new Array<number>(MAX_FISH).fill(0)
@@ -343,23 +444,34 @@ export class PondFish {
     if (opts.spotColor !== undefined) this.uColSpot.value.setHex(opts.spotColor)
   }
 
-  // 🎨 Init 3 màu + tỉ lệ mảng + 🐟 hành vi (sway/wander/bob/burst/đói) + bounds từ opts. Giữ constructor ≤10.
-  private _initTuning(opts: PondFishOptions): void {
-    this._initColors(opts)
-    this.uPatchAmt.value = Math.max(0, Math.min(1, opts.patchAmount ?? 0.5))
+  // 🐟🎢 Init biên độ HÀNH VI/DÁNG: lượn (sway) + lăng xăng (wander) + nhấp nhô (bob) + nghiêng cua (bank) + chúi
+  // mũi (pitch). Tách khỏi _initTuning giữ complexity ≤10.
+  private _initBehavior(opts: PondFishOptions): void {
     this.swayAmp = Math.max(0, opts.swayAmp ?? 1)
     this.wanderAmp = Math.max(0, opts.wanderAmp ?? 1)
     this.bobAmp = Math.max(0, opts.bobAmp ?? 1)
+    this.bankAmp = Math.max(0, opts.bankAmp ?? 1) // 🎢 nghiêng vào cua
+    this.pitchAmp = Math.max(0, opts.pitchAmp ?? 1) // 🎢 chúi mũi khi lặn/ngoi
+  }
+
+  // 🎨 Init 3 màu + tỉ lệ mảng + 🐟 hành vi/dáng + 🐟 bứt tốc/đói + bounds từ opts. Giữ constructor ≤10.
+  private _initTuning(opts: PondFishOptions): void {
+    this._initColors(opts)
+    this._initBehavior(opts) // 🐟🎢 sway/wander/bob + bank/pitch
+    this.uPatchAmt.value = Math.max(0, Math.min(1, opts.patchAmount ?? 0.5))
     this.burstRate = Math.max(0, Math.min(1, opts.burstRate ?? 0))
+    this.schooling = opts.schooling ?? false // 🐟 bơi theo đàn (mặc định tắt — pond ít con)
     this.satiation = Math.max(0, Math.min(1, opts.satiation ?? 1))
     this.tier = Math.round(opts.tier ?? 4) // 🐟 bậc — lưu cho Phase 3 (predation)
     if (opts.bounds) this.setBounds(opts.bounds) // 🐟 vùng bơi = lòng hồ thật (polygon+mặt+đáy)
   }
 
   // ── Material: vẫy đuôi (vertex) + màu koi (fragment) — tất cả per-instance từ hash(instanceIndex) ──
-  private _buildMaterial(): MeshStandardNodeMaterial {
-    // perf-ok: gọi 1 LẦN trong constructor (không per-rebuild) — compile 1 shader cho cả vòng đời module
-    const mat = new MeshStandardNodeMaterial({ roughness: 0.55, side: THREE.DoubleSide })
+  private _buildMaterial(): MeshLambertNodeMaterial {
+    // perf-ok: gọi 1 LẦN trong constructor (không per-rebuild) — compile 1 shader cho cả vòng đời module.
+    // 🪶 LAMBERT (không PBR): cá chìm dưới nước, stylized → không cần roughness/metalness. Compile NHANH hơn +
+    // fragment RẺ hơn hẳn MeshStandard (NgQuan: làm sạch phần cá). Vẫn DoubleSide vì vây phẳng cần thấy 2 mặt.
+    const mat = new MeshLambertNodeMaterial({ side: THREE.DoubleSide })
     const fi = instanceIndex.toFloat()
     const p = positionLocal
     // Vẫy: sóng sine dọc thân cuộn về đuôi, biên độ tăng bậc 2 từ đầu (≈0) tới chót đuôi.
@@ -369,8 +481,12 @@ export class PondFish {
     const amp = sTail.mul(sTail).mul(0.94).add(0.06).mul(this.uAmp).mul(aLife)
     const phase = hash(fi.add(float(31.7))).mul(6.2832)
     const wave = p.x.mul(6).sub(this.uTime.mul(this.uFlap)).add(phase).sin()
-    // 🐟 Độ MẬP: nhân tiết diện (y,z) ×uWidth GIỮ trục x (dài) → live; rồi ADD vẫy lên z (KI-003 giữ instanceMatrix).
-    const shaped = vec3(p.x, p.y.mul(this.uWidth), p.z.mul(this.uWidth))
+    // 🦈 MỞ MIỆNG: jaw (bake per-vertex) × (HÉ nghỉ MOUTH_REST + chomp per-con _uMouth) × MOUTH_GAPE → đẩy y (hàm
+    // trên/dưới tách). Hé nghỉ = luôn mở chút → đầu thấy rõ là miệng (không 1 khối); đớp thì chomp cộng thêm.
+    const aMouth = (this._uMouth.element(instanceIndex) as unknown as TSLNode).add(MOUTH_REST)
+    const gape = (attribute('jaw', 'float') as unknown as TSLNode).mul(aMouth).mul(MOUTH_GAPE)
+    // 🐟 Độ MẬP: nhân tiết diện (y,z) ×uWidth GIỮ trục x (dài) + 🦈 gape lên y; rồi ADD vẫy lên z (KI-003 giữ instanceMatrix).
+    const shaped = vec3(p.x, p.y.mul(this.uWidth).add(gape), p.z.mul(this.uWidth))
     mat.positionNode = shaped.add(vec3(0, 0, wave.mul(amp)))
     // Pattern màu sample theo positionGeometry (ATTRIBUTE GỐC pre-displacement) — positionLocal là
     // VARYING bị positionNode GHI ĐÈ (Position.js: toVarying + NodeMaterial assign) → dùng nó trong
@@ -404,7 +520,16 @@ export class PondFish {
     const belly = float(1)
       .sub(smoothstep(float(-0.06), float(0), p.y))
       .mul(0.5)
-    return mix(col, this.uColBase.mul(1.12), belly) as TSLNode
+    col = mix(col, this.uColBase.mul(1.12), belly) as TSLNode
+    // 🦈 MÔI/MIỆNG tối: vùng lip (|jaw| cao = đầu trước) tô tối dần → khe miệng nổi rõ trên thân sáng.
+    const jawMag = (attribute('jaw', 'float') as unknown as TSLNode)
+      .abs()
+      .mul(MOUTH_DARK)
+      .clamp(0, 1)
+    col = mix(col, vec3(0.16, 0.05, 0.04), jawMag) as TSLNode
+    // 👁 MẮT: feat=1 → đen (cue "ra mặt"). step cứng nên rìa đĩa sắc nét.
+    const feat = attribute('feat', 'float') as unknown as TSLNode
+    return mix(col, vec3(0.03, 0.03, 0.05), step(float(0.5), feat)) as TSLNode
   }
 
   // Rải đàn TRẢI RỘNG cả vùng, mỗi con 1 hướng/tốc/cỡ/pha/tần lượn/lệch-pha-bứt riêng. Spawn CÁCH NHAU (không
@@ -416,10 +541,11 @@ export class PondFish {
     for (let i = 0; i < count; i++) {
       const pt = this._spacedSpawn(claims, myR)
       claims.push({ x: pt.x, z: pt.z, r: myR }) // chiếm chỗ → con sau (cùng/khác đàn) tránh
+      const heading = this.rng() * Math.PI * 2
       this.fish.push({
         x: pt.x,
         z: pt.z,
-        heading: this.rng() * Math.PI * 2,
+        heading,
         wander: 0,
         swayF: 0.5 + this.rng() * 0.7,
         speed: 0.75 + this.rng() * 0.5,
@@ -438,6 +564,15 @@ export class PondFish {
         flee: false, // 🏃 chưa chạy trốn
         fx: 0,
         fz: 0,
+        fleeT: 0,
+        fleeBurst: FLEE_DART, // roll lại lúc chớm flee (setFlee); giá trị này chỉ là chỗ giữ trước cú roll đầu
+        spinAcc: 0,
+        straightT: 0,
+        bank: 0, // 🎢 nghiêng thân = 0 lúc spawn
+        pitch: 0,
+        prevHeading: heading, // = heading ban đầu → frame đầu tốc-quay ≈ 0 (không giật nghiêng)
+        py: 0, // yFrac frame trước (cập nhật frame đầu trong _bodyTilt)
+        chomp: 0, // 🦈 miệng ngậm lúc spawn
       })
     }
     const dc = this._deadCount() // load sẵn-chết: con i<deadCount khởi tạo chết hẳn (không replay animation)
@@ -497,8 +632,37 @@ export class PondFish {
     return { x: Math.cos(a) * r, z: Math.sin(a) * r }
   }
 
-  // Lái 1 con: SÁT VÁCH → quay đầu về tâm (lerp góc, không xuyên); trong vùng = LƯỢN CHỮ S liên tục
-  // (sine per-con — cá thật không bao giờ bơi thẳng) + wander random-walk mạnh (đổi hướng bất chợt).
+  // 🐟 BOIDS cohesion + alignment cho 1 con (CHỈ khi schooling bật): gom neighbor trong SCHOOL_R → lái heading về
+  // hỗn hợp (hướng-tới-tâm-cụm × COH_W + hướng-chung-đàn × ALIGN_W). Separation = _separate lo riêng. O(n²), n≤64 rẻ.
+  // Không neighbor → giữ nguyên (wander thường). Gọi TRƯỚC wander để wander/sway phá đều trên nền hướng đàn.
+  private _schoolBias(f: FishState, dt: number): void {
+    const r = this.fishLength * SCHOOL_R
+    let cx = 0
+    let cz = 0
+    let hx = 0
+    let hz = 0
+    let n = 0
+    for (const b of this.fish) {
+      if (b === f || b.consumed || b.dp > 0) continue
+      const dx = b.x - f.x
+      const dz = b.z - f.z
+      if (dx * dx + dz * dz >= r * r) continue
+      cx += b.x
+      cz += b.z
+      hx += Math.cos(b.heading) // alignment: tích vector hướng (circular mean)
+      hz += Math.sin(b.heading)
+      n++
+    }
+    if (n === 0) return
+    const coh = Math.atan2(f.z - cz / n, cx / n - f.x) // hướng TỚI tâm cụm (cùng quy ước _huntStep)
+    const align = Math.atan2(hz, hx) // hướng CHUNG đàn
+    const ux = Math.cos(coh) * COH_W + Math.cos(align) * ALIGN_W
+    const uz = Math.sin(coh) * COH_W + Math.sin(align) * ALIGN_W
+    f.heading += angleDelta(Math.atan2(uz, ux), f.heading) * Math.min(1, SCHOOL_TURN * dt)
+  }
+
+  // Lái 1 con: SÁT VÁCH → quay đầu về tâm (lerp góc, không xuyên); trong vùng = (🐟 boids nếu bật) + LƯỢN CHỮ S
+  // liên tục (sine per-con — cá thật không bơi thẳng) + wander random-walk mạnh (đổi hướng bất chợt).
   private _steer(f: FishState, dt: number, t: number): void {
     if (this._nearWall(f)) {
       // hướng về TÂM (dir = (cos h, -sin h)) — bounds: centroid polygon; else gốc (0,0)
@@ -508,6 +672,7 @@ export class PondFish {
       f.heading += angleDelta(desired, f.heading) * Math.min(1, 2.8 * dt)
       return
     }
+    if (this.schooling) this._schoolBias(f, dt) // 🐟 bơi theo đàn (cohesion+alignment) trước, wander phá đều sau
     f.wander += (this.rng() - 0.5) * 7 * this.wanderAmp * dt // 🐟 lăng xăng (random dart)
     f.wander = Math.max(-1.5, Math.min(1.5, f.wander))
     f.heading += (f.wander + Math.sin(t * f.swayF + f.bob) * 0.9 * this.swayAmp) * dt // 🐟 lượn chữ S
@@ -539,16 +704,37 @@ export class PondFish {
     return 1
   }
 
-  // 🐟 Cao độ 1 con: bounds → rải giữa MẶT NƯỚC (top) và ĐÁY theo gò (floorYAt, kẹp mỏng khi gò nhô cao) + bob;
-  // else khối trụ depthY/swimDepth (cũ).
-  private _levelY(f: FishState, t: number): number {
-    const bob = Math.sin(t * 0.7 + f.bob) * 0.03 * this.bobAmp
+  // 🐟 Cao độ bơi GỐC 1 con (KHÔNG bob): bounds → rải giữa MẶT NƯỚC (top) và ĐÁY theo gò (floorYAt, kẹp mỏng khi gò
+  // nhô cao); else khối trụ depthY/swimDepth (cũ). Pitch (chúi mũi) đọc baseY NÀY → chỉ chúi khi đổi tầng THẬT (lặn
+  // theo mồi / bám gò), KHÔNG gật theo bob cosmetic. Bob ±3cm cộng vào RIÊNG ở vị trí (caller), không vào pitch.
+  private _baseLevelY(f: FishState): number {
     if (this.bounds) {
       const top = this.bounds.surfaceY - 0.08 // chìm dưới mặt nước
       const bot = Math.min(this.bounds.floorYAt(f.x, f.z) + 0.06, top - 0.02) // trên đáy, không vượt mặt
-      return top + (bot - top) * f.yFrac + bob
+      return top + (bot - top) * f.yFrac
     }
-    return this.depthY - f.yFrac * this.swimDepth + bob
+    return this.depthY - f.yFrac * this.swimDepth
+  }
+
+  // 🎢 Cập nhật NGHIÊNG THÂN per-con: bank ∝ tốc-QUAY (nghiêng vào cua), pitch ∝ tốc-ĐỨNG (chúi mũi khi lặn/ngoi).
+  // Lerp mượt (TILT_LERP) để không giật theo nhiễu từng frame. Cá chết (alive=false) → target 0 (thân về ngang,
+  // death-pose lo xoay bụng). Luôn cập nhật prevHeading/py để hồi sinh không giật. d≤0 (frame 0) bỏ qua.
+  private _bodyTilt(f: FishState, d: number, alive: boolean): void {
+    if (d <= 0) return
+    const turnRate = angleDelta(f.heading, f.prevHeading) / d // rad/s — dấu = chiều quay (trái/phải)
+    f.prevHeading = f.heading
+    const vy = (f.yFrac - f.py) / d // đổi TẦNG (yFrac)/s — dương = LẶN xuống đáy, âm = NGOI lên mặt
+    f.py = f.yFrac
+    const bankTo = alive
+      ? THREE.MathUtils.clamp(-turnRate * BANK_K * this.bankAmp, -BANK_MAX, BANK_MAX)
+      : 0
+    // lặn (vy>0) → chúi mũi XUỐNG (pitch âm) → dùng -vy. CHỈ ≠0 khi đổi tầng CHỦ Ý (hunt), không nhiễu bob/gò/separation.
+    const pitchTo = alive
+      ? THREE.MathUtils.clamp(-vy * PITCH_K * this.pitchAmp, -PITCH_MAX, PITCH_MAX)
+      : 0
+    const k = Math.min(1, TILT_LERP * d)
+    f.bank += (bankTo - f.bank) * k
+    f.pitch += (pitchTo - f.pitch) * k
   }
 
   /** Gọi mỗi frame với dt giây — tiến vẫy + dời đàn; CHẾT THEO TỈ LỆ (deadCount con đầu) ramp riêng per-con. */
@@ -576,19 +762,33 @@ export class PondFish {
       const pose = this._deathPose(f.dp, dying)
       const fl = dying ? pose.rise : 0 // float (đung đưa/đong đưa/lắc) CHỈ khi chết; hồi sinh = không rung
       const eRise = Math.max(pose.rise, f.wake) // wake giữ ở mặt sau hồi sinh → ease xuống (bơi xuống, không rớt)
-      const aliveY = this._levelY(f, t)
+      this._bodyTilt(f, d, f.dp <= 0) // 🎢 bank (∝ tốc-quay) + pitch (∝ đổi-TẦNG yFrac — KHÔNG gật theo bob/gò đáy)
+      const aliveY = this._baseLevelY(f) + Math.sin(t * 0.7 + f.bob) * 0.03 * this.bobAmp // cao độ bơi + bob ±3cm
       _pos.set(
         f.x + Math.sin(t * 0.5 + ph) * 0.03 * fl, // đung đưa ngang theo làn nước
         aliveY + (surfTop - aliveY) * eRise + Math.sin(t * 0.6 + ph) * 0.03 * fl, // nổi/lặn + đong đưa Y
         f.z + Math.cos(t * 0.4 + ph * 1.3) * 0.03 * fl
       )
-      _qRoll.setFromAxisAngle(_XAXIS, pose.flip + Math.sin(t * 0.7 + ph) * 0.12 * fl) // xoay bụng + lắc nhẹ
-      _quat.setFromAxisAngle(_UP, f.heading + this._throe(f.dp, ph, dying)).multiply(_qRoll) // throe = body GIẬT
+      _qRoll.setFromAxisAngle(_XAXIS, pose.flip + f.bank + Math.sin(t * 0.7 + ph) * 0.12 * fl) // xoay bụng + 🎢 bank + lắc
+      _qPitch.setFromAxisAngle(_ZAXIS, f.pitch) // 🎢 chúi mũi (lặn/ngoi)
+      _quat
+        .setFromAxisAngle(_UP, f.heading + this._throe(f.dp, ph, dying)) // yaw
+        .multiply(_qPitch) // · pitch
+        .multiply(_qRoll) // · roll (xoay bụng + bank) — throe = body GIẬT trong yaw
       _scl.setScalar(this.fishLength * f.size)
       this.mesh.setMatrixAt(i, _mtx.compose(_pos, _quat, _scl))
       this._lifeArr[i] = 1 - smooth01(Math.min(f.dp * 2, 1)) // đuôi limp per-con (chết = duỗi mềm)
+      this._mouthArr[i] = this._mouthAt(f, d) // 🦈 chớp há miệng (chomp) khi vừa đớp
     }
-    this.mesh.instanceMatrix.needsUpdate = true // _uLife tự re-pack mỗi RENDER (NodeUpdateType.RENDER)
+    this.mesh.instanceMatrix.needsUpdate = true // _uLife/_uMouth tự re-pack mỗi RENDER (NodeUpdateType.RENDER)
+  }
+
+  // 🦈 Độ MỞ miệng 0..1 frame này (sin 0→1→0 suốt CHOMP_DUR — há rồi ngậm dứt khoát). Đếm ngược chomp. 0 = ngậm.
+  private _mouthAt(f: FishState, d: number): number {
+    if (f.chomp <= 0) return 0
+    const open = Math.sin((1 - f.chomp / CHOMP_DUR) * Math.PI) // CHOMP_DUR→0 ↦ 0→1→0
+    f.chomp = Math.max(0, f.chomp - d)
+    return open
   }
 
   // 🐟 Tư thế. flip=roll bụng (0=bụng xuống, π=bụng lên) — CÙNG công thức 2 chiều → xoay bụng hồi sinh ĐÚNG TỐC
@@ -653,11 +853,26 @@ export class PondFish {
     f.z -= Math.sin(f.heading) * sp * d
   }
 
-  // 🏃 CHẠY TRỐN: bơi NGƯỢC hướng predator (fx,fz) + panic (×FLEE_DART, giật mạnh hơn). Quay đầu GẤP để thoát.
+  // 🏃 CHẠY TRỐN: bơi NGƯỢC hướng predator (fx,fz) + panic (giật mạnh, quay đầu GẤP). Tốc theo cửa sổ SPRINT:
+  // 2s đầu (fleeT < SPRINT_DUR) = ×fleeBurst NGẪU NHIÊN + BẺ CUA zic-zac (né panic; thoát hay bị đớp ngay); sau =
+  // ×FLEE_DART chạy thẳng away (mệt, dễ bị đớp).
+  // 🌀 CHỐNG XOAY TẠI CHỖ: cộng dồn góc quay; > 1 vòng (SPIN_LIMIT) = kẹt vòng với predator → "đi thẳng cưỡng bức"
+  // STRAIGHT_DUR giây (không quay theo predator nữa) để thoát ra, rồi reset đếm. Phá deadlock cả 2 bậc cùng xoay.
   private _fleeStep(f: FishState, d: number, t: number): void {
-    const desired = Math.atan2(f.fz - f.z, f.x - f.fx) // away khỏi (fx,fz) — đảo hướng so với _huntStep
-    f.heading += angleDelta(desired, f.heading) * Math.min(1, 8 * d) // quay bỏ chạy gấp hơn cả săn
-    const sp = f.speed * this.speed * FLEE_DART * (0.85 + 0.35 * Math.sin(t * 13 + f.bob)) // panic, giật mạnh
+    f.fleeT += d // đếm giây đã chạy → còn trong cửa sổ random hay đã về tốc mệt
+    const dart = f.fleeT < SPRINT_DUR ? f.fleeBurst : FLEE_DART
+    if (f.straightT > 0) {
+      f.straightT -= d // đang đi thẳng cưỡng bức → giữ nguyên heading, không quay theo predator
+      if (f.straightT <= 0) f.spinAcc = 0 // hết dash → cho phép quay lại từ đầu
+    } else {
+      const away = Math.atan2(f.fz - f.z, f.x - f.fx) // hướng NGƯỢC predator (đảo so _huntStep)
+      const zig = f.fleeT < SPRINT_DUR ? Math.sin(t * ZIG_FREQ + f.bob * 5) * ZIG_AMP : 0 // 🪡 2s đầu = bẻ cua zic-zac né
+      const turn = angleDelta(away + zig, f.heading) * Math.min(1, 8 * d) // quay gấp tới (away + lệch zic-zac)
+      f.heading += turn
+      f.spinAcc += turn // cộng dồn có dấu — zic-zac đối xứng tự triệt; chỉ xoay 1 CHIỀU liên tục (vòng tròn) mới tích
+      if (Math.abs(f.spinAcc) > SPIN_LIMIT) f.straightT = STRAIGHT_DUR // > 1 vòng tại chỗ → buộc đi thẳng 2s
+    }
+    const sp = f.speed * this.speed * dart * (0.85 + 0.35 * Math.sin(t * 13 + f.bob)) // panic, giật mạnh
     f.x += Math.cos(f.heading) * sp * d
     f.z -= Math.sin(f.heading) * sp * d
   }
@@ -770,6 +985,24 @@ export class PondFish {
     this.bobAmp = Math.max(0, v)
   }
 
+  /** 🎢 Độ NGHIÊNG thân vào cua (bank, ×, ≥0) — field CPU, áp frame kế. */
+  setBankAmp(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.bankAmp = Math.max(0, v)
+  }
+
+  /** 🎢 Độ CHÚI mũi khi lặn/ngoi (pitch, ×, ≥0) — field CPU, áp frame kế. */
+  setPitchAmp(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.pitchAmp = Math.max(0, v)
+  }
+
+  /** 🐟 Bật/tắt BƠI THEO ĐÀN (boids cohesion+alignment) — tắt = wander độc lập (separation vẫn chạy). */
+  setSchooling(on: boolean): void {
+    if (this.isDisposed) return
+    this.schooling = !!on
+  }
+
   /** 🐟 Tần suất BỨT TỐC ngẫu nhiên (0..1; 0 = tắt) — field CPU, áp frame kế. */
   setBurstRate(v: number): void {
     if (this.isDisposed || Number.isNaN(v)) return
@@ -856,10 +1089,17 @@ export class PondFish {
     if (f) f.hunt = false
   }
 
-  /** 🏃 Bật CHẠY TRỐN cá i → bơi NGƯỢC khỏi predator tại (x,z) LOCAL. Coordinator gọi mỗi frame (predator gần nhất). */
+  /** 🏃 Bật CHẠY TRỐN cá i → bơi NGƯỢC khỏi predator tại (x,z) LOCAL. Coordinator gọi mỗi frame (predator gần nhất).
+   *  Lần CHỚM flee (đang không chạy → chạy) mở cửa sổ SPRINT 2s + roll tốc ngẫu nhiên (số phận: thoát / bị đớp ngay). */
   setFlee(i: number, x: number, z: number): void {
     const f = this.fish[i]
     if (!f || f.consumed) return
+    if (!f.flee) {
+      f.fleeT = 0
+      f.fleeBurst = SPRINT_MIN + this.rng() * (SPRINT_MAX - SPRINT_MIN)
+      f.spinAcc = 0 // 🌀 reset đếm xoay cho lượt chạy mới
+      f.straightT = 0
+    }
     f.flee = true
     f.fx = x
     f.fz = z
@@ -875,6 +1115,12 @@ export class PondFish {
   consume(i: number): void {
     const f = this.fish[i]
     if (f) f.consumed = true
+  }
+
+  /** 🦈 CHỚP há miệng cá i 1 cú (CHOMP_DUR ~0.28s, há→ngậm) — predator gọi ĐÚNG LÚC đớp mồi (PondPredation). */
+  chomp(i: number): void {
+    const f = this.fish[i]
+    if (f && !f.consumed) f.chomp = CHOMP_DUR
   }
 
   /** 🦈 RESET đàn: HỒI mọi cá bị đớp (consumed→false) + tắt săn → cá hiện lại frame kế. Nút "Reset đàn" GUI. */

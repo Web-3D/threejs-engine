@@ -536,7 +536,10 @@ function parseFishSchool(raw: unknown): FishSchool {
     swayAmp: clamp(num(r.swayAmp, d.swayAmp), 0, 2), // 🐟 hành vi — save cũ → 1
     wanderAmp: clamp(num(r.wanderAmp, d.wanderAmp), 0, 2),
     bobAmp: clamp(num(r.bobAmp, d.bobAmp), 0, 3),
+    bankAmp: clamp(num(r.bankAmp, d.bankAmp), 0, 2), // 🎢 nghiêng cua — save cũ → 1
+    pitchAmp: clamp(num(r.pitchAmp, d.pitchAmp), 0, 2), // 🎢 chúi mũi — save cũ → 1
     burstRate: clamp(num(r.burstRate, d.burstRate), 0, 1), // 🐟 bứt tốc — save cũ → 0
+    schooling: typeof r.schooling === 'boolean' ? r.schooling : d.schooling, // 🐟 bơi theo đàn — save cũ → false
     satiation: clamp(num(r.satiation, d.satiation), 0, 1), // 🐟 độ no — save cũ → 1 (đầy, sống)
   }
 }

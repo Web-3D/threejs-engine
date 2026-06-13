@@ -30,15 +30,16 @@ interface PreyHit {
   j: number
 }
 
-const DETECT_K = 5 // bán kính PHÁT HIỆN mồi (từ TÂM thân) = chiều-dài-predator × K (koi 0.24m → ~1.2m)
+const DETECT_K = 11 // bán kính PHÁT HIỆN mồi (từ TÂM thân) = dài-predator × K (koi 0.24m → ~2.6m). CHỦ Ý LỚN HƠN
+// rada flee của prey (FLEE_K×dài-prey ≈ 1.5m) → predator phát hiện SỚM + BÁM theo dù prey vọt xa trong 2s sprint (NgQuan).
 const MOUTH_K = 0.5 // MIỆNG predator (đầu cá) cách TÂM ~½ thân theo heading → đi-đớp tính từ đây (không tâm/đuôi)
 const EAT_GAPE = 0.1 // độ "há miệng" thêm = chiều-dài-predator × K (mũi có tầm với nhỏ) — cộng vào bán kính thân mồi
 // 🦈 ĐỚP khi MŨI predator chạm BẤT KỲ đâu trên THÂN mồi: dist(mũi, tâm mồi) < ½·dài-MỒI + EAT_GAPE·dài-predator.
 // Điểm bị-đớp = TOÀN THÂN mồi (mồi to → dễ chạm, hết xoay vòng tìm điểm); điểm đi-đớp = MŨI predator (NgQuan).
-const EAT_COOLDOWN = 1 // s — nghỉ NGẮN sau đớp (chase timer mới là độ trễ chính). Vẫn tránh vét sạch tức thì.
-const CHASE_MIN = 2.5 // s — predator phải RƯỢT (đang đuổi mồi) ≥ ngần này MỚI được cắn → "rượt 2-3 giây" giống đời thật, không snap tức thì
+const EAT_COOLDOWN = 1 // s — nghỉ NGẮN sau đớp (tránh predator vét sạch cả đàn tức thì). Độ-trễ-trước-đớp + cơ-hội-
+// thoát giờ nằm bên PREY: cửa sổ SPRINT 2s tốc-ngẫu-nhiên (PondFish._fleeStep) — BỎ gate chase-time cứng bên predator.
 const FLEE_K = 17 // bán kính CHẠY TRỐN của prey = chiều-dài-PREY × K — thấy predator bậc cao trong tầm này → bơi ngược ra
-// (tăng 12→17: mồi PHẢN ỨNG SỚM hơn, "muốn chạy" rõ hơn khi bị dí)
+// (predator rada detect ≈2.6m > flee ≈1.5m → prey "chạy được" nhưng predator vẫn còn lock để bám đuổi)
 
 // Mồi gần nhất (alive) trong bán kính detect quanh predator p — quét mọi đàn bậc thấp. null = không có.
 function nearestPrey(
@@ -64,7 +65,6 @@ function nearestPrey(
 export class PondPredation {
   private readonly groups: PredationEntry[][]
   private readonly cd = new WeakMap<PondFish, number[]>() // cooldown sau-đớp per-con mỗi đàn predator
-  private readonly chaseT = new WeakMap<PondFish, number[]>() // 🦈 giây đã RƯỢT per-con (gate CHASE_MIN trước khi cắn)
 
   constructor(entries: PredationEntry[]) {
     const byPond = new Map<object, PredationEntry[]>()
@@ -77,25 +77,35 @@ export class PondPredation {
   }
 
   update(dt: number): void {
-    for (const group of this.groups) this._huntPond(group, dt)
+    for (const group of this.groups) {
+      // 🧹 Snapshot vị trí cá MỖI ĐÀN 1 LẦN/frame (getFishView alloc 1 mảng N object) → TÁI DÙNG cho cả săn lẫn
+      // trốn, thay vì gọi lại O(đàn²) lần (bớt rác GC). Vị trí đứng yên trong pass này (PondFish.update chạy TRƯỚC).
+      const snap = new Map<PondFish, FishView[]>()
+      for (const e of group) snap.set(e.fish, e.fish.getFishView())
+      this._huntPond(group, dt, snap)
+    }
   }
 
   // 1 hồ: mỗi đàn vừa là PREDATOR (săn bậc thấp hơn = tier số lớn hơn) vừa là PREY (chạy trốn bậc cao hơn =
   // tier số nhỏ hơn). Bậc cao nhất chỉ săn; bậc thấp nhất chỉ trốn; bậc giữa làm cả 2 (flee ưu tiên ở _swim).
-  private _huntPond(group: PredationEntry[], dt: number): void {
+  private _huntPond(group: PredationEntry[], dt: number, snap: Map<PondFish, FishView[]>): void {
     for (const e of group) {
       const preys = group.filter((q) => q.tier > e.tier)
-      if (preys.length > 0) this._huntSchool(e, preys, dt)
+      if (preys.length > 0) this._huntSchool(e, preys, dt, snap)
       const predators = group.filter((q) => q.tier < e.tier)
-      if (predators.length > 0) this._fleeSchool(e, predators)
+      if (predators.length > 0) this._fleeSchool(e, predators, snap)
     }
   }
 
   // 1 đàn PREY: mỗi con (còn sống) thấy predator gần nhất trong tầm FLEE → setFlee (bơi NGƯỢC ra); else clearFlee.
-  private _fleeSchool(prey: PredationEntry, predators: PredationEntry[]): void {
+  private _fleeSchool(
+    prey: PredationEntry,
+    predators: PredationEntry[],
+    snap: Map<PondFish, FishView[]>
+  ): void {
     const flee = prey.fish.getFishLength() * FLEE_K
-    const views = prey.fish.getFishView()
-    const predData = predators.map((q) => ({ fish: q.fish, v: q.fish.getFishView() }))
+    const views = snap.get(prey.fish) ?? []
+    const predData = predators.map((q) => ({ fish: q.fish, v: snap.get(q.fish) ?? [] }))
     for (let i = 0; i < views.length; i++) {
       const p = views[i]
       const near = p.alive ? nearestPrey(p, predData, flee) : null
@@ -114,54 +124,53 @@ export class PondPredation {
     return arr
   }
 
-  // 1 đàn predator: CHỈ săn khi Đói vùng VÀNG (canHunt). Mỗi con (hết cooldown) tìm mồi gần nhất → setHunt (lao
-  // tới) + đếm giây RƯỢT; chỉ CẮN khi đã rượt ≥ CHASE_MIN (2-3s, giống đời thật) + mũi chạm thân mồi → consume +
-  // cooldown. Không mồi / không-vàng / đang cooldown → clearHunt + reset chase. Tách _tryBite giữ rule-50/complexity.
-  private _huntSchool(pred: PredationEntry, preys: PredationEntry[], dt: number): void {
+  // 1 đàn predator: CHỈ săn khi Đói vùng VÀNG (canHunt). Mỗi con (hết cooldown) tìm mồi gần nhất (rada detect LỚN →
+  // bám dù prey vọt xa) → setHunt (lao tới) → CẮN khi mũi chạm thân mồi → consume + cooldown. Không mồi / không-vàng /
+  // đang cooldown → clearHunt. Độ-trễ + cơ-hội-thoát giờ ở PREY (sprint 2s, _fleeStep). Tách _tryBite giữ rule-50.
+  private _huntSchool(
+    pred: PredationEntry,
+    preys: PredationEntry[],
+    dt: number,
+    snap: Map<PondFish, FishView[]>
+  ): void {
     const active = pred.fish.canHunt() // 🟡 gate: chỉ đớp khi slider Đói ở vùng vàng (6..10)
     const detect = pred.fish.getFishLength() * DETECT_K
-    const views = pred.fish.getFishView()
+    const views = snap.get(pred.fish) ?? []
     const cds = this._track(this.cd, pred.fish, views.length)
-    const chase = this._track(this.chaseT, pred.fish, views.length)
-    const preyData = preys.map((q) => ({ fish: q.fish, v: q.fish.getFishView() }))
+    const preyData = preys.map((q) => ({ fish: q.fish, v: snap.get(q.fish) ?? [] }))
     for (let i = 0; i < views.length; i++) {
       if (cds[i] > 0) {
         cds[i] -= dt // đang tiêu hoá → nghỉ săn
-        chase[i] = 0
         pred.fish.clearHunt(i)
         continue
       }
       const near = active && views[i].alive ? nearestPrey(views[i], preyData, detect) : null
       if (!near) {
-        chase[i] = 0
         pred.fish.clearHunt(i)
         continue
       }
       pred.fish.setHunt(i, near.x, near.z, near.yFrac)
-      chase[i] += dt // đang rượt → đếm giây
-      this._tryBite(pred.fish, views[i], near, i, chase, cds)
+      this._tryBite(pred.fish, views[i], near, i, cds)
     }
   }
 
-  // CẮN nếu đã rượt ≥ CHASE_MIN giây + MŨI predator (tâm + heading×½thân) chạm THÂN mồi (dist < ½·dài-mồi + gape).
-  // Mồi to → vùng bị-đớp rộng theo thân → predator không xoay vòng canh điểm. consume + vào cooldown + reset chase.
+  // CẮN khi MŨI predator (tâm + heading×½thân) chạm THÂN mồi (dist < ½·dài-mồi + gape). Mồi to → vùng bị-đớp rộng
+  // theo thân → predator không xoay vòng canh điểm. consume + vào cooldown. (Cơ-hội-thoát đã dời sang prey: sprint 2s.)
   private _tryBite(
     fish: PredationEntry['fish'],
     p: FishView,
     near: PreyHit,
     i: number,
-    chase: number[],
     cds: number[]
   ): void {
-    if (chase[i] < CHASE_MIN) return // rượt chưa đủ 2-3s → chưa cắn (chase giống đời thật)
     const len = fish.getFishLength()
     const mx = p.x + Math.cos(p.heading) * len * MOUTH_K // mũi predator
     const mz = p.z - Math.sin(p.heading) * len * MOUTH_K
     const reach = near.school.getFishLength() * 0.5 + len * EAT_GAPE // ½ thân MỒI + tầm-với mũi
     if (Math.hypot(near.x - mx, near.z - mz) < reach) {
       near.school.consume(near.j) // 🦈 cắn — mồi biến mất
+      fish.chomp(i) // 🦈 predator CHỚP há miệng đúng lúc đớp (feedback thị giác)
       cds[i] = EAT_COOLDOWN // nghỉ ngắn trước con kế
-      chase[i] = 0
     }
   }
 }

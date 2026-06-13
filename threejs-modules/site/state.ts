@@ -397,7 +397,10 @@ export interface FishSchool {
   swayAmp: number // 🐟 hành vi: biên độ lượn chữ S (×, 0..2) — LIVE setSwayAmp
   wanderAmp: number // 🐟 hành vi: độ lăng xăng (×, 0..2) — LIVE setWanderAmp
   bobAmp: number // 🐟 hành vi: nhấp nhô dọc (×, 0..3) — LIVE setBobAmp
+  bankAmp: number // 🎢 hình thái: NGHIÊNG thân vào cua (×, 0..2) — LIVE setBankAmp
+  pitchAmp: number // 🎢 hình thái: CHÚI mũi khi lặn/ngoi (×, 0..2) — LIVE setPitchAmp
   burstRate: number // 🐟 hành vi: tần suất BỨT TỐC ngẫu nhiên (0..1; 0 = tắt) — vài con phóng vọt rồi khựng — LIVE setBurstRate
+  schooling: boolean // 🐟 hành vi: BƠI THEO ĐÀN (boids cohesion+alignment) — bật/tắt; pond ít con → mặc định tắt — LIVE setSchooling
   // 🐟 ĐỘ NO (slider "Đói"): 1 = no/đầy (bơi thường, KHÔNG bâu mồi) · →0 = đói dần (sau: càng bâu nhiều khi thả
   // mồi) · 0 = CHẾT phơi bụng (trôi dưới mặt, mọi hành vi off). Tiền đề click-cho-ăn (swarm = 1−satiation, sau). LIVE setSatiation
   satiation: number
@@ -719,7 +722,10 @@ export function makeFishSchool(tier = 4): FishSchool {
     swayAmp: 1, // 🐟 hành vi mặc định = gốc
     wanderAmp: p.wanderAmp, // 🐟 bậc thấp lăng xăng hơn
     bobAmp: 1,
+    bankAmp: 1, // 🎢 nghiêng thân vào cua (gốc)
+    pitchAmp: 1, // 🎢 chúi mũi khi lặn/ngoi (gốc)
     burstRate: p.burstRate, // 🐟 bậc thấp bứt tốc thường hơn (tăng động)
+    schooling: false, // 🐟 bơi theo đàn — mặc định TẮT (pond ít con, chưa cần quy mô)
     satiation: 1, // 🐟 no/đầy mặc định (kéo slider Đói về min = cá chết phơi bụng)
   }
 }

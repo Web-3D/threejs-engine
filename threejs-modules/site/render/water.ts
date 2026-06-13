@@ -135,7 +135,10 @@ export function buildFishSchool(
     swayAmp: fs.swayAmp, // 🐟 hành vi
     wanderAmp: fs.wanderAmp,
     bobAmp: fs.bobAmp,
+    bankAmp: fs.bankAmp, // 🎢 nghiêng thân vào cua
+    pitchAmp: fs.pitchAmp, // 🎢 chúi mũi khi lặn/ngoi
     burstRate: fs.burstRate, // 🐟 bứt tốc
+    schooling: fs.schooling, // 🐟 bơi theo đàn (boids cohesion+alignment)
     satiation: fs.satiation, // 🐟 độ no (0 = chết phơi bụng)
     bounds: fishBoundsFor(w, site), // 🐟 vùng bơi = lòng hồ (polygon + mặt + đáy theo gò) — chung mọi đàn
     occupied, // 🐟 né trùng vị trí spawn cả đàn khác cùng hồ

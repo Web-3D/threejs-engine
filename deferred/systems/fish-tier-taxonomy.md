@@ -67,13 +67,18 @@ Luật săn: bậc N ăn mọi bậc > N (số càng lớn càng thấp). Cùng 
 
 1. ✅ **Data+GUI khung** (2026-06-13): `WaterConfig.fishSchools[]` (+`tier`), tab F1/F2＋/xoá đàn, Đói riêng mỗi đàn.
 2. ✅ **PREDATION per-con MVP** (2026-06-13, `PondPredation`): **1 đớp 1** (KHÔNG cluster) — predator (tier nhỏ, Đói
-   VÀNG) seek mồi gần nhất → **rượt ≥2.5s** → cắn khi MŨI chạm THÂN mồi → consume (reset đàn hồi lại). + **flee**
-   (prey né predator), **tách-thân** (separation per-con), **spawn-spacing** (claims chung hồ), **hành-vi/size theo bậc**.
-3. ⏳ **Boids đàn thật** (cohesion + alignment; separation ĐÃ có) → bậc thấp tụm CỤM (tiền đề cluster-gulp).
+   VÀNG) rada **detect ≈2.6m > flee prey ~1.5m** (phát hiện sớm, bám đuổi dù prey vọt xa) seek mồi gần nhất → cắn khi
+   MŨI chạm THÂN mồi → consume (reset đàn hồi lại). **Flee = cửa sổ SPRINT 2s tốc-NGẪU-NHIÊN** (roll thấp → bị đớp ngay /
+   cao → thoát liền; sau 2s về tốc MỆT chậm hơn predator, dễ bị đớp) — thay cho gate chase-time cứng cũ. + **tách-thân**,
+   **spawn-spacing** (claims chung hồ), **hành-vi/size theo bậc**.
+3. ✅ **Boids đàn thật** (2026-06-13, `schooling` BẬT/TẮT — pond ít con nên mặc định tắt): cohesion + alignment
+   (separation ĐÃ có) → bậc thấp tụm CỤM (tiền đề cluster-gulp). Override bởi flee/hunt; GUI tab Hành vi có toggle.
+   ⭐ Cùng đợt "sinh động" (đánh giá vs hãng lớn): **bank+pitch thân** (nghiêng cua + chúi lặn/ngoi, slider Hình thái) +
+   **🦈 chớp há miệng predator khi đớp** (phẫu thuật đầu cá: attribute `jaw` + `_uMouth` + `chomp`).
 4. ⏳ **Cluster-gulp:** voi/predator-lớn há miệng táp CẢ CỤM theo `gulp fraction = f(size predator/prey)` (whole-gulp
-   ratio lớn / multi-bite ratio nhỏ — bậc 3 mất ½-⅓ thân). Hiện per-con đã nuốt-trọn 1 con bất kể ratio.
+   ratio lớn / multi-bite ratio nhỏ — bậc 3 mất ½-⅓ thân). Hiện per-con đã nuốt-trọn 1 con bất kể ratio. (Hàm há `chomp` đã có.)
 5. ⏳ **Nối đỏ:** vùng đỏ (đói 0–6) giết bậc sống sót sau khi vàng ăn cạn (`_deadCount` nhắm số còn).
-6. ⏳ **Sau:** animation đớp · đa loài shape · bậc 5–6 GPU-points (count >64) · sea water-kind (fork #1).
+6. ⏳ **Sau:** bubble-puff khi đớp · đa loài shape · bậc 5–6 GPU-points (count >64) · caustics/god-rays · sea water-kind (fork #1).
 
 ## Revisit khi
 
