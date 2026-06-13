@@ -100,6 +100,20 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-13` — **🐟 SINH ĐỘNG: bank/pitch + boids + mặt cá (mắt/miệng há) + 🪶 perf Lambert + ☔ gate rain-ripple**
+  (NgQuan, nhiều vòng test + "đánh giá vs hãng lớn"). **Predation tinh chỉnh:** BỎ gate `CHASE_MIN` cứng → độ-trễ +
+  cơ-hội-thoát dời sang PREY = **cửa sổ SPRINT 2s** tốc NGẪU NHIÊN (`SPRINT_MIN`2.1..`MAX`3.4 — roll thấp bị đớp ngay /
+  cao vọt thoát; sau 2s về `FLEE_DART` mệt) + **bẻ cua zic-zac** (`ZIG_*`) + **chống xoay tại chỗ** (>1 vòng → đi thẳng
+  2s) + rada predator `DETECT_K`×dài (~2.6m) **> flee prey** (~1.5m) → phát hiện sớm, bám dù prey vọt xa. **🎢 Bank/pitch**
+  (`_bodyTilt`): nghiêng vào cua ∝ tốc-quay + chúi mũi ∝ đổi-TẦNG `yFrac` (KHÔNG gật theo bob/gò đáy/separation — fix
+  "cá gật đầu liên tục") + slider Hình thái (bankAmp/pitchAmp xuyên state/parse/render). **🐟 Boids** cohesion+alignment
+  (`_schoolBias`, `schooling` bật/tắt — mặc định TẮT vì pond ít con); separation đã có. **🦈 Đầu cá** (phẫu thuật geo):
+  2 MẮT (đĩa attr `feat`, đặt ĐÚNG mặt thân = dính sát) + MIỆNG há (attr `jaw` + `chomp` khi đớp + hé nghỉ `MOUTH_REST`
+  + môi tối) → "ra mặt". **🪶 Perf:** material `MeshStandard`→**`MeshLambert`** (compile nhanh + fragment rẻ);
+  `PondPredation` snapshot `getFishView` **1 lần/frame** (Map → bớt GC O(đàn²)→O(đàn)). **☔ Perf nước** (WaterSurface,
+  gộp cùng commit theo NgQuan): gate ambient rain-ripple + glint theo `uRainWet` (uniform `If` trong `Fn()()` → GPU BỎ
+  2×2 loop khi KHÔ; visual y nguyên — thủ phạm tụt fps khi bật nước không mưa; ⚠️ cần verify visual runtime). FBM 4×
+  triNoise + pool 16-slot vẫn always-on. Gates tsc 0 + eslint 0. Commit archplan `8f24a92` + THREEJS `6959608`.
 - `2026-06-13` — **🦈 PREDATION per-con (MVP) + flee + tách-thân + spawn-spacing + hành-vi/size theo bậc** (NgQuan,
   nhiều vòng test): coordinator **`PondPredation`** (mới, components/PondFish/) điều phối CROSS-ĐÀN cùng hồ (mọi đàn 1
   hồ chung gốc mesh = so toạ độ LOCAL trực tiếp), tick sau vòng `_siteFish.update` ở ArchPlanLab. **Săn** (tier số nhỏ
