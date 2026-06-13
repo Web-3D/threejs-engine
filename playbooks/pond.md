@@ -5,7 +5,7 @@ status: building
 tier: B
 modules:
   - threejs-modules/components/WaterSurface
-  - threejs-modules/components/PondFish     # 🐟 đàn cá koi = WaterConfig.fish, vùng bơi = lòng hồ (bounds 2026-06-13)
+  - threejs-modules/components/PondFish     # 🐟 đàn cá = WaterConfig.fishSchools[] (đa-bậc), vùng bơi = lòng hồ (bounds 2026-06-13)
   - threejs-modules/site/render/fromState   # basin + khoét lỗ nền (không phải module rời)
 issues:
   - KI-004
@@ -100,6 +100,15 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-13` — **🐟 ĐÀN ĐA-BẬC per-pond (Phase 1 hệ predation)** (NgQuan "tab ＋ thêm đàn, mỗi đàn 1 cấp bậc:
+  bậc cao to + ăn bậc thấp"): `WaterConfig.fish` → **`fishSchools?: FishSchool[]`** (NHIỀU đàn/pond, mỗi đàn
+  **`+tier`** 1..6). **`FISH_TIER_PRESETS`** (bậc→size/count/range): pond bậc 4 koi (240mm, 10-20) · 5 cá-nhỏ
+  (90mm, 5-64) · 6 tép (45mm, 10-64); bậc 1-3 = sea (defer). `makeFishSchool(tier=4)` áp preset. GUI tab Cá =
+  **list F1/F2…＋ thêm đàn (bậc 5) + ✕ xoá** + dropdown **Bậc** (đổi→áp preset, range Số cá đổi theo bậc). Parse:
+  `+tier`, size **20-600mm**, count **1-64**; `parseWaterFish`→MẢNG (migrate `fish` đơn phiên trước → `[1]`).
+  PondFish `+tier`/`getTier()` (lưu cho predation), `MAX_FISH` 40→**64**. `buildFishSchool(w,fs,…)` + `buildFishSchools`
+  loop `w.fishSchools`. `_tuneFish/_previewFish` khớp `cfg` ref → đa-đàn OK (Lab KHÔNG đổi). Boids tụm + táp-cả-cụm
+  + chết-bậc = **Phase 2-4** [[fish-tier-taxonomy]]. Số THẬT 6 bậc (voi→phù du) trong taxonomy doc. Gates tsc 0 + eslint 0 (file cá).
 - `2026-06-13` — **🐟 refine hồi sinh + tô màu slider Đói** (NgQuan): hồi sinh dùng CHUNG `DEATH_DUR` + công thức
   `flip` 2 chiều → **xoay bụng đúng tốc xoay khi chết**; giật hồi sinh nhịp GIÃN (window [1,0.8], π3); **KHÔNG rớt Y**
   — `rise=1` giữ đúng XYZ chết ở mặt suốt hồi sinh, xong đặt `wake=1` → ease 0 qua `WAKE_DUR`≈2.6s = bơi xuống từ
