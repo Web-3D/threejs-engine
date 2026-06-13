@@ -63,16 +63,18 @@ Luật săn: bậc N ăn mọi bậc > N (số càng lớn càng thấp). Cùng 
    ("há miệng táp cả bầy") BẮT BUỘC cá bậc thấp tụm bầy thật ⇒ thêm **boids Reynolds** (cohesion +
    alignment + separation), ít nhất cho bậc 4–6. Bước 1.5 trước predation.
 
-## Build order (khi NgQuan ra lệnh)
+## Build order (tiến độ)
 
-1. **Data+GUI khung:** `WaterConfig.fishSchools: FishSchool[]` (+`tier`), tab+/xoá đàn, Đói riêng mỗi đàn.
-2. **1.5 — Boids đàn thật** (cohesion/align/separation) cho bậc thấp → cá tụm cụm.
-3. **Predation:** miệng (head + heading×½thân) seek centroid cụm bậc dưới → chạm → consume theo
-   `gulp fraction` (whole-gulp / multi-bite). Reversible (reset đàn).
-4. **Nối đỏ:** vùng đỏ (đói 0–6) giết bậc sống sót còn lại (`_deadCount` nhắm số còn).
-5. **Sau:** animation đớp · đa loài shape · bậc 5–6 points · sea water-kind.
+1. ✅ **Data+GUI khung** (2026-06-13): `WaterConfig.fishSchools[]` (+`tier`), tab F1/F2＋/xoá đàn, Đói riêng mỗi đàn.
+2. ✅ **PREDATION per-con MVP** (2026-06-13, `PondPredation`): **1 đớp 1** (KHÔNG cluster) — predator (tier nhỏ, Đói
+   VÀNG) seek mồi gần nhất → **rượt ≥2.5s** → cắn khi MŨI chạm THÂN mồi → consume (reset đàn hồi lại). + **flee**
+   (prey né predator), **tách-thân** (separation per-con), **spawn-spacing** (claims chung hồ), **hành-vi/size theo bậc**.
+3. ⏳ **Boids đàn thật** (cohesion + alignment; separation ĐÃ có) → bậc thấp tụm CỤM (tiền đề cluster-gulp).
+4. ⏳ **Cluster-gulp:** voi/predator-lớn há miệng táp CẢ CỤM theo `gulp fraction = f(size predator/prey)` (whole-gulp
+   ratio lớn / multi-bite ratio nhỏ — bậc 3 mất ½-⅓ thân). Hiện per-con đã nuốt-trọn 1 con bất kể ratio.
+5. ⏳ **Nối đỏ:** vùng đỏ (đói 0–6) giết bậc sống sót sau khi vàng ăn cạn (`_deadCount` nhắm số còn).
+6. ⏳ **Sau:** animation đớp · đa loài shape · bậc 5–6 GPU-points (count >64) · sea water-kind (fork #1).
 
 ## Revisit khi
 
-NgQuan ra lệnh build hệ predation, hoặc chốt fork #1 (sea water-kind). MVP slice từng bước theo build
-order — KHÔNG làm cả 6 bậc 1 lượt.
+Tiếp Bước 3+ (boids cohesion → cluster-gulp), hoặc chốt fork #1 (sea water-kind cho bậc 1-3). MVP slice từng bước.

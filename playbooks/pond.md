@@ -100,6 +100,19 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-13` — **🦈 PREDATION per-con (MVP) + flee + tách-thân + spawn-spacing + hành-vi/size theo bậc** (NgQuan,
+  nhiều vòng test): coordinator **`PondPredation`** (mới, components/PondFish/) điều phối CROSS-ĐÀN cùng hồ (mọi đàn 1
+  hồ chung gốc mesh = so toạ độ LOCAL trực tiếp), tick sau vòng `_siteFish.update` ở ArchPlanLab. **Săn** (tier số nhỏ
+  ăn tier số lớn, CHỈ khi Đói vùng VÀNG `canHunt` level 6-10): khoá mồi gần nhất → **rượt ≥2.5s** (`CHASE_MIN`, hunt =
+  lao ×`HUNT_DART` 1.8 + lặn tới tầng mồi) → cắn khi **MŨI chạm THÂN mồi** (dist mũi↔tâm-mồi < ½dài-mồi + gape; điểm
+  bị-đớp = TOÀN THÂN, điểm đi-đớp = mũi → hết xoay vòng canh tâm) → `consume` ẩn instance (scale 0) + cooldown ~1s.
+  **Chạy trốn** (prey thấy predator trong `FLEE_K`~17×dài → `setFlee` bơi NGƯỢC ×`FLEE_DART` 1.65 < dart → bị bắt kịp
+  dần; ưu tiên flee>hunt>wander). **Tách-thân** (`_separate` 2-pha per-con, đụng tách không nhập). **Spawn cách nhau**
+  (`occupied` claims chung hồ = tâm+bán-kính → KHÔNG trùng cả cross-đàn lúc load) + `resetSchool` (hồi cá bị ăn).
+  **Hành vi/size theo bậc** (`FISH_TIER_PRESETS` += sizeMin/Max + speed/burstRate/wanderAmp: bậc 5 size 40-120, chậm
+  hơn + lăng xăng/bứt-tốc hơn — mồi tăng động). GUI tab Cá dựng TAY (bar BỀN + panes-toggle — né bug Tabs.insertBefore
+  & unbound `dispose` throw) + nút **Reset đàn** + dropdown Bậc áp preset. Gates tsc 0 + eslint 0. Boids cohesion/align
+  + cluster-gulp (voi táp bầy) + sea water-kind = Phase sau ([[fish-tier-taxonomy]]).
 - `2026-06-13` — **🐟 ĐÀN ĐA-BẬC per-pond (Phase 1 hệ predation)** (NgQuan "tab ＋ thêm đàn, mỗi đàn 1 cấp bậc:
   bậc cao to + ăn bậc thấp"): `WaterConfig.fish` → **`fishSchools?: FishSchool[]`** (NHIỀU đàn/pond, mỗi đàn
   **`+tier`** 1..6). **`FISH_TIER_PRESETS`** (bậc→size/count/range): pond bậc 4 koi (240mm, 10-20) · 5 cá-nhỏ
