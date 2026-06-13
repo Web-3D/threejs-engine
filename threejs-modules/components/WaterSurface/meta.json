@@ -2,7 +2,7 @@
   "name": "WaterSurface",
   "category": "components",
   "version": "1.1.0",
-  "description": "Hồ/ao nước VỪA PHẢN CHIẾU VỪA NHÌN XUYÊN ĐÁY (B) cho site-kit — reflector (gương soi trời+nhà) + viewportSharedTexture (khúc xạ thấy đáy, gợn sóng) Fresnel-blend + đốm nắng setSun + form tự do (ShapeGeometry) + GỢN VA CHẠM (emitRipple: pool 50 vòng analytic loang ra trong normal, biên độ theo strength — mưa/cá/vật chạm). Nước transparent (vẽ sau opaque). Tier cao.",
+  "description": "Hồ/ao nước VỪA PHẢN CHIẾU VỪA NHÌN XUYÊN ĐÁY (B) cho site-kit — reflector (gương soi trời+nhà) + viewportSharedTexture (khúc xạ thấy đáy, gợn sóng) Fresnel-blend + đốm nắng setSun + form tự do (ShapeGeometry) + GỢN VA CHẠM (emitRipple: pool 16 vòng analytic cho va-chạm rời cá/vật + lớp ambient rain-cell O(1) phủ khắp khi mưa). Nước transparent (vẽ sau opaque). Tier cao.",
   "tags": ["water", "hồ", "ao", "reflection", "refraction", "mirror", "site-kit", "environment", "reflector", "ripple", "impact", "tier-c"],
   "complexity": "high",
   "performance-cost": "high",
