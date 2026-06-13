@@ -17,7 +17,7 @@ import { float, floor, fract, min, mix, smoothstep, uv, vec3 } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import type { GrassExcludeRect } from '../../components/GrassBlades'
-import { type PondBounds, PondFish } from '../../components/PondFish'
+import { type PondBounds, PondFish, type SpawnClaim } from '../../components/PondFish'
 import { WaterSurface } from '../../components/WaterSurface'
 import { arcLength } from '../../ops/resample' // op #1 — viền đá hồ đặt theo chiều-dài-thật, khép kín
 import { offsetPolygon, pointInPolygon, shapeToLocalPolygon } from '../shapes'
@@ -118,7 +118,8 @@ export function buildFishSchool(
   w: WaterConfig,
   fs: FishSchool,
   site: SiteState,
-  ctx: SiteRenderCtx
+  ctx: SiteRenderCtx,
+  occupied?: SpawnClaim[] // 🐟 chỗ-đã-chiếm CHUNG hồ → spawn né trùng cả đàn khác (caller gom 1 mảng/hồ)
 ): PondFish {
   const fish = new PondFish({
     count: fs.count,
@@ -137,6 +138,7 @@ export function buildFishSchool(
     burstRate: fs.burstRate, // 🐟 bứt tốc
     satiation: fs.satiation, // 🐟 độ no (0 = chết phơi bụng)
     bounds: fishBoundsFor(w, site), // 🐟 vùng bơi = lòng hồ (polygon + mặt + đáy theo gò) — chung mọi đàn
+    occupied, // 🐟 né trùng vị trí spawn cả đàn khác cùng hồ
   })
   fish.getMesh().position.set(w.offsetX / 1000, site.groundThick / 1000, w.offsetZ / 1000)
   ctx.group.add(fish.getMesh())

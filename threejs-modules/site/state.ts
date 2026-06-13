@@ -410,17 +410,89 @@ export interface FishSchool {
 export interface FishTierPreset {
   label: string // nhãn dropdown GUI (loài tiêu biểu)
   sizeMm: number // chiều dài mặc định (mm)
+  sizeMin: number // range slider Cỡ cá theo bậc (mm) — vd bậc 5 max 120 (NgQuan 2026-06-13)
+  sizeMax: number
   count: number // số con mặc định
   countMin: number // range slider Số cá
   countMax: number
+  speed: number // m/s base — bậc THẤP chậm hơn chút (mồi); predator nhỉnh hơn để bắt kịp
+  burstRate: number // 0..1 — bậc THẤP bứt tốc thường hơn (tăng động, hoảng)
+  wanderAmp: number // × lăng xăng — bậc THẤP đổi hướng bất chợt nhiều hơn
 }
+// label chỉ tham khảo — GUI dropdown dùng FISH_TIER_OPTS (site.ts). pond dùng bậc 4-6; 1-3 sea (deferred).
 export const FISH_TIER_PRESETS: Record<number, FishTierPreset> = {
-  1: { label: 'Bậc 1 — Cá voi (sea ⏳)', sizeMm: 500, count: 1, countMin: 1, countMax: 2 },
-  2: { label: 'Bậc 2 — Mập/Orca (sea ⏳)', sizeMm: 460, count: 3, countMin: 1, countMax: 5 },
-  3: { label: 'Bậc 3 — Cá thu/Ngừ (sea ⏳)', sizeMm: 340, count: 6, countMin: 1, countMax: 10 },
-  4: { label: 'Bậc 4 — Koi/Chép', sizeMm: 240, count: 14, countMin: 10, countMax: 20 },
-  5: { label: 'Bậc 5 — Cá nhỏ đàn', sizeMm: 90, count: 30, countMin: 5, countMax: 64 },
-  6: { label: 'Bậc 6 — Tép/Phù du', sizeMm: 45, count: 40, countMin: 10, countMax: 64 },
+  1: {
+    label: 'Bậc 1 — Cá voi',
+    sizeMm: 500,
+    sizeMin: 300,
+    sizeMax: 600,
+    count: 1,
+    countMin: 1,
+    countMax: 2,
+    speed: 0.25,
+    burstRate: 0,
+    wanderAmp: 0.6,
+  },
+  2: {
+    label: 'Bậc 2 — Mập/Orca',
+    sizeMm: 460,
+    sizeMin: 250,
+    sizeMax: 600,
+    count: 3,
+    countMin: 1,
+    countMax: 5,
+    speed: 0.28,
+    burstRate: 0.1,
+    wanderAmp: 0.7,
+  },
+  3: {
+    label: 'Bậc 3 — Cá thu',
+    sizeMm: 340,
+    sizeMin: 150,
+    sizeMax: 500,
+    count: 6,
+    countMin: 1,
+    countMax: 10,
+    speed: 0.3,
+    burstRate: 0.2,
+    wanderAmp: 0.9,
+  },
+  4: {
+    label: 'Bậc 4 — Koi',
+    sizeMm: 240,
+    sizeMin: 120,
+    sizeMax: 600,
+    count: 14,
+    countMin: 10,
+    countMax: 20,
+    speed: 0.25,
+    burstRate: 0.1,
+    wanderAmp: 1,
+  },
+  5: {
+    label: 'Bậc 5 — Cá nhỏ',
+    sizeMm: 90,
+    sizeMin: 40,
+    sizeMax: 120,
+    count: 30,
+    countMin: 5,
+    countMax: 64,
+    speed: 0.22,
+    burstRate: 0.4,
+    wanderAmp: 1.5,
+  },
+  6: {
+    label: 'Bậc 6 — Tép',
+    sizeMm: 45,
+    sizeMin: 20,
+    sizeMax: 60,
+    count: 40,
+    countMin: 10,
+    countMax: 64,
+    speed: 0.2,
+    burstRate: 0.5,
+    wanderAmp: 1.8,
+  },
 }
 // Preset của 1 tier (kẹp 1..6 → bậc 4 nếu lạ). Dùng ở makeFishSchool/parse/GUI (1 nguồn).
 export function fishTierPreset(tier: number): FishTierPreset {
@@ -637,7 +709,7 @@ export function makeFishSchool(tier = 4): FishSchool {
     tier,
     count: p.count, // 🐟 số con mặc định theo bậc (bậc cao ít, bậc thấp đông)
     size: p.sizeMm, // 🐟 cỡ mặc định theo bậc
-    speed: 0.25,
+    speed: p.speed, // 🐟 bậc thấp chậm hơn chút (mồi)
     seed: 0,
     bodyWidth: 1, // độ mập gốc
     colorBase: 0xeee8db, // kem
@@ -645,9 +717,9 @@ export function makeFishSchool(tier = 4): FishSchool {
     colorSpot: 0x141312, // đốm đậm
     patchAmount: 0.5,
     swayAmp: 1, // 🐟 hành vi mặc định = gốc
-    wanderAmp: 1,
+    wanderAmp: p.wanderAmp, // 🐟 bậc thấp lăng xăng hơn
     bobAmp: 1,
-    burstRate: 0, // 🐟 bứt tốc TẮT mặc định (kéo slider Bứt tốc để bật)
+    burstRate: p.burstRate, // 🐟 bậc thấp bứt tốc thường hơn (tăng động)
     satiation: 1, // 🐟 no/đầy mặc định (kéo slider Đói về min = cá chết phơi bụng)
   }
 }

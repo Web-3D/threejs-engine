@@ -21,7 +21,7 @@ import * as THREE from 'three'
 import { BrickPaving } from '../../components/BrickPaving' // 🧱 sân gạch bond đều (paving-zone, consumer op #3)
 import { CurvedBrickWall } from '../../components/CurvedBrickWall' // 🧱 tường cong (wall-zone — op #1+#2+#3+#5)
 import type { GrassBlades, GrassExcludeRect } from '../../components/GrassBlades'
-import type { PondFish } from '../../components/PondFish' // 🐟 type-only — instance dựng ở render/water.ts
+import type { PondFish, SpawnClaim } from '../../components/PondFish' // 🐟 type-only — instance dựng ở render/water.ts
 import { StoneScatter } from '../../components/StoneScatter'
 import type { WaterSurface } from '../../components/WaterSurface'
 import { GrassGround } from '../../shaders/ground/GrassGround'
@@ -162,9 +162,10 @@ function buildFishSchools(
 ): SiteHandle['fish'] {
   const fish: SiteHandle['fish'] = []
   for (const w of pools) {
+    const occupied: SpawnClaim[] = [] // 🐟 chỗ-đã-chiếm CHUNG hồ → đàn sau né đàn trước (spawn không trùng cross-đàn)
     for (const fs of w.fishSchools ?? []) {
       if (!fs.enabled) continue // đàn tắt thì bỏ
-      fish.push({ cfg: fs, water: w, fish: buildFishSchool(w, fs, site, ctx) })
+      fish.push({ cfg: fs, water: w, fish: buildFishSchool(w, fs, site, ctx, occupied) })
     }
   }
   return fish
