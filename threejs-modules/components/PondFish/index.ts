@@ -47,6 +47,18 @@ export interface PondFishOptions {
   speed?: number
   /** Đổi seed → xáo bộ mảng màu cam/đốm đen cả đàn. Default: 0 */
   colorSeed?: number
+  /** 🐟 Bề DÀY bơi ĐỨNG (m) — cá rải trong khối trụ radius×swimDepth (không còn đĩa phẳng). Default: 0 (1 mặt) */
+  swimDepth?: number
+  /** 🐟 Độ MẬP thân (×profile bán kính) — 1 = gốc; <1 thon, >1 mập. Default: 1 */
+  bodyWidth?: number
+  /** 🎨 Màu NỀN thân (hex). Default: kem 0xeee8db */
+  baseColor?: number
+  /** 🎨 Màu MẢNG (hex — koi cam). Default: 0xe36112 */
+  patchColor?: number
+  /** 🎨 Màu ĐỐM (hex — đốm đậm). Default: 0x141312 */
+  spotColor?: number
+  /** 🎨 Tỉ lệ MẢNG màu 0..1 (cao = nhiều mảng cam, thấp = nhiều nền). Default: 0.5 */
+  patchAmount?: number
 }
 
 // Trạng thái wander 1 con (CPU) — toạ độ LOCAL quanh gốc mesh.
@@ -59,6 +71,7 @@ interface FishState {
   speed: number // hệ số per-con × speed gốc
   size: number // hệ số per-con × fishLength
   bob: number // pha nhấp nhô dọc Y + pha lượn/tốc
+  yFrac: number // 0..1 — mức ĐỨNG trong khối bơi (0 = sát depthY, 1 = sâu nhất swimDepth) per-con
 }
 
 const MAX_FISH = 40
@@ -174,6 +187,7 @@ export class PondFish {
   private depthY: number
   private fishLength: number
   private speed: number
+  private swimDepth: number // m — bề dày bơi đứng (0 = đĩa phẳng như cũ)
   private readonly rng: () => number
 
   // Uniform nodes — update qua .value (shader-tsl), KHÔNG material.uniforms.
@@ -181,6 +195,11 @@ export class PondFish {
   private readonly uSeed = uniform(0)
   private readonly uFlap = uniform(6) // tần vẫy (rad/s) — theo speed qua setSpeed
   private readonly uAmp = uniform(0.09) // biên độ vẫy chót đuôi (đơn vị thân)
+  private readonly uWidth = uniform(1) // 🐟 độ mập thân (×bán kính tiết diện) — live
+  private readonly uColBase = uniform(new THREE.Color(0xeee8db)) // 🎨 màu nền thân
+  private readonly uColPatch = uniform(new THREE.Color(0xe36112)) // 🎨 màu mảng (cam)
+  private readonly uColSpot = uniform(new THREE.Color(0x141312)) // 🎨 màu đốm (đậm)
+  private readonly uPatchAmt = uniform(0.5) // 🎨 tỉ lệ mảng 0..1
 
   constructor(opts: PondFishOptions = {}) {
     const count = Math.max(1, Math.min(MAX_FISH, Math.round(opts.count ?? 8)))
@@ -188,7 +207,10 @@ export class PondFish {
     this.depthY = opts.depthY ?? -0.25
     this.fishLength = Math.max(0.05, opts.fishLength ?? 0.28)
     this.speed = Math.max(0, opts.speed ?? 0.25)
+    this.swimDepth = Math.max(0, opts.swimDepth ?? 0)
     this.uSeed.value = opts.colorSeed ?? 0
+    this.uWidth.value = Math.max(0.2, opts.bodyWidth ?? 1)
+    this._initColors(opts) // 🎨 3 màu + tỉ lệ mảng — tách giữ complexity ≤10
     this.setSpeed(this.speed)
     this.rng = makeRng(1)
 
@@ -199,6 +221,14 @@ export class PondFish {
     this.mesh.receiveShadow = false
     this._spawn(count)
     this.update(0) // đặt matrix lần đầu (kẻo frame 0 dồn về gốc)
+  }
+
+  // 🎨 Init 3 màu + tỉ lệ mảng từ opts (thiếu → giữ default uniform). Tách giữ constructor complexity ≤10.
+  private _initColors(opts: PondFishOptions): void {
+    if (opts.baseColor !== undefined) this.uColBase.value.setHex(opts.baseColor)
+    if (opts.patchColor !== undefined) this.uColPatch.value.setHex(opts.patchColor)
+    if (opts.spotColor !== undefined) this.uColSpot.value.setHex(opts.spotColor)
+    this.uPatchAmt.value = Math.max(0, Math.min(1, opts.patchAmount ?? 0.5))
   }
 
   // ── Material: vẫy đuôi (vertex) + màu koi (fragment) — tất cả per-instance từ hash(instanceIndex) ──
@@ -212,7 +242,9 @@ export class PondFish {
     const amp = sTail.mul(sTail).mul(0.94).add(0.06).mul(this.uAmp)
     const phase = hash(fi.add(float(31.7))).mul(6.2832)
     const wave = p.x.mul(6).sub(this.uTime.mul(this.uFlap)).add(phase).sin()
-    mat.positionNode = positionLocal.add(vec3(0, 0, wave.mul(amp))) // KI-003: ADD giữ instanceMatrix
+    // 🐟 Độ MẬP: nhân tiết diện (y,z) ×uWidth GIỮ trục x (dài) → live; rồi ADD vẫy lên z (KI-003 giữ instanceMatrix).
+    const shaped = vec3(p.x, p.y.mul(this.uWidth), p.z.mul(this.uWidth))
+    mat.positionNode = shaped.add(vec3(0, 0, wave.mul(amp)))
     // Pattern màu sample theo positionGeometry (ATTRIBUTE GỐC pre-displacement) — positionLocal là
     // VARYING bị positionNode GHI ĐÈ (Position.js: toVarying + NodeMaterial assign) → dùng nó trong
     // colorNode = sample theo toạ độ ĐANG VẪY = hoạ tiết "trượt khỏi thân" khi bơi (NgQuan thấy 2026-06-11).
@@ -220,30 +252,32 @@ export class PondFish {
     return mat
   }
 
-  // Màu koi per-con: nền trắng kem + MẢNG CAM (ngưỡng noise hạ theo bias per-con → có con cam nhiều
-  // con trắng nhiều) + ĐỐM ĐEN thưa (~nửa đàn) + bụng sáng. uSeed xáo lại cả đàn (live).
+  // Màu koi per-con: NỀN (uColBase) + MẢNG (uColPatch — ngưỡng hạ theo uPatchAmt → nhiều/ít mảng) + ĐỐM
+  // (uColSpot, thưa ~nửa đàn) + bụng sáng. uSeed xáo cả đàn; 3 màu + tỉ lệ = uniform LIVE (0 rebuild).
   private _koiColor(fi: TSLNode, p: TSLNode): TSLNode {
     const h1 = hash(fi.add(this.uSeed)) // offset noise per-con — mỗi con 1 bộ mảng
-    const h2 = hash(fi.add(this.uSeed).add(float(57.31))) // bias cam + có/không đốm đen
+    const h2 = hash(fi.add(this.uSeed).add(float(57.31))) // bias mảng + có/không đốm
     const n1 = triNoise3D(
       p.mul(vec3(1.6, 3.2, 3.2)).add(vec3(h1.mul(43.7), h1.mul(17.3), float(0))),
       float(0),
       float(0)
     )
-    const orange = step(float(0.32).add(h2.mul(0.22)), n1)
-    let col = mix(vec3(0.93, 0.91, 0.86), vec3(0.89, 0.38, 0.07), orange) as TSLNode
+    // ngưỡng mảng = 0.6 − patchAmt·0.42 (+ lệch per-con) → patchAmt cao = ngưỡng thấp = nhiều mảng.
+    const thr = float(0.6).sub(this.uPatchAmt.mul(0.42)).add(h2.mul(0.18))
+    const patch = step(thr, n1)
+    let col = mix(this.uColBase, this.uColPatch, patch) as TSLNode
     const n2 = triNoise3D(
       p.mul(vec3(2.3, 4.1, 4.1)).add(vec3(h1.mul(91.7), float(0), h1.mul(31.1))),
       float(0),
       float(0)
     )
-    const black = step(float(0.48), n2).mul(step(h2, float(0.5)))
-    col = mix(col, vec3(0.08, 0.07, 0.07), black) as TSLNode
-    // Bụng sáng: 1−smoothstep (KHÔNG đảo ngưỡng smoothstep — undefined WGSL).
+    const spot = step(float(0.48), n2).mul(step(h2, float(0.5)))
+    col = mix(col, this.uColSpot, spot) as TSLNode
+    // Bụng sáng: 1−smoothstep (KHÔNG đảo ngưỡng smoothstep — undefined WGSL). Sáng = nền ×1.12.
     const belly = float(1)
       .sub(smoothstep(float(-0.06), float(0), p.y))
-      .mul(0.55)
-    return mix(col, vec3(0.95, 0.94, 0.9), belly) as TSLNode
+      .mul(0.5)
+    return mix(col, this.uColBase.mul(1.12), belly) as TSLNode
   }
 
   // Rải đàn TRẢI RỘNG cả vùng (r = R·√u — phân bố đều theo diện tích), mỗi con 1 hướng/tốc/cỡ/pha/tần lượn riêng.
@@ -260,6 +294,7 @@ export class PondFish {
         speed: 0.75 + this.rng() * 0.5,
         size: 0.8 + this.rng() * 0.4,
         bob: this.rng() * Math.PI * 2,
+        yFrac: this.rng(), // mức đứng trong khối bơi (swimDepth) — rải đều theo độ sâu
       })
     }
   }
@@ -291,7 +326,9 @@ export class PondFish {
       const sp = f.speed * (0.8 + 0.25 * Math.sin(t * 0.6 + f.bob * 2)) * this.speed
       f.x += Math.cos(f.heading) * sp * d
       f.z -= Math.sin(f.heading) * sp * d
-      _pos.set(f.x, this.depthY + Math.sin(t * 0.7 + f.bob) * 0.03, f.z)
+      // Y = đỉnh khối (depthY) − mức đứng per-con trong bề dày swimDepth + nhấp nhô ±3cm.
+      const yLevel = this.depthY - f.yFrac * this.swimDepth + Math.sin(t * 0.7 + f.bob) * 0.03
+      _pos.set(f.x, yLevel, f.z)
       _quat.setFromAxisAngle(_UP, f.heading)
       _scl.setScalar(this.fishLength * f.size)
       this.mesh.setMatrixAt(i, _mtx.compose(_pos, _quat, _scl))
@@ -328,6 +365,32 @@ export class PondFish {
   setColorSeed(v: number): void {
     if (this.isDisposed || Number.isNaN(v)) return
     this.uSeed.value = v
+  }
+
+  /** 🐟 Bề dày bơi đứng (m, ≥0) — cá rải trong khối trụ radius×swimDepth. Áp frame kế. */
+  setSwimDepth(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.swimDepth = Math.max(0, v)
+  }
+
+  /** 🐟 Độ mập thân (×tiết diện, ≥0.2) — uniform live. */
+  setBodyWidth(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.uWidth.value = Math.max(0.2, v)
+  }
+
+  /** 🎨 3 màu koi (hex) — uniform live, 0 rebuild. */
+  setColors(base: number, patch: number, spot: number): void {
+    if (this.isDisposed) return
+    this.uColBase.value.setHex(base)
+    this.uColPatch.value.setHex(patch)
+    this.uColSpot.value.setHex(spot)
+  }
+
+  /** 🎨 Tỉ lệ mảng màu 0..1 (cao = nhiều mảng) — uniform live. */
+  setPatchAmount(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.uPatchAmt.value = Math.max(0, Math.min(1, v))
   }
 
   getMesh(): THREE.InstancedMesh {

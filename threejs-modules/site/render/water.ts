@@ -119,9 +119,15 @@ export function buildFishSchool(fs: FishSchool, site: SiteState, ctx: SiteRender
     count: fs.count,
     areaRadius: fs.radius / 1000,
     depthY: -fs.depth / 1000,
+    swimDepth: fs.swimDepth / 1000, // 🐟 bề dày bơi đứng
     fishLength: fs.size / 1000,
     speed: fs.speed,
     colorSeed: fs.seed,
+    bodyWidth: fs.bodyWidth, // 🐟 độ mập
+    baseColor: fs.colorBase, // 🎨 3 màu + tỉ lệ mảng
+    patchColor: fs.colorPatch,
+    spotColor: fs.colorSpot,
+    patchAmount: fs.patchAmount,
   })
   fish.getMesh().position.set(fs.offsetX / 1000, site.groundThick / 1000, fs.offsetZ / 1000)
   ctx.group.add(fish.getMesh())

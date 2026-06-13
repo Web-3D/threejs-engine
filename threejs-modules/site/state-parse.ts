@@ -497,10 +497,16 @@ function parseFishSchool(raw: unknown): FishSchool {
     offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
     radius: clamp(num(r.radius, d.radius), 300, 10000),
     depth: clamp(num(r.depth, d.depth), 50, 2000),
+    swimDepth: clamp(num(r.swimDepth, d.swimDepth), 0, 3000), // 🐟 save cũ thiếu → default 200
     count: clamp(Math.round(num(r.count, d.count)), 1, 30),
     size: clamp(num(r.size, d.size), 80, 500),
     speed: clamp(num(r.speed, d.speed), 0.05, 0.8),
     seed: num(r.seed, d.seed),
+    bodyWidth: clamp(num(r.bodyWidth, d.bodyWidth), 0.2, 2.5), // 🐟 độ mập — save cũ → 1
+    colorBase: parseColor(r.colorBase, d.colorBase), // 🎨 save cũ → màu koi mặc định
+    colorPatch: parseColor(r.colorPatch, d.colorPatch),
+    colorSpot: parseColor(r.colorSpot, d.colorSpot),
+    patchAmount: clamp(num(r.patchAmount, d.patchAmount), 0, 1),
   }
 }
 

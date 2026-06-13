@@ -380,10 +380,16 @@ export interface FishSchool {
   offsetZ: number // mm — (Z)
   radius: number // mm — bán kính vùng bơi — LIVE setAreaRadius
   depth: number // mm — độ sâu bơi DƯỚI mặt nền (rim) — LIVE setDepthY
+  swimDepth: number // mm — BỀ DÀY bơi đứng (cá rải trong khối trụ radius×swimDepth) — LIVE setSwimDepth
   count: number // số cá 1..30 — REBUILD commit (tạo/huỷ instance)
   size: number // mm — chiều dài cá (per-con ±20%) — LIVE setFishLength
   speed: number // m/s tốc bơi gốc — LIVE setSpeed
   seed: number // xáo bộ màu cam/đốm cả đàn — LIVE setColorSeed
+  bodyWidth: number // ×tiết diện thân (0.2..2.5; 1 = gốc) — LIVE setBodyWidth (🐟 độ mập)
+  colorBase: number // 🎨 màu nền thân (hex) — LIVE setColors
+  colorPatch: number // 🎨 màu mảng koi (hex)
+  colorSpot: number // 🎨 màu đốm (hex)
+  patchAmount: number // 🎨 tỉ lệ mảng 0..1 — LIVE setPatchAmount
 }
 
 // 🌉 1 CẦU bắc ngang (bridge) — instance ĐẶT TỰ DO trong lô (thường bắc ngang hồ, nhưng đặt đâu cũng được).
@@ -597,10 +603,16 @@ export function makeFishSchool(): FishSchool {
     offsetZ: 5000,
     radius: 1500,
     depth: 300,
+    swimDepth: 200, // 20cm khối bơi đứng — cá không còn dẹp 1 mặt
     count: 8,
     size: 240,
     speed: 0.25,
     seed: 0,
+    bodyWidth: 1, // độ mập gốc
+    colorBase: 0xeee8db, // kem
+    colorPatch: 0xe36112, // cam koi
+    colorSpot: 0x141312, // đốm đậm
+    patchAmount: 0.5,
   }
 }
 
