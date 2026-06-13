@@ -24,19 +24,24 @@ import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
 import {
   cameraPosition,
+  cos,
   dot,
   float,
+  length,
   max,
   mix,
   normalize,
+  oneMinus,
   positionWorld,
   pow,
   reflect,
   reflector,
   screenUV,
   smoothstep,
+  step,
   triNoise3D,
   uniform,
+  vec2,
   vec3,
   viewportSafeUV,
   viewportSharedTexture,
@@ -67,6 +72,17 @@ const DEFAULTS = {
   resolution: 1,
   tint: 0.4,
 }
+
+// 🌊 GỢN VA CHẠM (impact ripple) — pool N vòng analytic cộng vào normal (KHÔNG displace đỉnh: mặt nước phẳng,
+// sóng nằm hết trong normal). Mỗi vòng = uniform vec4 (tâm world X, Z, t0 giây, strength 0..1). emitRipple ghi
+// 1 slot (ring buffer) → 0 CPU/frame trừ lúc bắn. Vòng tự lan (front = d − age·SPEED) + tắt dần theo tuổi.
+const RIPPLE_SLOTS = 10 // số vòng đồng thời (budget shader: mỗi slot ~1 cos + 2 smoothstep/fragment)
+const RIPPLE_WIDTH = 0.34 // m — bề rộng dải sóng quanh front (mỏng = nét, rộng = dễ thấy) — hằng (chưa expose slider)
+// DEFAULT cho 4 tham số LIVE (slider khay Mưa chỉnh qua setRipple*). Đổi tại đây = đổi giá trị khởi tạo.
+const RIPPLE_SPEED = 0.65 // m/s — tốc độ vòng loang ra (đã giảm NỬA từ 1.3: vòng nhỏ hơn → trải đều hồ hơn)
+const RIPPLE_LIFE = 2.6 // s — thời gian vòng tồn tại (decay tuyến tính)
+const RIPPLE_WAVES = 15 // sóng/m (k = 2π/λ → λ ≈ 0.42m) — gợn lăn tăn trong dải
+const RIPPLE_AMP = 2.2 // gain biên độ (= uRippleAmp): cao = gợn rõ trên fresnel/glint/gương; 0 = tắt (băng)
 
 export interface WaterSurfaceOptions {
   /** Bề ngang hồ (m, X). Default: 12 */
@@ -138,6 +154,14 @@ export class WaterSurface {
   private readonly uSunColor: ReturnType<typeof uniform>
   private readonly uSunDir: ReturnType<typeof uniform>
   private readonly uTint: ReturnType<typeof uniform>
+  // 🌊 Pool vòng gợn va chạm: mỗi slot = uniform vec4 (tâm.x, tâm.z, t0, strength). emitRipple ghi xoay vòng.
+  // 4 uniform LIVE (slider khay Mưa): amp=size/gain (0=tắt→băng) · speed=tốc độ lan · life=thời gian · waves=k(2π/λ).
+  private readonly _rippleU: ReturnType<typeof uniform>[] = []
+  private readonly uRippleAmp = uniform(RIPPLE_AMP)
+  private readonly uRippleSpeed = uniform(RIPPLE_SPEED)
+  private readonly uRippleLife = uniform(RIPPLE_LIFE)
+  private readonly uRippleWaves = uniform(RIPPLE_WAVES)
+  private _rippleHead = 0
   // |uViewDirY| → 1 khi CAMERA nhìn gần thẳng đứng (top-down): virtualCamera reflector suy biến → ảnh ĐƠ.
   // Fade gương theo HƯỚNG-NHÌN-CAMERA (uniform, mọi fragment chung) — KHÔNG theo eye-tới-fragment (pool lệch
   // tâm → eye.y không đạt ngưỡng → fade trượt). Cập nhật mỗi frame trong setTime từ _camera.
@@ -159,6 +183,8 @@ export class WaterSurface {
     this.uSunColor = uniform(new THREE.Color(o.sunColor))
     this.uSunDir = uniform(new THREE.Vector3(0.5, 1, 0.6).normalize())
     this.uTint = uniform(o.tint)
+    for (let i = 0; i < RIPPLE_SLOTS; i++)
+      this._rippleU.push(uniform(new THREE.Vector4(0, 0, 0, 0)))
 
     this._w = o.width
     this._d = o.depth
@@ -267,6 +293,43 @@ export class WaterSurface {
     ;(this.uWaterColor.value as THREE.Color).set(c)
   }
 
+  /** 🌊 Bắn 1 vòng gợn va chạm tại điểm (x,z) WORLD. `strength` 0..1 = biên độ (caller tự quy từ kích thước/
+   *  khối lượng/vận tốc: mưa ~0.15, cá trồi ~theo size, vật to/nhanh → cao). Ghi xoay vòng N slot — bắn liên
+   *  tục thì vòng cũ nhất bị đè. 0 CPU/frame trừ lúc bắn (chỉ ghi 1 uniform). */
+  emitRipple(x: number, z: number, strength: number): void {
+    if (this.isDisposed) return
+    const s = Math.max(0, Math.min(1, strength))
+    if (s <= 0) return
+    const u = this._rippleU[this._rippleHead]
+    ;(u.value as THREE.Vector4).set(x, z, this.uTime.value as number, s)
+    this._rippleHead = (this._rippleHead + 1) % RIPPLE_SLOTS
+  }
+
+  /** 🌊 SIZE/gain biên độ gợn va chạm [0–6] (= "size sóng"). 0 = TẮT (mặt băng phẳng lì). Default 2.2. */
+  setRippleAmp(v: number): void {
+    if (this.isDisposed) return
+    this.uRippleAmp.value = Math.max(0, Math.min(6, v))
+  }
+
+  /** 🌊 Tốc độ vòng loang ra (m/s) [0–3]. Bán kính max ≈ speed×life. Default 0.65. */
+  setRippleSpeed(v: number): void {
+    if (this.isDisposed) return
+    this.uRippleSpeed.value = Math.max(0, Math.min(3, v))
+  }
+
+  /** 🌊 Thời gian vòng tồn tại (s) [0.3–8]. Default 2.6. */
+  setRippleLife(v: number): void {
+    if (this.isDisposed) return
+    this.uRippleLife.value = Math.max(0.3, Math.min(8, v))
+  }
+
+  /** 🌊 Bước sóng λ (m) [0.1–1.5] — khoảng cách giữa 2 gợn lăn tăn. Quy về k=2π/λ. Default ≈0.42. */
+  setRippleWavelength(lambda: number): void {
+    if (this.isDisposed) return
+    const lam = Math.max(0.1, Math.min(1.5, lambda))
+    this.uRippleWaves.value = (Math.PI * 2) / lam
+  }
+
   /** Đổi mặt nước sang polygon tự do (m, LOCAL). <3 đỉnh → về chữ nhật. LIVE: chỉ dựng lại geometry
    *  (giữ nguyên material + reflector → KHÔNG tốn RTT mới). Mesh giữ rotation/position cũ. */
   setShape(points: { x: number; z: number }[]): void {
@@ -334,7 +397,34 @@ export class WaterSurface {
     const amp = this.uDistortion.mul(float(2))
     const nx = nx1.add(nx2.mul(this.uDetail))
     const nz = nz1.add(nz2.mul(this.uDetail))
-    return normalize(vec3(nx.mul(amp), float(1), nz.mul(amp))) as TSLNode
+    const rip = this._rippleNormal() // 🌊 gợn va chạm — nghiêng normal theo bán kính vòng (cộng SAU amp sóng nền)
+    return normalize(vec3(nx.mul(amp).add(rip.x), float(1), nz.mul(amp).add(rip.z))) as TSLNode
+  }
+
+  // 🌊 Tổng nghiêng normal từ N vòng gợn va chạm (build-time unroll, slot rỗng strength=0 → cộng 0). Mỗi vòng:
+  // front = d − age·SPEED (loang ra); dải sóng quanh front (smoothstep WIDTH) × tắt theo tuổi (smoothstep LIFE) ×
+  // cos(front·WAVES) → lăn tăn; nghiêng theo HƯỚNG ra tâm. uRippleAmp = núm tổng (0 = băng → tắt gợn).
+  private _rippleNormal(): { x: TSLNode; z: TSLNode } {
+    const p = positionWorld.xz
+    let sx: TSLNode = float(0)
+    let sz: TSLNode = float(0)
+    for (const u of this._rippleU) {
+      const delta = p.sub(vec2(u.x, u.y))
+      const d = length(delta)
+      const age = this.uTime.sub(u.z)
+      const front = d.sub(age.mul(this.uRippleSpeed))
+      const env = oneMinus(smoothstep(float(0), float(RIPPLE_WIDTH), front.abs()))
+      const decay = oneMinus(smoothstep(float(0), this.uRippleLife, age))
+      const slope = u.w
+        .mul(env)
+        .mul(decay)
+        .mul(step(float(0), age))
+        .mul(cos(front.mul(this.uRippleWaves)))
+      const dir = delta.div(max(d, float(1e-3)))
+      sx = sx.add(dir.x.mul(slope))
+      sz = sz.add(dir.y.mul(slope))
+    }
+    return { x: sx.mul(this.uRippleAmp), z: sz.mul(this.uRippleAmp) }
   }
 
   private _buildColor(sm: ReturnType<typeof reflector>): TSLNode {

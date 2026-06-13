@@ -43,8 +43,14 @@ export function createDemo(canvas: HTMLCanvasElement): () => void {
 
   const clock = new THREE.Clock()
   let raf = 0
+  let nextDrop = 0 // 🌊 demo: rải vòng gợn ngẫu nhiên trong lòng hồ để xem hiệu ứng va chạm
   const loop = (): void => {
-    water.setTime(clock.getElapsedTime())
+    const t = clock.getElapsedTime()
+    water.setTime(t)
+    if (t > nextDrop) {
+      water.emitRipple((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 8, 0.4 + Math.random() * 0.4)
+      nextDrop = t + 0.45 + Math.random() * 0.5
+    }
     box.rotation.y += 0.01
     renderer.render(scene, camera)
     raf = requestAnimationFrame(loop)

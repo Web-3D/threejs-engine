@@ -64,6 +64,21 @@ w.setShape(newPoints)
 
 `setShape` dispose geometry cũ + gán mới vào mesh — rẻ, gọi được mỗi frame khi kéo đỉnh. <3 đỉnh → fallback chữ nhật.
 
+## Gợn va chạm (impact ripple)
+
+Khi **bất cứ gì chạm mặt nước** (giọt mưa, cá trồi/xác dập dìu, vật rơi…) → vòng sóng đồng tâm loang ra rồi tắt. Vì mặt nước **phẳng** (sóng nằm trong normal, KHÔNG displace đỉnh), gợn cũng **cộng vào normal** — reflection/refraction/fresnel tự gợn theo.
+
+```typescript
+// tại điểm (x,z) WORLD, biên độ strength 0..1 (caller tự quy từ kích thước/khối lượng/vận tốc)
+water.emitRipple(worldX, worldZ, 0.4)
+water.setRippleAmp(0) // 🧊 TẮT toàn bộ gợn — mặt băng phẳng lì (đóng băng); 1 = bật lại
+```
+
+- **Pool 10 vòng** (`RIPPLE_SLOTS`): mỗi `emitRipple` ghi 1 slot **xoay vòng** (uniform `vec4` = tâm X, Z, t0, strength) → bắn liên tục thì vòng cũ nhất bị đè. **0 CPU/frame** trừ lúc bắn (chỉ ghi 1 uniform); shader đọc `uTime` so với `t0`.
+- Mỗi vòng: `front = d − age·SPEED` (loang ra 1.3 m/s) × dải sóng quanh front (smoothstep WIDTH) × tắt theo tuổi (LIFE ~2.6s) × `cos(front·WAVES)` (lăn tăn) → nghiêng normal **theo hướng ra tâm** (×`RIPPLE_AMP`). Tự tắt sau ~2.6s.
+- **Biên độ theo vật chạm:** API chỉ phơi 1 núm `strength`; caller quy đổi (mưa ~0.3 · cá trồi ~theo size · vật to/nhanh → cao). `setRippleAmp` = núm tổng (×) — dùng để TẮT khi băng. Hiển thị qua fresnel + đốm nắng (độc lập distortion) + offset gương (×distortion).
+- **Cost:** 10 slot × (~1 `cos` + 2 `smoothstep`)/fragment — nhẹ so với reflector pass; build 1 lần ở constructor (`emitRipple` chỉ set uniform → KHÔNG recompile shader).
+
 ## Performance
 
 - **Reflector pass:** mỗi frame render lại scene qua virtual-camera → ~+1 render pass, draw calls vùng đó nhân đôi. Đây là cái giá của "gương thật".

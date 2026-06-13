@@ -1,9 +1,9 @@
 {
   "name": "WaterSurface",
   "category": "components",
-  "version": "1.0.0",
-  "description": "Hồ/ao nước VỪA PHẢN CHIẾU VỪA NHÌN XUYÊN ĐÁY (B) cho site-kit — reflector (gương soi trời+nhà) + viewportSharedTexture (khúc xạ thấy đáy, gợn sóng) Fresnel-blend + đốm nắng setSun + form tự do (ShapeGeometry). Nước transparent (vẽ sau opaque). Tier cao.",
-  "tags": ["water", "hồ", "ao", "reflection", "refraction", "mirror", "site-kit", "environment", "reflector", "tier-c"],
+  "version": "1.1.0",
+  "description": "Hồ/ao nước VỪA PHẢN CHIẾU VỪA NHÌN XUYÊN ĐÁY (B) cho site-kit — reflector (gương soi trời+nhà) + viewportSharedTexture (khúc xạ thấy đáy, gợn sóng) Fresnel-blend + đốm nắng setSun + form tự do (ShapeGeometry) + GỢN VA CHẠM (emitRipple: pool 6 vòng analytic loang ra trong normal, biên độ theo strength — mưa/cá/vật chạm). Nước transparent (vẽ sau opaque). Tier cao.",
+  "tags": ["water", "hồ", "ao", "reflection", "refraction", "mirror", "site-kit", "environment", "reflector", "ripple", "impact", "tier-c"],
   "complexity": "high",
   "performance-cost": "high",
   "performance": "ĐẮT: reflector() render lại scene qua virtual-camera vào RTT (HalfFloat, size = drawingBuffer × resolution) MỖI frame → ~+1 render pass + draw calls vùng phản chiếu nhân đôi. Giảm tải: resolution=0.5 (¼ pixel), bounces=false (1 lần/frame, né reflector-trong-reflector). Surface 1 mesh + 2 triNoise3D/fragment (sóng, không cần texture). ⚠ RTT nội bộ nằm WeakMap theo virtual-camera, three KHÔNG expose dispose — GC thu khi camera+node-graph hết ref. Dùng cho 1–2 hồ, KHÔNG đại trà.",
@@ -26,5 +26,5 @@
     { "name": "points",       "type": "{x,z}[] (m, local)",        "default": "undefined", "description": "Polygon mặt nước tự do (≥3 đỉnh) → ShapeGeometry thay chữ nhật; undefined = chữ nhật width×depth. Đổi live qua setShape" },
     { "name": "tint",         "type": "number",                    "default": "0.4",      "description": "Ám màu nước lên ảnh khúc xạ [0-1] (absorption giả; cao = đục, đáy mờ); live setTint" }
   ],
-  "usage": "const w = new WaterSurface({ width, depth, baseY }); scene.add(w.getMesh()); // mỗi frame: w.setTime(t)"
+  "usage": "const w = new WaterSurface({ width, depth, baseY }); scene.add(w.getMesh()); // mỗi frame: w.setTime(t); va chạm: w.emitRipple(worldX, worldZ, strength01); băng: w.setRippleAmp(0)"
 }
