@@ -17,12 +17,11 @@ import { float, floor, fract, min, mix, smoothstep, uv, vec3 } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import type { GrassExcludeRect } from '../../components/GrassBlades'
-import { PondFish } from '../../components/PondFish'
+import { type PondBounds, PondFish } from '../../components/PondFish'
 import { WaterSurface } from '../../components/WaterSurface'
 import { arcLength } from '../../ops/resample' // op #1 — viền đá hồ đặt theo chiều-dài-thật, khép kín
 import { offsetPolygon, pointInPolygon, shapeToLocalPolygon } from '../shapes'
 import {
-  type FishSchool,
   renderPuddles,
   renderWaters,
   type SiteState,
@@ -110,16 +109,19 @@ export function buildWater(
   return water
 }
 
-// 🐟 1 BẦY CÁ KOI (FishSchool — instance ĐỘC LẬP hồ, NgQuan 2026-06-11 "mỗi tab 1 bầy chỉnh riêng"):
-// vùng bơi tròn đặt tự do trong lô (thường thả vào lòng hồ). Gốc mesh = (offsetX, MẶT NỀN rim, offsetZ);
-// depth đo XUỐNG dưới rim (slider — user tự canh vào cột nước hồ). Mọi tham số trừ count = LIVE (move
-// mesh / setter PondFish). Caller (editor) drive update(dt) qua handle.fish; dispose theo ctx.shaders.
-export function buildFishSchool(fs: FishSchool, site: SiteState, ctx: SiteRenderCtx): PondFish {
+// 🐟 1 BẦY CÁ KOI = CON của hồ pond (w.fish, NgQuan 2026-06-13 "cá thuộc pond"): vùng bơi = LÒNG HỒ THẬT
+// (polygon form + depthY + gò đáy floorTerrain), cá đụng vách quay lại. Gốc mesh = (offsetX, MẶT NỀN rim,
+// offsetZ) = tâm hồ. Mọi tham số trừ count = LIVE (setter PondFish). Caller drive update(dt) qua handle.fish;
+// dispose theo ctx.shaders. Trả null nếu hồ không có fish (defensive — caller đã lọc w.fish.enabled).
+export function buildFishSchool(
+  w: WaterConfig,
+  site: SiteState,
+  ctx: SiteRenderCtx
+): PondFish | null {
+  const fs = w.fish
+  if (!fs) return null
   const fish = new PondFish({
     count: fs.count,
-    areaRadius: fs.radius / 1000,
-    depthY: -fs.depth / 1000,
-    swimDepth: fs.swimDepth / 1000, // 🐟 bề dày bơi đứng
     fishLength: fs.size / 1000,
     speed: fs.speed,
     colorSeed: fs.seed,
@@ -131,11 +133,63 @@ export function buildFishSchool(fs: FishSchool, site: SiteState, ctx: SiteRender
     swayAmp: fs.swayAmp, // 🐟 hành vi
     wanderAmp: fs.wanderAmp,
     bobAmp: fs.bobAmp,
+    burstRate: fs.burstRate, // 🐟 bứt tốc
+    satiation: fs.satiation, // 🐟 độ no (0 = chết phơi bụng)
+    bounds: fishBoundsFor(w, site), // 🐟 vùng bơi = lòng hồ (polygon + mặt + đáy theo gò)
   })
-  fish.getMesh().position.set(fs.offsetX / 1000, site.groundThick / 1000, fs.offsetZ / 1000)
+  fish.getMesh().position.set(w.offsetX / 1000, site.groundThick / 1000, w.offsetZ / 1000)
   ctx.group.add(fish.getMesh())
   ctx.shaders.push(fish) // dispose chain của site (PondFish có dispose())
   return fish
+}
+
+// 🐟 PondBounds (vùng bơi = lòng hồ) cho 1 hồ: polygon LOCAL (đỉnh − tâm hồ) + cao độ mặt nước + closure đáy.
+// surfaceY/yBot CÙNG công thức với buildWater (baseY) + buildBasin (yBot) → cá khớp đúng cột nước hồ.
+function fishBoundsFor(w: WaterConfig, site: SiteState): PondBounds {
+  const rimY = site.groundThick / 1000
+  const yBot = rimY - w.depthY / 1000
+  const baseY = Math.max(yBot + 0.03, rimY - 0.03) // mặt nước (= buildWater)
+  const originX = w.offsetX / 1000
+  const originZ = w.offsetZ / 1000
+  const ptsWorld = pondWorldXZ(w)
+  return {
+    polygon: ptsWorld.map((p) => ({ x: p.x - originX, z: p.z - originZ })),
+    surfaceY: baseY - rimY,
+    floorYAt: makeFloorYAt(w, ptsWorld, originX, originZ, rimY, yBot),
+  }
+}
+
+// 🐟 Closure cao độ ĐÁY (m, local) tại (lx,lz): pond + gò bật → bám đáy gò (CÙNG công thức taper+cap với
+// basinFloorTerrainGeometry); else (pool/puddle/phẳng) → đáy phẳng yBotLocal. Cá rải trên closure này.
+function makeFloorYAt(
+  w: WaterConfig,
+  ptsWorld: { x: number; z: number }[],
+  originX: number,
+  originZ: number,
+  rimY: number,
+  yBot: number
+): (x: number, z: number) => number {
+  const yBotLocal = yBot - rimY // = −depthY/1000 (đáy phẳng so gốc mesh ở rim)
+  if (w.kind !== 'pond' || !w.floorTerrain?.enabled) return () => yBotLocal
+  const hf = makeHeightField(w.floorTerrain, [], 1e6, 1e6)
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const p of ptsWorld) {
+    minX = Math.min(minX, p.x)
+    maxX = Math.max(maxX, p.x)
+    minZ = Math.min(minZ, p.z)
+    maxZ = Math.max(maxZ, p.z)
+  }
+  const taperBand = Math.max(0.3, Math.min(maxX - minX, maxZ - minZ) * 0.18)
+  const capDy = Math.max(0, rimY - yBot - 0.05)
+  return (lx, lz) => {
+    const wx = originX + lx
+    const wz = originZ + lz
+    const taper = Math.min(distInsidePoly(wx, wz, ptsWorld) / taperBand, 1)
+    return yBotLocal + Math.min(heightAt(hf, wx, wz) * taper, capDy)
+  }
 }
 
 // Vũng nước (puddle) = mặt nước PHẲNG đặt TRÊN nền — KHÔNG basin (đáy/vách), KHÔNG coping, KHÔNG khoét lỗ
@@ -435,15 +489,15 @@ function buildBasin(
   addBasinMesh(basinWallsGeometry(pts, rimY, yBot), wallMat, ctx, w, 'wall')
 }
 
-// Chọn geometry đáy: floorTerrain bật → đáy GÒ (grid+displace); tắt = ShapeGeometry phẳng (backward-compat).
-// Tách khỏi buildBasin giữ complexity ≤10.
+// Chọn geometry đáy: CHỈ pond + floorTerrain bật → đáy GÒ (grid+displace); pool/puddle/tắt = ShapeGeometry
+// phẳng. Pool = hồ bơi sạch (đáy phẳng), gò chỉ dành hồ thiên nhiên (NgQuan 2026-06-13). Tách giữ complexity ≤10.
 function basinFloorGeo(
   w: WaterConfig,
   pts: { x: number; z: number }[],
   yBot: number,
   rimY: number
 ): THREE.BufferGeometry {
-  return w.floorTerrain?.enabled
+  return w.kind === 'pond' && w.floorTerrain?.enabled
     ? basinFloorTerrainGeometry(pts, yBot, rimY, w.floorTerrain)
     : basinFloorGeometry(pts, yBot)
 }

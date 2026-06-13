@@ -71,9 +71,9 @@ export interface SiteHandle {
   grass: GrassBlades | null
   waters: WaterSurface[] // 1 WaterSurface mỗi hồ ĐANG BẬT (cùng thứ tự renderWaters(site)) — caller zip cfg↔surf
   ground: THREE.Mesh | null // mesh nền base (G0) — caller giữ ref để LIVE-rebuild geometry-only (terrain drag, né water-RTT)
-  // 🐟 Bầy cá mỗi FishSchool enabled (kèm cfg — caller tune live theo identity). Caller drive update(dt)
+  // 🐟 Bầy cá CON của hồ pond (kèm cfg + water chứa — caller tune live + navigate). Caller drive update(dt)
   // mỗi frame; dispose theo ctx.shaders.
-  fish: { cfg: FishSchool; fish: PondFish }[]
+  fish: { cfg: FishSchool; water: WaterConfig; fish: PondFish }[]
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -143,15 +143,29 @@ export function renderSiteState(
   // [...renderWaters, ...renderPuddles] để drag/tune/handle nhắm đúng instance.
   const waters = pools.map((w) => buildWater(w, site, ctx, opts)) // 1 WaterSurface (+1 RTT) mỗi hồ bật
   for (const w of renderPuddles(site)) waters.push(buildPuddle(w, site, ctx)) // mặt nước phẳng trên nền
-  // 🐟 bầy cá = instance ĐỘC LẬP hồ (site.fishSchools) — caller update(dt)/tune qua handle.fish (theo cfg).
-  const fish = site.fishSchools
-    .filter((f) => f.enabled)
-    .map((f) => ({ cfg: f, fish: buildFishSchool(f, site, ctx) }))
+  // 🐟 bầy cá = CON của hồ pond (w.fish) — chỉ pond đang bật & có fish.enabled. Vùng bơi = lòng hồ thật.
+  const fish = buildFishSchools(pools, site, ctx)
   // Rào ĐA-LỚP: dựng mỗi lớp enabled (vòng đồng tâm ở inset riêng). skipFence → editor tự dựng (_syncFence)
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
   if (!opts.skipFence)
     for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
   return { grass, waters, ground, fish }
+}
+
+// 🐟 Dựng cá cho mọi hồ pond đang bật có fish.enabled (pool/puddle bỏ qua). Tách khỏi renderSiteState (rule-50 +
+// complexity). Trả mảng {cfg, water, fish} thẳng hàng cho caller update(dt)/tune/navigate.
+function buildFishSchools(
+  pools: WaterConfig[],
+  site: SiteState,
+  ctx: SiteRenderCtx
+): SiteHandle['fish'] {
+  const fish: SiteHandle['fish'] = []
+  for (const w of pools) {
+    if (!w.fish?.enabled) continue // pool/puddle không cá; pond tắt cá thì bỏ
+    const built = buildFishSchool(w, site, ctx)
+    if (built) fish.push({ cfg: w.fish, water: w, fish: built })
+  }
+  return fish
 }
 
 // Rect loại trừ cỏ (m, world XZ) = foundation (caller bơm) + footprint+coping MỖI hồ/vũng đang bật. (Path-zone rải

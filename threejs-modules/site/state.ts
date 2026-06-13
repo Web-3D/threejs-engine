@@ -188,7 +188,11 @@ export interface WaterConfig {
   // 🏔️ GÒ ĐÁY HỒ (NgQuan 2026-06-13 "thêm chế độ gò sân vườn vào đáy hồ") — DÙNG CHUNG TerrainConfig với nền
   // sân vườn (heightAt FBM + mounds). Bật = đáy basin grid hóa + nhô gò từ yBot LÊN (đảo/cồn ngầm), kẹp dưới
   // mặt nước/rim; taper về 0 ở mép → đáy gặp chân vách phẳng. Optional → tắt = đáy phẳng như cũ (backward-compat).
+  // CHỈ ÁP cho kind='pond' (hồ thiên nhiên); pool/puddle luôn đáy phẳng (NgQuan 2026-06-13 tách 3 loại nước).
   floorTerrain?: TerrainConfig
+  // 🐟 BẦY CÁ koi sống TRONG hồ này — CHỈ pond (hồ thiên nhiên). undefined = không cá (pool sạch / puddle). Vùng
+  // bơi = KHÔNG GIAN THẬT trong hồ (polygon form + depthY + floorTerrain), không có vị trí/bán kính riêng. NgQuan 2026-06-13.
+  fish?: FishSchool
 }
 
 // Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural
@@ -372,15 +376,11 @@ export interface TerrainConfig {
   mounds: TerrainMound[] // gò nặn-tay (Phase 3); Phase 1 = []
 }
 
-// 🐟 1 BẦY CÁ KOI (PondFish) — instance độc lập với hồ: vùng bơi tròn đặt TỰ DO trong lô (thường thả
-// vào lòng hồ). Gốc bầy tại MẶT NỀN (rim) — depth đo xuống dưới. Mỗi bầy 1 tab GUI (F1 F2…) chỉnh riêng.
+// 🐟 1 BẦY CÁ KOI (PondFish) — CON của 1 hồ pond (WaterConfig.fish). Vùng bơi = KHÔNG GIAN THẬT trong hồ
+// (form polygon + chiều sâu depthY + gò đáy floorTerrain), cá đụng vách quay lại — KHÔNG có vị trí/bán kính
+// riêng (lấy từ hồ chứa). Mọi tham số trừ count = LIVE (setter PondFish). NgQuan 2026-06-13: cá thuộc pond.
 export interface FishSchool {
   enabled: boolean
-  offsetX: number // mm — tâm vùng bơi lệch tâm lô (X) — LIVE move mesh
-  offsetZ: number // mm — (Z)
-  radius: number // mm — bán kính vùng bơi — LIVE setAreaRadius
-  depth: number // mm — độ sâu bơi DƯỚI mặt nền (rim) — LIVE setDepthY
-  swimDepth: number // mm — BỀ DÀY bơi đứng (cá rải trong khối trụ radius×swimDepth) — LIVE setSwimDepth
   count: number // số cá 1..30 — REBUILD commit (tạo/huỷ instance)
   size: number // mm — chiều dài cá (per-con ±20%) — LIVE setFishLength
   speed: number // m/s tốc bơi gốc — LIVE setSpeed
@@ -393,6 +393,10 @@ export interface FishSchool {
   swayAmp: number // 🐟 hành vi: biên độ lượn chữ S (×, 0..2) — LIVE setSwayAmp
   wanderAmp: number // 🐟 hành vi: độ lăng xăng (×, 0..2) — LIVE setWanderAmp
   bobAmp: number // 🐟 hành vi: nhấp nhô dọc (×, 0..3) — LIVE setBobAmp
+  burstRate: number // 🐟 hành vi: tần suất BỨT TỐC ngẫu nhiên (0..1; 0 = tắt) — vài con phóng vọt rồi khựng — LIVE setBurstRate
+  // 🐟 ĐỘ NO (slider "Đói"): 1 = no/đầy (bơi thường, KHÔNG bâu mồi) · →0 = đói dần (sau: càng bâu nhiều khi thả
+  // mồi) · 0 = CHẾT phơi bụng (trôi dưới mặt, mọi hành vi off). Tiền đề click-cho-ăn (swarm = 1−satiation, sau). LIVE setSatiation
+  satiation: number
 }
 
 // 🌉 1 CẦU bắc ngang (bridge) — instance ĐẶT TỰ DO trong lô (thường bắc ngang hồ, nhưng đặt đâu cũng được).
@@ -441,7 +445,7 @@ export interface SiteState {
   terrain?: TerrainConfig // 🏔️ nền sân vườn lồi-lõm (height-field). Optional → backward-compat (cũ = phẳng/tắt)
   grass3d: Grass3DConfig // cỏ 3D nhú lên (tier B) — phủ lên nền cỏ khi bật
   waters: WaterConfig[] // hồ nước (tier C) đa-instance — chỉ kind='pool' & enabled mới render (xem renderPools)
-  fishSchools: FishSchool[] // 🐟 bầy cá koi đa-instance ĐỘC LẬP hồ (tab F1 F2… — đặt tự do, thường thả vào lòng hồ)
+  // (fishSchools[] GỠ 2026-06-13 — cá chuyển thành CON của hồ pond: WaterConfig.fish. Save cũ migrate ở parseSite.)
   bridges: BridgeConfig[] // 🌉 cầu đa-instance đặt TỰ DO (tab C1 C2… — thường bắc ngang hồ)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
   // (rocks?: RockConfig[] đã GỠ 2026-06-09 — non bộ procedural "chưa ra dáng", thay bằng Houdini-bake asset
@@ -562,8 +566,7 @@ export function defaultSiteState(): SiteState {
       contactDark: 0.45, // vệt tiếp đất đậm vừa (lọt khe lá vẫn thấy ở bãi dày nền cỏ xanh)
       contactRadius: 0.07, // 7cm rộng ngang (phủ kín khe giữa lá → nền gốc liền mảng tối)
     },
-    waters: defaultWaters(),
-    fishSchools: [], // 🐟 chưa có bầy nào — thêm qua ＋ ở tab Cá
+    waters: defaultWaters(), // pond mặc định mang sẵn 1 bầy cá (makeWater gắn fish khi kind='pond')
     bridges: [], // 🌉 chưa có cầu nào — thêm qua ＋ ở tab Cầu
     fences: [makeFence()],
   }
@@ -597,16 +600,11 @@ export function makeBridge(): BridgeConfig {
   }
 }
 
-// 🐟 Factory 1 bầy cá koi — instance ĐỘC LẬP hồ (PondFish). Default thả tại vị trí hồ default
-// (offsetZ 5000 = tâm pool đầu) → bấm ＋ là cá rơi đúng lòng hồ; user kéo X/Z đặt lại tuỳ ý.
+// 🐟 Factory 1 bầy cá koi — CON của 1 hồ pond (WaterConfig.fish). Vùng bơi lấy từ hồ chứa (form + depthY +
+// gò đáy), KHÔNG có vị trí/bán kính riêng. enabled=true → bật pond là có koi ngay.
 export function makeFishSchool(): FishSchool {
   return {
-    enabled: true, // bầy mới hiện ngay (rẻ — 1 draw; khác hồ enabled=false vì hồ +1 RTT)
-    offsetX: 0,
-    offsetZ: 5000,
-    radius: 1500,
-    depth: 300,
-    swimDepth: 200, // 20cm khối bơi đứng — cá không còn dẹp 1 mặt
+    enabled: true, // bầy hiện ngay khi pond bật (rẻ — 1 draw)
     count: 8,
     size: 240,
     speed: 0.25,
@@ -619,6 +617,8 @@ export function makeFishSchool(): FishSchool {
     swayAmp: 1, // 🐟 hành vi mặc định = gốc
     wanderAmp: 1,
     bobAmp: 1,
+    burstRate: 0, // 🐟 bứt tốc TẮT mặc định (kéo slider Bứt tốc để bật)
+    satiation: 1, // 🐟 no/đầy mặc định (kéo slider Đói về min = cá chết phơi bụng)
   }
 }
 
@@ -714,6 +714,8 @@ export function makeWater(kind: WaterKind, enabled = false): WaterConfig {
     borderStoneJag: 35, // góc cạnh nhẹ — bớt "tròn quá" mà chưa thành đá dăm
     borderColor: 0x9a8f80, // xám-ấm (đá); đổi nâu ở GUI cho rào gỗ
     borderMaterial: 'none', // 'none' = màu phẳng; chọn texture đá ở GUI
+    // 🐟 CHỈ pond mang sẵn bầy cá (hồ thiên nhiên). pool/puddle = undefined (không cá).
+    fish: kind === 'pond' ? makeFishSchool() : undefined,
   }
 }
 

@@ -368,8 +368,9 @@ function parseBorderMat(v: unknown): BorderMaterialKey {
 
 function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): WaterConfig {
   const r = raw ?? {}
+  const kind = parseKind(r.kind, d.kind)
   return {
-    kind: parseKind(r.kind, d.kind),
+    kind,
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     surfaceOn: typeof r.surfaceOn === 'boolean' ? r.surfaceOn : d.surfaceOn, // 💧 save cũ thiếu → true (bật)
     shape: r.shape === 'free' || r.shape === 'circle' || r.shape === 'ellipse' ? r.shape : 'rect',
@@ -406,7 +407,16 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     // 🏔️ gò đáy hồ — thiếu (save cũ) = undefined (đáy phẳng); có = parse như terrain zone (backward-compat)
     floorTerrain:
       r.floorTerrain !== undefined ? parseTerrain(r.floorTerrain, defaultTerrain()) : undefined,
+    // 🐟 cá là con của hồ (parseWaterFish): có field = parse; thiếu thì pond mặc định mang bầy mới, pool/puddle
+    // = undefined. Save cũ (cá top-level fishSchools) migrate sau ở migrateLegacyFish.
+    fish: parseWaterFish(r, kind),
   }
+}
+
+// 🐟 Cá của 1 hồ: field có → parse; thiếu → pond mang bầy mặc định (hồ thiên nhiên có cá), pool/puddle undefined.
+function parseWaterFish(r: Partial<WaterConfig>, kind: WaterKind): FishSchool | undefined {
+  if (r.fish !== undefined) return parseFishSchool(r.fish)
+  return kind === 'pond' ? makeFishSchool() : undefined
 }
 
 // Mảng hồ — 3 nguồn (ưu tiên giảm dần): waters[] (format mới) → water đơn cũ (MIGRATE → 1 pool + placeholder
@@ -441,8 +451,11 @@ export function parseSite(raw: unknown): SiteState {
     grass3d?: Partial<Grass3DConfig>
     waters?: unknown
     water?: Partial<WaterConfig> // legacy: design cũ lưu 1 hồ đơn → migrate trong parseWaters
+    fishSchools?: unknown // legacy: cá từng độc lập top-level → migrate vào pond (migrateLegacyFish)
   }
   const groundLayers = parseGroundLayers(o.groundLayers)
+  const waters = parseWaters(o.waters, o.water)
+  migrateLegacyFish(waters, o.fishSchools) // 🐟 save cũ (cá top-level độc lập) → gán vào pond gần nhất
   return {
     show: typeof o.show === 'boolean' ? o.show : d.show,
     lotWidth: num(o.lotWidth, d.lotWidth),
@@ -454,37 +467,49 @@ export function parseSite(raw: unknown): SiteState {
     groundLevels: parseGroundLevels(o.groundLevels, groundLayers),
     terrain: parseTerrain(o.terrain, d.terrain ?? defaultTerrain()),
     grass3d: parseGrass3d(o.grass3d, d.grass3d),
-    waters: parseWaters(o.waters, o.water),
-    fishSchools: parseFishSchools(o.fishSchools, o.waters), // 🐟 + migrate fishOn per-hồ (bản 1 ngày 2026-06-11)
+    waters,
     bridges: parseBridges(o.bridges), // 🌉 cầu — design cũ không có → []
     fences: parseFences(o.fences, o.fence, d.fences[0]),
     // key `rocks` (non bộ cũ, gỡ 2026-06-09) trong design lưu cũ: KHÔNG parse → biến mất khi save lại (an toàn)
   }
 }
 
-// 🐟 Bầy cá: parse mảng tolerant + MIGRATE save có fishOn per-hồ (kiến trúc 1-ngày 2026-06-11 — đổi sang
-// bầy độc lập cùng ngày): hồ nào raw fishOn=true → 1 bầy đặt tại tâm hồ đó, radius nội tiếp, sâu giữa basin.
-function parseFishSchools(raw: unknown, rawWaters: unknown): FishSchool[] {
-  const out: FishSchool[] = []
-  if (Array.isArray(raw)) for (const r of raw) out.push(parseFishSchool(r))
-  if (out.length === 0 && Array.isArray(rawWaters)) {
-    for (const rw of rawWaters) {
-      const r = rw as Record<string, unknown>
-      if (r.fishOn !== true) continue
-      out.push(
-        parseFishSchool({
-          offsetX: r.offsetX,
-          offsetZ: r.offsetZ,
-          radius: Math.min(num(r.width, 4000), num(r.depth, 3000)) * 0.45,
-          depth: num(r.depthY, 600) * 0.55 + 30,
-          count: r.fishCount,
-          speed: r.fishSpeed,
-          seed: r.fishSeed,
-        })
-      )
+// 🐟 MIGRATE save cũ: cá từng là hệ độc lập (SiteState.fishSchools[] có offsetX/Z/radius/depth). Nay cá =
+// CON của pond. Mỗi bầy cũ → gán tuning vào pond gần nhất (theo offset), pond đó BẬT (cá cũ đang hiện → giữ),
+// mỗi pond nhận ≤1 bầy. Pool KHÔNG nhận cá (hồ bơi sạch). Thừa bầy / không có pond → bỏ (đúng kiến trúc mới).
+function migrateLegacyFish(waters: WaterConfig[], rawSchools: unknown): void {
+  if (!Array.isArray(rawSchools) || rawSchools.length === 0) return
+  const ponds = waters.filter((w) => w.kind === 'pond')
+  const used = new Set<WaterConfig>()
+  for (const raw of rawSchools) {
+    const pond = nearestPond(ponds, used, raw)
+    if (!pond) break // hết pond rảnh → bỏ bầy thừa
+    used.add(pond)
+    pond.fish = parseFishSchool(raw) // giữ tuning cũ (count/màu/hành vi)
+    pond.enabled = true // cá cũ đang hiện → bật pond cho koi khỏi biến mất
+  }
+}
+
+// Pond gần nhất CHƯA dùng so với offset bầy cũ (Manhattan mm). null nếu hết pond rảnh.
+function nearestPond(
+  ponds: WaterConfig[],
+  used: Set<WaterConfig>,
+  raw: unknown
+): WaterConfig | null {
+  const r = (raw ?? {}) as Record<string, unknown>
+  const rx = num(r.offsetX, 0)
+  const rz = num(r.offsetZ, 0)
+  let best: WaterConfig | null = null
+  let bestD = Infinity
+  for (const p of ponds) {
+    if (used.has(p)) continue
+    const dist = Math.abs(p.offsetX - rx) + Math.abs(p.offsetZ - rz)
+    if (dist < bestD) {
+      bestD = dist
+      best = p
     }
   }
-  return out
+  return best
 }
 
 function parseFishSchool(raw: unknown): FishSchool {
@@ -493,11 +518,6 @@ function parseFishSchool(raw: unknown): FishSchool {
   const r = raw as Partial<FishSchool>
   return {
     enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
-    offsetX: clamp(num(r.offsetX, d.offsetX), -20000, 20000),
-    offsetZ: clamp(num(r.offsetZ, d.offsetZ), -20000, 20000),
-    radius: clamp(num(r.radius, d.radius), 300, 10000),
-    depth: clamp(num(r.depth, d.depth), 50, 2000),
-    swimDepth: clamp(num(r.swimDepth, d.swimDepth), 0, 3000), // 🐟 save cũ thiếu → default 200
     count: clamp(Math.round(num(r.count, d.count)), 1, 30),
     size: clamp(num(r.size, d.size), 80, 500),
     speed: clamp(num(r.speed, d.speed), 0.05, 0.8),
@@ -510,6 +530,8 @@ function parseFishSchool(raw: unknown): FishSchool {
     swayAmp: clamp(num(r.swayAmp, d.swayAmp), 0, 2), // 🐟 hành vi — save cũ → 1
     wanderAmp: clamp(num(r.wanderAmp, d.wanderAmp), 0, 2),
     bobAmp: clamp(num(r.bobAmp, d.bobAmp), 0, 3),
+    burstRate: clamp(num(r.burstRate, d.burstRate), 0, 1), // 🐟 bứt tốc — save cũ → 0
+    satiation: clamp(num(r.satiation, d.satiation), 0, 1), // 🐟 độ no — save cũ → 1 (đầy, sống)
   }
 }
 
