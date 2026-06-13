@@ -76,7 +76,7 @@ const DEFAULTS = {
 // 🌊 GỢN VA CHẠM (impact ripple) — pool N vòng analytic cộng vào normal (KHÔNG displace đỉnh: mặt nước phẳng,
 // sóng nằm hết trong normal). Mỗi vòng = uniform vec4 (tâm world X, Z, t0 giây, strength 0..1). emitRipple ghi
 // 1 slot (ring buffer) → 0 CPU/frame trừ lúc bắn. Vòng tự lan (front = d − age·SPEED) + tắt dần theo tuổi.
-const RIPPLE_SLOTS = 10 // số vòng đồng thời (budget shader: mỗi slot ~1 cos + 2 smoothstep/fragment)
+const RIPPLE_SLOTS = 24 // số vòng đồng thời (budget shader: mỗi slot ~1 cos + 2 smoothstep/fragment; 24 đủ dày cho tần suất cao)
 const RIPPLE_WIDTH = 0.34 // m — bề rộng dải sóng quanh front (mỏng = nét, rộng = dễ thấy) — hằng (chưa expose slider)
 // DEFAULT cho 4 tham số LIVE (slider khay Mưa chỉnh qua setRipple*). Đổi tại đây = đổi giá trị khởi tạo.
 const RIPPLE_SPEED = 0.65 // m/s — tốc độ vòng loang ra (đã giảm NỬA từ 1.3: vòng nhỏ hơn → trải đều hồ hơn)
