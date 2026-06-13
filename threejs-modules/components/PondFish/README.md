@@ -47,7 +47,7 @@ fish.update(dt) // tiến vẫy đuôi + dời đàn (CPU rẻ)
 
 API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
 
-## Hành vi bơi (v1.3)
+## Hành vi bơi (v1.5)
 
 - **Lượn chữ S liên tục** (sine heading per-con — cá thật không bao giờ bơi thẳng, biên độ ×`swayAmp`) +
   wander random-walk (đổi hướng bất chợt, ×`wanderAmp`); **sát vách quay lại** (`bounds`: ngoài polygon hoặc
@@ -68,6 +68,17 @@ API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
     `[p 1→0.8]` **giật ~2-3 cú NHANH dần** (ease-in, nhịp giãn, tắt sạch — không rung sau) → xoay bụng xuống.
     **KHÔNG rớt Y**: `rise=1` giữ đúng XYZ chết ở mặt suốt hồi sinh; xong (`dp`→0) đặt `wake=1` rồi ease 0 qua
     `WAKE_DUR`≈2.6s = `_swim` **bơi xuống từ từ** (không rơi thẳng).
+- **🦈 SĂN MỒI / CHẠY TRỐN / TÁCH-THÂN** (v1.5 — predation, coordinator `PondPredation` điều phối cross-đàn cùng hồ):
+  - **Săn** (predator = tier số NHỎ hơn, CHỈ khi `canHunt` = Đói vùng vàng level 6-10): khoá mồi gần nhất trong
+    `DETECT_K`×dài; **rượt ≥ `CHASE_MIN`≈2.5s** (hunt = lao ×`HUNT_DART` 1.8 + lặn tới tầng mồi) MỚI **cắn** khi
+    **MŨI** (tâm + heading×½thân) chạm **THÂN mồi** (½ dài-mồi + gape) → `consume` (ẩn instance) + nghỉ `EAT_COOLDOWN`≈1s.
+    API: `getFishView/getFishLength/canHunt/setHunt/clearHunt/consume/resetSchool`.
+  - **Chạy trốn** (prey = tier số LỚN hơn): thấy predator trong `FLEE_K`×dài (~17) → `setFlee` bơi NGƯỢC ×`FLEE_DART`
+    1.65 (< dart → bị bắt kịp dần). Ưu tiên **flee > hunt > wander** trong `_swim`.
+  - **Tách-thân** (`_separate`, mọi con sống): lọt trong `SEP_K`×dài của con khác → đẩy ra (2 pha, không nhập nhau).
+  - **Spawn cách nhau** (`occupied` claims chung hồ — tâm+bán-kính): con/đàn sau né claim đàn trước → KHÔNG trùng vị
+    trí lúc load (cả cross-đàn). `resetSchool()` hồi mọi cá bị ăn (nút Reset GUI).
+- **Hành vi theo BẬC** (`FISH_TIER_PRESETS`, áp lúc tạo/đổi-bậc): bậc THẤP chậm hơn + bứt tốc/lăng xăng nhiều hơn (mồi tăng động).
 - **Tốc nhấp nhô** theo thời gian (lướt ↔ rướn) — phá đều tăm tắp giữa các con.
 - Mỗi con: tốc/cỡ/pha vẫy/tần lượn/mức-đứng/bộ màu riêng (deterministic — LCG seed cố định, tái lập).
 - Nhấp nhô Y ±3cm ×`bobAmp`. Heading → `rotation.y` (forward local = +X).
@@ -77,7 +88,7 @@ API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
 ## Performance
 
 - 8 con ≈ **1k tri, 1 draw**; cap 64 con ≈ 8.4k tri.
-- Vẫy = vertex shader (0 CPU); CPU chỉ ≤40 matrix compose/frame.
+- Vẫy = vertex shader (0 CPU); CPU ≤64 matrix compose/frame + tách-thân O(n²)/đàn + predation O(pred×prey)/hồ (n≤64, rẻ).
 - `castShadow = false` (cá chìm dưới nước — bóng xuyên mặt nước nhìn sai, lại rẻ).
 - Vertex-bend giữ instanceMatrix đúng bài KI-003 (`positionLocal.add`, không replace positionNode).
 

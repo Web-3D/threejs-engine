@@ -76,6 +76,16 @@ export interface PondFishOptions {
   bounds?: PondBounds
   /** 🐟 BẬC (tier 1..6) — Phase 1 chỉ LƯU + getTier() (predation lớn-ăn-bé = Phase 3). Default: 4 */
   tier?: number
+  /** 🐟 "Chỗ đã chiếm" CHUNG hồ (local {x,z,r}) — spawn né trùng CẢ ĐÀN KHÁC. Caller (buildFishSchools) tạo 1 mảng/
+   *  hồ, mỗi đàn đọc + ĐẨY claim của mình vào → đàn sau né đàn trước. Thiếu → chỉ né trong đàn này. */
+  occupied?: SpawnClaim[]
+}
+
+// 🐟 1 "chỗ đã chiếm" lúc spawn: tâm (local) + bán kính thân (½ chiều dài) → cá mới giữ khoảng ≥ r_a+r_b (không chồng).
+export interface SpawnClaim {
+  x: number
+  z: number
+  r: number
 }
 
 // 🐟 VÙNG BƠI = lòng hồ thật (thay vòng tròn): polygon LOCAL (m, so gốc mesh = tâm hồ tại MẶT nền) + cao độ
@@ -101,6 +111,18 @@ interface FishState {
   burst: number // s — thời lượng bứt còn lại (>0 = đang phóng/khựng); 0 = bơi thường
   dp: number // 🐟 deadProgress RIÊNG con (0=sống → 1=chết hẳn). Chia chết theo tỉ lệ: con i<deadCount = chết
   wake: number // 🐟 0..1 — vừa hồi sinh: 1=còn bám mặt (đúng XYZ chết) → ease 0 = bơi xuống dần (không rớt thẳng)
+  // 🦈 SĂN MỒI (predation — coordinator PondPredation set/đọc): hunt = đang lao tới mồi (override wander); (hx,hz,
+  // hyFrac) = target LOCAL; consumed = bị đớp → ẩn instance (biến mất khỏi hồ). Per-con MVP (1 đớp 1).
+  hunt: boolean
+  hx: number
+  hz: number
+  hyFrac: number
+  consumed: boolean
+  // 🏃 CHẠY TRỐN (prey — coordinator set): flee = đang bỏ chạy KHỎI predator bậc cao gần (override hunt/wander);
+  // (fx,fz) = vị trí predator LOCAL để bơi NGƯỢC ra. Bậc thấp né bậc cao tránh bị đớp.
+  flee: boolean
+  fx: number
+  fz: number
 }
 
 const MAX_FISH = 64 // cap số cá/đàn (bậc thấp đông — cá nhỏ/tép). _lifeArr/_uLife cấp theo hằng này.
@@ -203,6 +225,11 @@ const _qRoll = new THREE.Quaternion()
 const DEATH_DUR = 7 // s — CHẾT/HỒI SINH chung tốc (xoay bụng hồi sinh = xoay bụng chết — NgQuan 2026-06-13);
 // nổi chậm vì NƯỚC (buoyancy G≪9.8). Hồi sinh = đảo ngược qua cùng DEATH_DUR (cùng tốc xoay).
 const WAKE_DUR = 2.6 // s — sau hồi sinh: giữ Ở MẶT (đúng XYZ chết) rồi BƠI từ từ xuống (ease, KHÔNG rớt thẳng Y).
+const HUNT_DART = 1.8 // ×tốc khi SĂN — predator lao tới mồi (vừa phải, không vọt quá nhanh). PondPredation lái + cooldown.
+const FLEE_DART = 1.65 // ×tốc khi CHẠY TRỐN — prey hoảng bơi ngược predator (tăng 1.5→1.65: chạy quyết liệt hơn); VẪN
+// nhỏ hơn HUNT_DART 1.8 → predator còn bắt kịp dần (không thoát mãi). Base prey lại chậm hơn (preset) → cân bằng.
+const SEP_K = 0.7 // bán kính TÁCH-THÂN = chiều dài cá × K — gần hơn ngưỡng này thì đẩy ra (cá không nhập vào nhau)
+const SEP_SPD = 1.6 // ×chiều dài cá (m/s) — tốc đẩy tách tối đa (nhân với độ chồng 0..1). Va chạm "mềm", không cứng
 
 // smoothstep 0..1 — "từ từ" cho lật bụng + trồi lên.
 function smooth01(t: number): number {
@@ -268,6 +295,9 @@ export class PondFish {
   // mỗi RENDER). _lifeArr = mảng raw (mutate trực tiếp); _uLife = node đọc trong material.
   private readonly _lifeArr: number[] = new Array<number>(MAX_FISH).fill(1)
   private readonly _uLife = uniformArray(this._lifeArr, 'float')
+  // 🐟 TÁCH-THÂN (separation): scratch đẩy X/Z mỗi con — tính 2 pha (đọc hết vị trí → áp) để khỏi lệ thuộc thứ tự.
+  private readonly _sepX: number[] = new Array<number>(MAX_FISH).fill(0)
+  private readonly _sepZ: number[] = new Array<number>(MAX_FISH).fill(0)
   private bounds: PondBounds | null = null // 🐟 vùng bơi = lòng hồ (polygon+mặt+đáy); null = vòng tròn (cũ)
   private _cx = 0 // centroid LOCAL polygon — steer quay-về-tâm khi sát vách
   private _cz = 0
@@ -302,7 +332,7 @@ export class PondFish {
     this.mesh = new THREE.InstancedMesh(this.geometry, this.material, count)
     this.mesh.castShadow = false // cá chìm dưới nước — bóng xuyên mặt nước nhìn sai, lại rẻ
     this.mesh.receiveShadow = false
-    this._spawn(count)
+    this._spawn(count, opts.occupied) // 🐟 occupied = chỗ-đã-chiếm chung hồ → né trùng cả đàn khác lúc spawn
     this.update(0) // đặt matrix lần đầu (kẻo frame 0 dồn về gốc)
   }
 
@@ -377,10 +407,15 @@ export class PondFish {
     return mix(col, this.uColBase.mul(1.12), belly) as TSLNode
   }
 
-  // Rải đàn TRẢI RỘNG cả vùng, mỗi con 1 hướng/tốc/cỡ/pha/tần lượn/lệch-pha-bứt riêng.
-  private _spawn(count: number): void {
+  // Rải đàn TRẢI RỘNG cả vùng, mỗi con 1 hướng/tốc/cỡ/pha/tần lượn/lệch-pha-bứt riêng. Spawn CÁCH NHAU (không
+  // trùng vị trí lúc load/reload) qua _spacedSpawn: né MỌI claim trong `claims` (chung hồ → cả đàn khác) + tự đẩy
+  // claim của mình vào → đàn/con sau né. Khoảng cách = tổng bán kính thân (không chồng dù cỡ khác nhau).
+  private _spawn(count: number, occupied?: SpawnClaim[]): void {
+    const claims = occupied ?? [] // shared cross-đàn nếu caller bơm; else local (chỉ trong đàn này)
+    const myR = this.fishLength * 0.5 // bán kính thân con đang spawn (½ chiều dài)
     for (let i = 0; i < count; i++) {
-      const pt = this._spawnPoint()
+      const pt = this._spacedSpawn(claims, myR)
+      claims.push({ x: pt.x, z: pt.z, r: myR }) // chiếm chỗ → con sau (cùng/khác đàn) tránh
       this.fish.push({
         x: pt.x,
         z: pt.z,
@@ -395,10 +430,36 @@ export class PondFish {
         burst: 0,
         dp: 0,
         wake: 0,
+        hunt: false, // 🦈 chưa săn
+        hx: 0,
+        hz: 0,
+        hyFrac: 0,
+        consumed: false, // 🦈 chưa bị đớp
+        flee: false, // 🏃 chưa chạy trốn
+        fx: 0,
+        fz: 0,
       })
     }
     const dc = this._deadCount() // load sẵn-chết: con i<deadCount khởi tạo chết hẳn (không replay animation)
     for (let i = 0; i < dc; i++) this.fish[i].dp = 1
+  }
+
+  // Điểm spawn CÁCH mọi claim ≥ tổng bán kính (rejection ≤24 lần; quá chật thì nhận điểm cuối) → không trùng vị trí.
+  private _spacedSpawn(claims: SpawnClaim[], myR: number): { x: number; z: number } {
+    let pt = this._spawnPoint()
+    for (let k = 0; k < 24 && this._tooClose(pt, claims, myR); k++) pt = this._spawnPoint()
+    return pt
+  }
+
+  // pt có quá sát claim nào (con đã spawn — CÙNG hoặc KHÁC đàn)? Ngưỡng = tổng bán kính (không chồng thân dù khác cỡ).
+  private _tooClose(pt: { x: number; z: number }, claims: SpawnClaim[], myR: number): boolean {
+    for (const c of claims) {
+      const dx = c.x - pt.x
+      const dz = c.z - pt.z
+      const min = c.r + myR
+      if (dx * dx + dz * dz < min * min) return true
+    }
+    return false
   }
 
   // 🐟 SỐ con CHẾT theo slider Đói. Vùng chết = level 0..6 (satiation ≤ 6/20). level 6 → 1/6 đàn, 5 → 2/6, …,
@@ -499,8 +560,13 @@ export class PondFish {
     const dc = this._deadCount() // số con chết (theo slider Đói): con i<dc = chết, còn lại sống
     const surfTop = (this.bounds ? this.bounds.surfaceY : this.depthY) - 0.03 // ngay dưới mép surface
     const calmSpeed = 0.35 + 0.65 * this.satiation // đói = bơi chậm (sống)
+    this._separate(d) // 🐟 đẩy tách cá chồng nhau (đụng → tách, không nhập) TRƯỚC khi _swim + compose frame này
     for (let i = 0; i < this.fish.length; i++) {
       const f = this.fish[i]
+      if (f.consumed) {
+        this.mesh.setMatrixAt(i, _mtx.makeScale(0, 0, 0)) // 🦈 bị đớp → scale 0 = biến mất khỏi hồ
+        continue
+      }
       const dying = i < dc // đích của con này: chết (true) hay sống (false)
       const prev = f.dp
       f.dp = Math.max(0, Math.min(1, f.dp + (dying ? d : -d) / DEATH_DUR)) // CÙNG tốc 2 chiều (xoay bụng đều)
@@ -554,7 +620,16 @@ export class PondFish {
   }
 
   // 🐟 1 con SỐNG: lái + dời theo tốc (đói→chậm ×calmSpeed, ×bứt tốc). Chết (p>0) KHÔNG gọi → đứng tại chỗ.
+  // ƯU TIÊN: 🏃 CHẠY TRỐN (prey né predator) > 🦈 SĂN (predator lao mồi) > wander thường. PondPredation set flee/hunt.
   private _swim(f: FishState, d: number, t: number, calmSpeed: number): void {
+    if (f.flee) {
+      this._fleeStep(f, d, t)
+      return
+    }
+    if (f.hunt) {
+      this._huntStep(f, d, t)
+      return
+    }
     this._steer(f, d, t)
     // tốc NHẤP NHÔ theo thời gian (lướt↔rướn) × bứt tốc (1 thường; ×4 phóng / ×0.08 khựng) × đói(chậm)
     const sp =
@@ -565,6 +640,61 @@ export class PondFish {
       calmSpeed
     f.x += Math.cos(f.heading) * sp * d
     f.z -= Math.sin(f.heading) * sp * d
+  }
+
+  // 🦈 SĂN: lao THẲNG tới mồi (heading seek dứt khoát + tốc ×HUNT_DART) + lặn/trồi tới đúng TẦNG mồi (yFrac lerp).
+  // Bản năng tự nhiên: phát hiện → tăng tốc → đớp. Bỏ qua wander/đói/bứt-tốc (predator dồn lực vào cú lao).
+  private _huntStep(f: FishState, d: number, t: number): void {
+    const desired = Math.atan2(f.z - f.hz, f.hx - f.x) // hướng tới (hx,hz) — dir=(cos h,−sin h)
+    f.heading += angleDelta(desired, f.heading) * Math.min(1, 7 * d) // quay nhanh, dứt khoát
+    f.yFrac += (f.hyFrac - f.yFrac) * Math.min(1, 3 * d) // lặn/trồi tới đúng tầng sâu của mồi
+    const sp = f.speed * this.speed * HUNT_DART * (0.9 + 0.2 * Math.sin(t * 9 + f.bob)) // dart + rung tốc
+    f.x += Math.cos(f.heading) * sp * d
+    f.z -= Math.sin(f.heading) * sp * d
+  }
+
+  // 🏃 CHẠY TRỐN: bơi NGƯỢC hướng predator (fx,fz) + panic (×FLEE_DART, giật mạnh hơn). Quay đầu GẤP để thoát.
+  private _fleeStep(f: FishState, d: number, t: number): void {
+    const desired = Math.atan2(f.fz - f.z, f.x - f.fx) // away khỏi (fx,fz) — đảo hướng so với _huntStep
+    f.heading += angleDelta(desired, f.heading) * Math.min(1, 8 * d) // quay bỏ chạy gấp hơn cả săn
+    const sp = f.speed * this.speed * FLEE_DART * (0.85 + 0.35 * Math.sin(t * 13 + f.bob)) // panic, giật mạnh
+    f.x += Math.cos(f.heading) * sp * d
+    f.z -= Math.sin(f.heading) * sp * d
+  }
+
+  // 🐟 TÁCH-THÂN (separation Reynolds): con lọt trong bán kính SEP của con khác → đẩy RA (đụng tách, KHÔNG nhập
+  // vào nhau). 2 PHA: tính lực đẩy mọi con (đọc vị trí hiện tại) → áp 1 lượt (không lệ thuộc thứ tự). Bỏ con
+  // chết/bị-ăn. O(n²), n≤64 = rẻ.
+  private _separate(d: number): void {
+    const r = this.fishLength * SEP_K
+    for (let i = 0; i < this.fish.length; i++) {
+      this._sepX[i] = 0
+      this._sepZ[i] = 0
+      const a = this.fish[i]
+      if (!a.consumed && a.dp <= 0) this._accumPush(i, a, r)
+    }
+    const spd = this.fishLength * SEP_SPD * d
+    for (let i = 0; i < this.fish.length; i++) {
+      this.fish[i].x += this._sepX[i] * spd
+      this.fish[i].z += this._sepZ[i] * spd
+    }
+  }
+
+  // Cộng dồn lực đẩy con i RA khỏi mọi con khác trong bán kính r (hướng chuẩn hoá × độ chồng 0..1). Tách giữ rule-50.
+  private _accumPush(i: number, a: FishState, r: number): void {
+    for (let j = 0; j < this.fish.length; j++) {
+      if (j === i) continue
+      const b = this.fish[j]
+      if (b.consumed || b.dp > 0) continue
+      const dx = a.x - b.x
+      const dz = a.z - b.z
+      const d2 = dx * dx + dz * dz
+      if (d2 >= r * r || d2 < 1e-8) continue
+      const dist = Math.sqrt(d2)
+      const push = (r - dist) / r // gần hơn = đẩy mạnh hơn (0 ở mép, →1 khi gần trùng tâm)
+      this._sepX[i] += (dx / dist) * push
+      this._sepZ[i] += (dz / dist) * push
+    }
   }
 
   /** Tốc độ bơi gốc (m/s). Range [0, 2]. Tần vẫy đuôi theo tốc. */
@@ -680,9 +810,79 @@ export class PondFish {
     return this.fish.length
   }
 
-  /** 🐟 BẬC của đàn (1..6) — predation Phase 3 dùng để xếp ai-ăn-ai (bậc nhỏ ăn bậc lớn hơn về số). */
+  /** 🐟 BẬC của đàn (1..6) — predation dùng để xếp ai-ăn-ai (bậc nhỏ-số ăn bậc lớn-số). */
   getTier(): number {
     return this.tier
+  }
+
+  // ── 🦈 PREDATION API (coordinator PondPredation gọi) — toạ độ LOCAL (mọi đàn CÙNG pond chung gốc mesh = tâm hồ) ──
+
+  /** Snapshot vị trí + heading cá (mảng MỚI, N≤64 rẻ). heading → coordinator tính MIỆNG (đầu cá) để đớp đúng
+   *  sát. alive = bơi thật (chưa chết đói dp≤0, chưa bị đớp). */
+  getFishView(): { x: number; z: number; yFrac: number; heading: number; alive: boolean }[] {
+    return this.fish.map((f) => ({
+      x: f.x,
+      z: f.z,
+      yFrac: f.yFrac,
+      heading: f.heading,
+      alive: !f.consumed && f.dp <= 0,
+    }))
+  }
+
+  /** Chiều dài cá gốc (m) — coordinator tính bán kính phát hiện/đớp theo cỡ predator. */
+  getFishLength(): number {
+    return this.fishLength
+  }
+
+  /** 🟡 Đàn CÓ ĐI SĂN không = slider Đói ở vùng VÀNG (level 6..10). No (>10) = không đói; đỏ (<6) = đang chết. */
+  canHunt(): boolean {
+    const lvl = Math.round(this.satiation * 20)
+    return lvl >= 6 && lvl <= 10
+  }
+
+  /** 🦈 Bật SĂN cá i → lao tới target LOCAL (x,z,yFrac). Coordinator gọi mỗi frame (đổi target = mồi gần nhất). */
+  setHunt(i: number, x: number, z: number, yFrac: number): void {
+    const f = this.fish[i]
+    if (!f || f.consumed) return
+    f.hunt = true
+    f.hx = x
+    f.hz = z
+    f.hyFrac = yFrac
+  }
+
+  /** Tắt SĂN cá i (không còn mồi trong tầm) → về wander thường. */
+  clearHunt(i: number): void {
+    const f = this.fish[i]
+    if (f) f.hunt = false
+  }
+
+  /** 🏃 Bật CHẠY TRỐN cá i → bơi NGƯỢC khỏi predator tại (x,z) LOCAL. Coordinator gọi mỗi frame (predator gần nhất). */
+  setFlee(i: number, x: number, z: number): void {
+    const f = this.fish[i]
+    if (!f || f.consumed) return
+    f.flee = true
+    f.fx = x
+    f.fz = z
+  }
+
+  /** Tắt CHẠY TRỐN cá i (không còn predator gần) → về hunt/wander. */
+  clearFlee(i: number): void {
+    const f = this.fish[i]
+    if (f) f.flee = false
+  }
+
+  /** 🦈 ĐỚP: cá i bị ăn → biến mất (ẩn instance frame kế, scale 0). Hồi lại = resetSchool. */
+  consume(i: number): void {
+    const f = this.fish[i]
+    if (f) f.consumed = true
+  }
+
+  /** 🦈 RESET đàn: HỒI mọi cá bị đớp (consumed→false) + tắt săn → cá hiện lại frame kế. Nút "Reset đàn" GUI. */
+  resetSchool(): void {
+    for (const f of this.fish) {
+      f.consumed = false
+      f.hunt = false
+    }
   }
 
   getTriangleCount(): number {
