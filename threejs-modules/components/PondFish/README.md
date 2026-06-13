@@ -38,15 +38,35 @@ fish.update(dt) // tiến vẫy đuôi + dời đàn (CPU rẻ)
 | `swayAmp` | number | 1 | Hành vi: biên độ lượn chữ S (×) — live `setSwayAmp` |
 | `wanderAmp` | number | 1 | Hành vi: độ lăng xăng / random dart (×) — live `setWanderAmp` |
 | `bobAmp` | number | 1 | Hành vi: nhấp nhô dọc (×±3cm) — live `setBobAmp` |
+| `burstRate` | number | 0 | Hành vi: tần suất BỨT TỐC ngẫu nhiên (0..1; 0 = tắt) — vài con phóng vọt rồi khựng — live `setBurstRate` |
+| `satiation` | number | 1 | 🆕 ĐỘ NO (slider "Đói", 0..1 ≈ level 0..20): >6/20 sống (càng đói bơi **chậm dần** ×1→×0.35); **≤6/20 = vùng CHẾT THEO TỈ LỆ** (level 6→1/6 đàn, 5→2/6, …, 0→cả đàn — `_deadCount`). Con `i<deadCount` animate chết per-con — live `setSatiation`. Lao nhanh bâu mồi = khi click-thả-mồi (rush ∝ 1−satiation, sau) |
+| `bounds` | PondBounds | — | 🆕 VÙNG BƠI = lòng hồ thật (polygon local + `surfaceY` + `floorYAt`) — live `setBounds`. Có → cá bám hình hồ, đụng vách quay lại, rải giữa mặt↔đáy theo gò; **bỏ qua** `areaRadius`/`depthY`/`swimDepth` |
+
+`PondBounds = { polygon: {x,z}[]; surfaceY: number; floorYAt: (x,z)=>number }` (đơn vị m, LOCAL so gốc mesh = tâm hồ).
 
 API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
 
-## Hành vi bơi (v1.2)
+## Hành vi bơi (v1.3)
 
 - **Lượn chữ S liên tục** (sine heading per-con — cá thật không bao giờ bơi thẳng, biên độ ×`swayAmp`) +
-  wander random-walk (đổi hướng bất chợt, ×`wanderAmp`) trong vùng `areaRadius`; sát biên (85%) tự lượn về tâm.
-- **Khối bơi ĐỨNG** (v1.2): cá rải mức `yFrac` per-con trong bề dày `swimDepth` (radius×swimDepth = trụ),
-  không còn dẹp 1 mặt. `depthY` = đỉnh khối.
+  wander random-walk (đổi hướng bất chợt, ×`wanderAmp`); **sát vách quay lại** (`bounds`: ngoài polygon hoặc
+  cách cạnh < ~thân cá → lái về centroid; không `bounds`: r > 85%`areaRadius` → lượn về tâm) ⇒ không xuyên bờ.
+- **Vùng bơi = LÒNG HỒ THẬT** (v1.3, `bounds`): ngang bám **polygon** hình hồ (không còn vòng tròn); đứng rải
+  `yFrac` per-con giữa **mặt nước** (`surfaceY`) và **đáy theo gò** (`floorYAt(x,z)` — đáy lồi lõm). Thiếu `bounds`
+  → fallback khối trụ `areaRadius`×`swimDepth`, đỉnh tại `depthY` (v1.2).
+- **Bứt tốc ngẫu nhiên** (v1.3, `burstRate`>0): mỗi con cooldown random (∝ 1/burstRate) → **phóng vọt** (×4 tốc,
+  ~0.55s) rồi **khựng** (×0.08, ~0.35s); mỗi con roll độc lập nên chỉ vài con bứt cùng lúc. 0 = tắt (bơi đều).
+- **Đói / chết THEO TỈ LỆ** (v1.4, `satiation`): no → bơi nhanh-thường; càng đói (còn sống) → bơi-thường **CHẬM
+  dần** (×`(0.35+0.65·satiation)`, lờ đờ). Lao nhanh bâu mồi = **chỉ lúc click-thả-mồi** (rush ∝ `1−satiation`, sau).
+  **Chết theo SỐ con** (`_deadCount` từ slider, level ≤6): con `i<deadCount` chết, mỗi con `dp` ramp RIÊNG. Đuôi LIMP
+  per-con qua `uniformArray` `aLife` (×biên độ vẫy, đọc theo `instanceIndex`). 1 path blend (không giật/teleport):
+  - **CHẾT** (`DEATH_DUR`≈7s, đứng tại chỗ): `[0,0.3]` **GIẬT TRƯỚC** (`_throe` ~2-3 cú CHẬM, nhẹ ≈½ cũ) → `[0.3,1]`
+    **xoay bụng lên chậm** (roll 0→π) → **nửa xoay (p≈0.6) mới NỔI** thẳng chậm lên dưới mặt (buoyancy, G≪9.8).
+    Nổi hẳn: đung đưa XZ±3cm + đong đưa Y±3cm + lắc bụng (pha ×con).
+  - **HỒI SINH** (cùng `DEATH_DUR` → **xoay bụng ĐÚNG TỐC xoay khi chết**, công thức `flip` dùng chung 2 chiều):
+    `[p 1→0.8]` **giật ~2-3 cú NHANH dần** (ease-in, nhịp giãn, tắt sạch — không rung sau) → xoay bụng xuống.
+    **KHÔNG rớt Y**: `rise=1` giữ đúng XYZ chết ở mặt suốt hồi sinh; xong (`dp`→0) đặt `wake=1` rồi ease 0 qua
+    `WAKE_DUR`≈2.6s = `_swim` **bơi xuống từ từ** (không rơi thẳng).
 - **Tốc nhấp nhô** theo thời gian (lướt ↔ rướn) — phá đều tăm tắp giữa các con.
 - Mỗi con: tốc/cỡ/pha vẫy/tần lượn/mức-đứng/bộ màu riêng (deterministic — LCG seed cố định, tái lập).
 - Nhấp nhô Y ±3cm ×`bobAmp`. Heading → `rotation.y` (forward local = +X).
