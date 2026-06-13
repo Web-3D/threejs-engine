@@ -74,10 +74,10 @@ water.emitRipple(worldX, worldZ, 0.4)
 water.setRippleAmp(0) // 🧊 TẮT toàn bộ gợn — mặt băng phẳng lì (đóng băng); 1 = bật lại
 ```
 
-- **Pool 10 vòng** (`RIPPLE_SLOTS`): mỗi `emitRipple` ghi 1 slot **xoay vòng** (uniform `vec4` = tâm X, Z, t0, strength) → bắn liên tục thì vòng cũ nhất bị đè. **0 CPU/frame** trừ lúc bắn (chỉ ghi 1 uniform); shader đọc `uTime` so với `t0`.
+- **Pool 50 vòng** (`RIPPLE_SLOTS`): mỗi `emitRipple` ghi 1 slot **xoay vòng** (uniform `vec4` = tâm X, Z, t0, strength) → bắn liên tục thì vòng cũ nhất bị đè. **0 CPU/frame** trừ lúc bắn (chỉ ghi 1 uniform); shader đọc `uTime` so với `t0`.
 - Mỗi vòng: `front = d − age·SPEED` (loang ra 1.3 m/s) × dải sóng quanh front (smoothstep WIDTH) × tắt theo tuổi (LIFE ~2.6s) × `cos(front·WAVES)` (lăn tăn) → nghiêng normal **theo hướng ra tâm** (×`RIPPLE_AMP`). Tự tắt sau ~2.6s.
 - **Biên độ theo vật chạm:** API chỉ phơi 1 núm `strength`; caller quy đổi (mưa ~0.3 · cá trồi ~theo size · vật to/nhanh → cao). `setRippleAmp` = núm tổng (×) — dùng để TẮT khi băng. Hiển thị qua fresnel + đốm nắng (độc lập distortion) + offset gương (×distortion).
-- **Cost:** 10 slot × (~1 `cos` + 2 `smoothstep`)/fragment — nhẹ so với reflector pass; build 1 lần ở constructor (`emitRipple` chỉ set uniform → KHÔNG recompile shader).
+- **Cost:** 50 slot × (~1 `cos` + 1 `sqrt` + 2 `smoothstep`)/fragment **mặt nước** (O(N) theo slot) — vẫn nhẹ so với reflector RTT pass (re-render cả scene). Build 1 lần ở constructor (`emitRipple` chỉ set uniform → KHÔNG recompile). Mưa-rất-dày kiểu xối → dùng lớp ripple-texture O(1) (hybrid), không gánh thêm slot.
 
 ## Performance
 
