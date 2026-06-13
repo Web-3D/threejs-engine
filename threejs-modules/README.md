@@ -118,6 +118,7 @@
 | `BeamEffect`         | Line beam A→B — laser, lightning, connection, rope            | beam, laser, lightning, line          | 🗄 idle |
 | `BillboardSprite`    | Sprite luôn xoay mặt về camera — icon, marker, glow           | sprite, billboard, camera-facing, marker | 🗄 idle |
 | `ShockwaveRing`      | Ring mở rộng theo thời gian — shockwave, impact, explosion    | shockwave, ring, impact, explosion    | 🗄 idle |
+| `Precipitation`      | Mưa/tuyết field — hạt Points trụ bám camera, rơi vertex-shader 1 draw | weather, rain, snow, points, field | ✅ active |
 
 ---
 

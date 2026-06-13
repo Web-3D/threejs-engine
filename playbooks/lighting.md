@@ -45,9 +45,11 @@ thấp thì mặt ngang gần như chỉ sống bằng fill: `hemi=(0.06+0.29·d
 
 - `2026-06-12` — Phase A: `fill` vào SunOpts + ENV_PRESETS (☀️🌇☁️🌙) + khay 🌅 utilTray + dock ☀ sync theo preset; chữa nền tổng tối (tier A)
 - `2026-06-13` — Sky bám preset: SkyGradient 1.1 `setOvercast` (trục u ám — xám + nuốt đĩa nắng, nền cho thời tiết) + `setDayOverride` (sun TẮT = trời đêm); `SunOpts.overcast` + slider ☁ khay 🌅
+- `2026-06-13` — Thời tiết Phase A: module `effects/Precipitation` (mưa/tuyết field-paradigm) + tab 🧪 Lab ▸ 🌧️ Thời tiết (preview xoay-ngắm). CHƯA ráp scene (Phase B). Playbook MẢNG riêng tạo ở Phase B khi ráp thật.
 
 ## 6. Liên hệ
 
-- **Modules:** `archplan/scene/scene.ts` · `archplan/interaction/sunGizmo.ts`
-- **Phase B (kế):** đèn fixture parametric (LampConfig[] site-kit — trụ sân vườn/tường/dây) = prefab mesh + emissive + real light KHÔNG shadow, cap ~8–16, xa rớt emissive-only; >16 mới cần `TiledLightsNode` (examples/jsm, verified 0.174). IES: `src/lights/webgpu/IESSpotLight.js` ✓
+- **Modules:** `archplan/scene/scene.ts` · `archplan/interaction/sunGizmo.ts` · `threejs-modules/effects/Precipitation` (mưa/tuyết)
+- **Phase B-đèn (kế):** đèn fixture parametric (LampConfig[] site-kit — trụ sân vườn/tường/dây) = prefab mesh + emissive + real light KHÔNG shadow, cap ~8–16, xa rớt emissive-only; >16 mới cần `TiledLightsNode` (examples/jsm, verified 0.174). IES: `src/lights/webgpu/IESSpotLight.js` ✓
+- **Phase B-thời-tiết:** ráp Precipitation vào archplan (1 instance/scene) + preset 🌧️❄️⛈️ liên động `SunOpts.overcast` (bão = overcast 1 + mưa dày + gió mạnh + fill thấp). Phase C: streak mưa (Line), tuyết đọng mái, mưa gợn hồ, sét.
 - **Memory:** [[per-key-material-cache-tradeoff]] (vỏ đèn ăn material per-key)

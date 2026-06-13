@@ -1,0 +1,27 @@
+{
+  "name": "Precipitation",
+  "category": "effects",
+  "version": "1.0.0",
+  "description": "Mưa/tuyết procedural field — N hạt Points trong trụ bám camera, rơi + wrap modulo hoàn toàn vertex shader (0 CPU/frame), 1 draw. Mode rain (nhanh/nhỏ/nghiêng gió) vs snow (chậm/to/drift sin)",
+  "tags": ["weather", "rain", "snow", "particles", "points", "tsl", "field", "vertex-animation", "webgpu", "thời-tiết"],
+  "complexity": "low",
+  "performance-cost": "low",
+  "performance": "Points 1 draw cho cả màn. Rơi/wrap/gió/drift = vertex shader (0 CPU ngoài 1 uniform time/frame). Chi phí thật = overdraw transparent → cap count (mưa 6k / tuyết 2.5k mặc định, trần 30k). depthWrite false. Mọi prop trừ count = uniform LIVE (0 recompile); count = rebuild geometry. frustumCulled false (trụ bám camera).",
+  "three-version": ">=0.174",
+  "status": "unit-pass",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "mode",    "type": "'rain' | 'snow'", "default": "'rain'", "description": "Kiểu hạt. Constructor-only — đổi = tạo instance mới (đặt defaults)" },
+    { "name": "count",   "type": "number", "default": "rain 6000 / snow 2500", "description": "Số hạt (trần 30000). Constructor — đổi = rebuild geometry" },
+    { "name": "radius",  "type": "number", "default": "18",  "description": "Bán kính trụ phủ quanh camera (m) — live setRadius" },
+    { "name": "height",  "type": "number", "default": "22",  "description": "Chiều cao cột rơi (m) — live setHeight" },
+    { "name": "groundY", "type": "number", "default": "0",   "description": "Cao độ đáy world (m) — live setGroundY" },
+    { "name": "speed",   "type": "number", "default": "rain 17 / snow 2.4", "description": "Tốc độ rơi (m/s) — live setSpeed" },
+    { "name": "size",    "type": "number", "default": "rain 1.6 / snow 4",  "description": "Cỡ hạt (px, sizeAttenuation) — live setSize" },
+    { "name": "color",   "type": "ColorRepresentation", "default": "rain 0xaeb8c4 / snow 0xfafcff", "description": "Màu hạt — live setColor" },
+    { "name": "opacity", "type": "number", "default": "rain 0.35 / snow 0.8", "description": "Độ mờ [0..1] — live setOpacity" },
+    { "name": "wind",    "type": "[number, number]", "default": "rain [2.4,0] / snow [0.6,0]", "description": "Gió ngang (m) lệch XZ theo quãng rơi — live setWind" },
+    { "name": "drift",   "type": "number", "default": "rain 0 / snow 0.5", "description": "Biên độ drift sin ngang (m), bông tuyết lắc — live setDrift" }
+  ],
+  "usage": "const w = new Precipitation({ mode: 'rain', count: 6000 }); scene.add(w.getObject()); /* mỗi frame */ w.update(dt)"
+}
