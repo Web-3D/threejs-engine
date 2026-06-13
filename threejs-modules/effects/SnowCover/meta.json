@@ -1,0 +1,21 @@
+{
+  "name": "SnowCover",
+  "category": "effects",
+  "version": "1.0.0",
+  "description": "Tuyết đọng trên nền — 1 mặt phẳng overlay trắng, opacity theo noise + mức tích lũy (accum 0→1) tuyết mọc từ mảng loang ra phủ kín. KHÔNG sửa material nào (overlay độc lập), 1 draw",
+  "tags": ["weather", "snow", "accumulation", "overlay", "tsl", "ground", "thời-tiết", "webgpu"],
+  "complexity": "low",
+  "performance-cost": "low",
+  "performance": "1 mesh 1 draw. opacity = noise×accum trong vertex/fragment (0 CPU/frame ngoài 1 uniform accum khi đổi). transparent + depthWrite false, đặt 2cm trên nền né z-fight. accum = uniform LIVE (0 rebuild). Overlay phẳng KHÔNG đụng material per-key (an toàn building-kit).",
+  "three-version": ">=0.174",
+  "status": "unit-pass",
+  "dependencies": ["three"],
+  "props": [
+    { "name": "size",       "type": "number", "default": "80",       "description": "Cạnh mặt phủ (m) — nên ≥ lô" },
+    { "name": "groundY",    "type": "number", "default": "0",        "description": "Cao độ nền world (m) — tuyết đặt cao hơn 2cm" },
+    { "name": "color",      "type": "ColorRepresentation", "default": "0xfdfdff", "description": "Màu tuyết — live setColor" },
+    { "name": "patchScale", "type": "number", "default": "0.06",     "description": "Tần số mảng loang (1/m) — thấp = mảng to" },
+    { "name": "maxOpacity", "type": "number", "default": "0.92",     "description": "Opacity tối đa khi phủ kín [0..1]" }
+  ],
+  "usage": "const s = new SnowCover({ size: 80 }); scene.add(s.getMesh()); /* ramp */ s.setAccum(v)"
+}
