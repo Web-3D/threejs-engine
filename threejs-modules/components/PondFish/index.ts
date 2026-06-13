@@ -37,7 +37,7 @@ import { MeshStandardNodeMaterial } from 'three/webgpu'
 type TSLNode = ShaderNodeObject<Node>
 
 export interface PondFishOptions {
-  /** Số cá trong đàn (cap 40 — budget). Đổi count = tạo instance mới. Default: 8 */
+  /** Số cá trong đàn (cap 64 — budget; bậc thấp đông). Đổi count = tạo instance mới. Default: 8 */
   count?: number
   /** Bán kính vùng bơi (m, quanh gốc mesh). Default: 1.6 */
   areaRadius?: number
@@ -74,6 +74,8 @@ export interface PondFishOptions {
   /** 🐟 VÙNG BƠI = lòng hồ THẬT (polygon local + mặt nước + đáy theo gò). Có → cá bám hình hồ, đụng vách
    *  quay lại, rải giữa mặt↔đáy; thiếu → vòng tròn areaRadius + swimDepth (như cũ). */
   bounds?: PondBounds
+  /** 🐟 BẬC (tier 1..6) — Phase 1 chỉ LƯU + getTier() (predation lớn-ăn-bé = Phase 3). Default: 4 */
+  tier?: number
 }
 
 // 🐟 VÙNG BƠI = lòng hồ thật (thay vòng tròn): polygon LOCAL (m, so gốc mesh = tâm hồ tại MẶT nền) + cao độ
@@ -101,7 +103,7 @@ interface FishState {
   wake: number // 🐟 0..1 — vừa hồi sinh: 1=còn bám mặt (đúng XYZ chết) → ease 0 = bơi xuống dần (không rớt thẳng)
 }
 
-const MAX_FISH = 40
+const MAX_FISH = 64 // cap số cá/đàn (bậc thấp đông — cá nhỏ/tép). _lifeArr/_uLife cấp theo hằng này.
 const SEG = 8 // cạnh quanh thân
 const TAIL_AMP = 0.09 // biên độ vẫy chót đuôi (đơn vị thân) — fade về 0 khi chết (đuôi duỗi mềm, hết giật)
 // Profile thân: [x dọc trục (đầu +X), bán kính] — đơn vị thân dài 1 (đầu 0.5 → cuống đuôi -0.38).
@@ -261,6 +263,7 @@ export class PondFish {
   private bobAmp = 1 // 🐟 nhấp nhô dọc (× ±3cm)
   private burstRate = 0 // 🐟 tần suất bứt tốc ngẫu nhiên (0..1; 0 = tắt)
   private satiation = 1 // 🐟 độ no (slider Đói). >6/20 = sống; 0..6/20 = vùng CHẾT theo tỉ lệ (xem _deadCount)
+  private tier = 4 // 🐟 BẬC (1..6) — Phase 1 chỉ lưu (getTier); predation lớn-ăn-bé dùng ở Phase 3
   // 🐟 đuôi LIMP per-con khi chết: uniformArray 1=sống vẫy / 0=chết duỗi, index theo instanceIndex (auto re-pack
   // mỗi RENDER). _lifeArr = mảng raw (mutate trực tiếp); _uLife = node đọc trong material.
   private readonly _lifeArr: number[] = new Array<number>(MAX_FISH).fill(1)
@@ -319,6 +322,7 @@ export class PondFish {
     this.bobAmp = Math.max(0, opts.bobAmp ?? 1)
     this.burstRate = Math.max(0, Math.min(1, opts.burstRate ?? 0))
     this.satiation = Math.max(0, Math.min(1, opts.satiation ?? 1))
+    this.tier = Math.round(opts.tier ?? 4) // 🐟 bậc — lưu cho Phase 3 (predation)
     if (opts.bounds) this.setBounds(opts.bounds) // 🐟 vùng bơi = lòng hồ thật (polygon+mặt+đáy)
   }
 
@@ -674,6 +678,11 @@ export class PondFish {
 
   getCount(): number {
     return this.fish.length
+  }
+
+  /** 🐟 BẬC của đàn (1..6) — predation Phase 3 dùng để xếp ai-ăn-ai (bậc nhỏ ăn bậc lớn hơn về số). */
+  getTier(): number {
+    return this.tier
   }
 
   getTriangleCount(): number {

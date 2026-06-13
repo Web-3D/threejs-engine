@@ -25,7 +25,8 @@ fish.update(dt) // tiến vẫy đuôi + dời đàn (CPU rẻ)
 
 | Option | Type | Default | Description |
 | ------ | ---- | ------- | ----------- |
-| `count` | number | 8 | Số cá (cap 40). **Constructor-only** — đổi = tạo instance mới |
+| `count` | number | 8 | Số cá (cap 64). **Constructor-only** — đổi = tạo instance mới |
+| `tier` | number | 4 | 🆕 BẬC chuỗi thức ăn (1..6; pond dùng 4-6). Phase 1 chỉ LƯU + `getTier()` — predation lớn-ăn-bé (bậc nhỏ ăn bậc lớn-số) = Phase 3. Nhiều đàn/pond = `WaterConfig.fishSchools[]` (archplan) |
 | `areaRadius` | number | 1.6 | Bán kính vùng bơi NGANG (m) — live `setAreaRadius` |
 | `swimDepth` | number | 0 | Bề DÀY bơi ĐỨNG (m) — cá rải khối trụ radius×swimDepth (0 = đĩa phẳng) — live `setSwimDepth` |
 | `depthY` | number | -0.25 | Cao độ ĐỈNH khối bơi so gốc mesh (m, âm = chìm) — live `setDepthY` |
@@ -75,7 +76,7 @@ API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
 
 ## Performance
 
-- 8 con ≈ **1k tri, 1 draw**; cap 40 con ≈ 5.2k tri.
+- 8 con ≈ **1k tri, 1 draw**; cap 64 con ≈ 8.4k tri.
 - Vẫy = vertex shader (0 CPU); CPU chỉ ≤40 matrix compose/frame.
 - `castShadow = false` (cá chìm dưới nước — bóng xuyên mặt nước nhìn sai, lại rẻ).
 - Vertex-bend giữ instanceMatrix đúng bài KI-003 (`positionLocal.add`, không replace positionNode).
