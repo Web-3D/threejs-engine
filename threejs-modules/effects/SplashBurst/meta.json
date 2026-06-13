@@ -1,0 +1,13 @@
+{
+  "name": "SplashBurst",
+  "category": "effects",
+  "version": "1.0.0",
+  "description": "Vương miện + giọt nước tung tóe (GPU sprite burst) tại điểm va-chạm rời trên mặt nước — pool ghi birth per-particle lúc emit, shader bay đạn-đạo, 0 CPU/frame",
+  "status": "unit-pass",
+  "dependencies": ["three"],
+  "tags": ["particles", "splash", "water", "gpu", "points", "tsl", "node-material", "ballistic", "vfx", "impact"],
+  "complexity": "medium",
+  "three-version": ">=0.174",
+  "three-version-verified": "0.174.0",
+  "exports": ["SplashBurst", "SplashBurstOptions"]
+}

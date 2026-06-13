@@ -7,6 +7,7 @@ modules:
   - threejs-modules/effects/Precipitation
   - threejs-modules/effects/SnowCover
   - threejs-modules/components/WaterSurface
+  - threejs-modules/effects/SplashBurst
   - archplan/src/archplan/ArchPlanLab.ts
 issues: []
 updated: 2026-06-13
@@ -34,9 +35,11 @@ Mỗi tab có toggle Bật + **bão riêng**: ⛈️ bão mưa (mode `storm`, tr
 `rainStorm`/`snowStorm` → `_effectiveMode()` (5 mode). Bật loại này tự tắt loại kia (mode đơn).
 
 **Gợn mặt hồ (mưa chạm nước)** = 2 lớp HYBRID trên `WaterSurface` (xem README — công thức): **(a) ambient
-rain-cell O(1)** (lớp dày phủ khắp khi mưa — `setRainWet`=heavy; 6 slider tab Mưa ▸ ☔ Mưa nền) + **(b) pool
-va-chạm rời** (`emitImpact`, nổ khi cá/vật chạm; phản xạ tường ping-pong cho hồ chữ nhật; 4 slider ▸ 🌊 Va chạm
-+ toggle 🧪 Demo). Lab đẩy tham số mỗi rebuild: `_applyRainWet`/`_applyRainParams`/`_applyRippleParams`.
+rain-cell O(1)** (lớp dày phủ khắp khi mưa — `setRainWet`=heavy; **9 slider** tab Mưa ▸ ☔ Mưa nền: scope min/max
+RANDOM · lamda · size · số-bước-sóng · wave-spd · mật-độ · 👑 trần sáng · cỡ đốm glint-tia-sao) + **(b) pool va-chạm
+rời** (`emitImpact`, nổ khi cá/vật chạm; phản xạ tường ping-pong + 💦 splash-core + giọt thật `effects/SplashBurst`;
+**4 slider + Demo ở sub-tab Water** drawer phải — qua hook `ctx.buildWaterFx`, KHÔNG ở khay 🌅). Lab đẩy mỗi rebuild:
+`_applyRainWet`/`_applyRainParams`/`_applyRippleParams`.
 
 ## 3. Tầng & toạ độ
 
@@ -61,10 +64,11 @@ suốt nhờ depthWrite=false. Storm dùng cột cao 30m + radius 32 + gió 6.5.
 - `2026-06-13` — ↩️ **GỠ wetness**: thử module `effects/WetGround` (overlay tối phản chiếu env) + ráp archplan, nhưng hiện tượng nền ướt CHƯA đúng → NgQuan yêu cầu xóa, làm lại từng bước. Module + 6 móc ráp ArchPlanLab gỡ hết; giữ Precipitation + SnowCover. Wetness dựng lại từ đầu (tier A)
 - `2026-06-13` — **code3 khay Thời tiết + 🌨️ bão tuyết**: GUI từ hàng-nút → nested-tab Mưa/Tuyết (ui/Tabs, `_wxTabs`); bão gộp từng tab — thêm mode `blizzard` (trắng xóa `BLIZZARD_SKY`, KHÔNG sét, KHÁC ⛈️ bão mưa). Model `base`+cờ `rainStorm`/`snowStorm` → `_effectiveMode` (5 mode). Persist mở rộng + migrate format cũ (tier A)
 - `2026-06-13` — **🌊 Gợn mặt hồ (mưa-gợn-hồ XONG)** — hybrid 2 lớp trên `WaterSurface` (chi tiết README): **ambient rain-cell O(1)** (ô lưới hash-phase, sample 2×2, phủ khắp mật-độ-vô-hạn chi-phí-cố-định; `setRainWet`=heavy; 6 slider mm scope/lamda/size/số-bước-sóng/wave-spd/mật-độ) + **pool va-chạm rời** (`emitImpact`, event-driven — bỏ rain-spam + Tần suất; `RIPPLE_SLOTS` 50→16). **🏓 Phản xạ tường** = method of images (4 vòng-ảnh gương qua 4 tường rect, ảnh xa→tới-trễ=quãng-dội) + toggle 🧪 Demo va chạm. Kế: cá P3 gọi `emitImpact(reflect=rect)` (tier A)
+- `2026-06-13` — **💦👑✦ Splash + glint tia-sao + dời UI**: 💦 splash-core (dome nẩy tâm trước khi tỏa, `setSplashAmp`) + module **`effects/SplashBurst`** (vương miện/giọt nước GPU sprite bay đạn-đạo, 0 CPU/frame, ráp Demo va-chạm) · 🎲 scope RANDOM per-giọt + 📉 falloff biên-độ-nhỏ-dần-ra-xa (`setRainScopeRange` 100–300mm thay `setRainMaxR`) · 👑 glint TIA SAO loé ngẫu nhiên tâm giọt (`atan2`+`cos(ang·rays)` xoay ngẫu nhiên, `setRainGlint`/`setRainGlintSize`) · ☀️ gộp Sun vào khay 🌅 (XÓA panel SunGizmo trái-dưới, giữ quả sun 3D; +màu nắng inline) · 🌊 va-chạm rời → **sub-tab Water** drawer phải (hook `ctx.buildWaterFx`) · xóa experiment Thời tiết khỏi 🧪 Lab (weather-lab/preview) (tier A)
 
 ## 6. Liên hệ
 
-- **Modules:** `threejs-modules/effects/Precipitation` (README — props/perf/paradigm) · `components/WaterSurface` (README — gợn va-chạm pool + ambient rain-cell + phản xạ tường, công thức)
+- **Modules:** `threejs-modules/effects/Precipitation` (README — props/perf/paradigm) · `components/WaterSurface` (README — gợn va-chạm pool + ambient rain-cell + splash-core + 👑 glint tia-sao + phản xạ tường) · `effects/SplashBurst` (README — vương miện/giọt nước GPU sprite đạn-đạo, đi kèm `emitImpact`)
 - **Liên động:** [[lighting]] playbook — ⛈️ Bão áp `STORM_SKY` / 🌨️ bão tuyết áp `BLIZZARD_SKY` qua `_applyEnvPreset`
 - **Đã xong C1/C2:** streak mưa (LineSegments) · sét flash (AmbientLight) · tuyết đọng NỀN ([[SnowCover]]) · **🌊 mưa gợn mặt hồ** (hybrid ambient O(1) + pool va-chạm + 🏓 phản xạ tường, WaterSurface)
 - **Phase C còn (đụng vùng nhạy):** nền ướt mưa (GỠ — NgQuan làm lại từng bước) · wetness tường/mái per-material (material per-key = Factory) · tuyết bám MÁI (geometry mái) · cỏ/cây nghiêng gió bão (GrassBlades wind) · **cá P3** trồi/xác gọi `emitImpact` (chờ Factory đóng PondFish)

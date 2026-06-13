@@ -23,6 +23,7 @@ import * as THREE from 'three'
 import type Node from 'three/src/nodes/core/Node.js'
 import type { ShaderNodeObject } from 'three/tsl'
 import {
+  atan2,
   cameraPosition,
   cos,
   dot,
@@ -88,15 +89,29 @@ const RIPPLE_WAVES = 15 // sóng/m (k = 2π/λ → λ ≈ 0.42m) — gợn lăn 
 const RIPPLE_AMP = 2.2 // gain biên độ (= uRippleAmp): cao = gợn rõ trên fresnel/glint/gương; 0 = tắt (băng)
 const RIPPLE_REFLECT = 0.6 // 🏓 strength vòng-ảnh phản xạ tường (method of images) so vòng gốc — mất năng lượng
 
+// 💦 LÕI "BẮN TÂM" (splash-core): ngay tâm va-chạm/giọt mưa, TRƯỚC khi vòng tỏa ra — dome lồi nẩy lên rồi tắt
+// rất nhanh (giả "nước bắn lên khi giọt đâm xuống"). Vẫn normal-only (mặt nước phẳng) → bắt sáng = đọc ra "nẩy".
+// Hạt nước dựng-đứng + bụi tung-tóe THẬT cần particle/sprite (không dựng được trong normal) — xem README.
+const SPLASH_AMP = 1 // gain lõi splash, chung cho pool + rain-cell (ride theo gain mỗi lớp → amp=0/băng thì tắt theo)
+const SPLASH_CORE = 1.6 // bán kính lõi = ×WIDTH (pool, m) / ×uRainWidth (rain, đơn vị ô) — cỡ dome quanh tâm
+const SPLASH_FRAC_POOL = 0.22 // lõi tắt sau life×này (pool): nẩy nhanh rồi nhường cho vòng lan
+const SPLASH_FRAC_RAIN = 0.18 // lõi tắt sau cycle này (rain-cell): giọt "đâm xuống" nẩy rồi tỏa
+
 // ☔ AMBIENT rain-ripple thủ tục (hybrid với pool analytic): chia world-XZ thành ô lưới, mỗi ô tự phát vòng
 // theo fract(time+hash(ô)) — lệch pha, vô số giọt, sample 2×2 ô/fragment → O(1) (4 ô) phủ KHẮP, mật độ vô hạn
 // (≠ pool 50 vòng rời cho cá/vật). Cường độ = uRainWet (0=khô). Vòng NHỎ/lăn-tăn (giọt mưa nền).
 const RAIN_CELL = 0.34 // m — cạnh ô lưới (nhỏ = mưa dày hơn)
-const RAIN_MAXR = 0.42 // bán kính max vòng (đơn vị ô) — vòng loang trong 1 ô
+const RAIN_MAXR = 0.42 // 🎲 bán kính vòng MAX (đơn vị ô) — cận TRÊN dải random per-giọt
+const RAIN_MAXR_MIN = 0.21 // 🎲 bán kính vòng MIN (đơn vị ô) — cận DƯỚI dải random per-giọt
 const RAIN_WIDTH = 0.12 // bề rộng dải sóng (đơn vị ô)
 const RAIN_WAVES = 22 // k = số lăn-tăn trong dải (đơn vị ô)
 const RAIN_RATE = 1.3 // chu kỳ giọt/giây mỗi ô (fract speed)
 const RAIN_AMP = 1.4 // gain nghiêng normal (× uRainWet)
+const RAIN_GLINT = 3 // 👑 gain đốm sáng "vương miện" tâm giọt (× uRainWet × ngẫu-nhiên per-giọt) — loé lúc giọt đâm (trần cao)
+const RAIN_GLINT_SCALE = 0.2 // 👑 cỡ đốm glint = × bề rộng dải (uRainWidth) — nhỏ = chấm gọn, 1 = quầng bằng cả dải
+const GLINT_RAYS = 6 // 👑 số cánh "tia sao" của đốm glint (thay hình tròn) — nhiều cánh góc cạnh
+const GLINT_RAY_SHARP = 2.5 // độ nhọn cánh (cao = tia mảnh/gắt hơn)
+const GLINT_CORE = 0.08 // nền tối thiểu giữa các cánh (0 = tối hẳn giữa tia, cao = tròn lại)
 
 export interface WaterSurfaceOptions {
   /** Bề ngang hồ (m, X). Default: 12 */
@@ -180,9 +195,13 @@ export class WaterSurface {
   private readonly uRainCell = uniform(RAIN_CELL)
   private readonly uRainAmp = uniform(RAIN_AMP)
   private readonly uRainRate = uniform(RAIN_RATE)
-  private readonly uRainMaxR = uniform(RAIN_MAXR)
+  private readonly uRainMaxRMin = uniform(RAIN_MAXR_MIN) // 🎲 cận DƯỚI cỡ vòng random per-giọt (đơn vị ô)
+  private readonly uRainMaxRMax = uniform(RAIN_MAXR) // 🎲 cận TRÊN cỡ vòng random per-giọt (đơn vị ô)
   private readonly uRainWaves = uniform(RAIN_WAVES)
   private readonly uRainWidth = uniform(RAIN_WIDTH) // ☔ bề rộng dải sóng (đơn vị ô) — lab tính từ số-bước-sóng×λ
+  private readonly uSplashAmp = uniform(SPLASH_AMP) // 💦 gain lõi "bắn tâm" (chung pool + rain-cell)
+  private readonly uRainGlint = uniform(RAIN_GLINT) // 👑 gain đốm sáng vương miện tâm giọt mưa (ngẫu nhiên)
+  private readonly uRainGlintScale = uniform(RAIN_GLINT_SCALE) // 👑 cỡ đốm glint (× uRainWidth)
   private _rippleHead = 0
   // |uViewDirY| → 1 khi CAMERA nhìn gần thẳng đứng (top-down): virtualCamera reflector suy biến → ảnh ĐƠ.
   // Fade gương theo HƯỚNG-NHÌN-CAMERA (uniform, mọi fragment chung) — KHÔNG theo eye-tới-fragment (pool lệch
@@ -370,6 +389,13 @@ export class WaterSurface {
     this.uRippleWaves.value = (Math.PI * 2) / lam
   }
 
+  /** 💦 Gain "bắn tâm" — lõi splash nẩy lên ngay tâm va-chạm/giọt mưa TRƯỚC khi vòng tỏa ra [0–3]. 0 = tắt.
+   *  Chung cho cả pool va-chạm lẫn rain-cell (ride theo gain mỗi lớp → amp=0/băng thì splash cũng tắt). Default 1. */
+  setSplashAmp(v: number): void {
+    if (this.isDisposed) return
+    this.uSplashAmp.value = Math.max(0, Math.min(3, v))
+  }
+
   /** ☔ Cường độ ambient rain-ripple [0–1] (phủ KHẮP mặt nước khi mưa; 0 = khô). Caller set = độ nặng mưa. */
   setRainWet(v: number): void {
     if (this.isDisposed) return
@@ -394,10 +420,12 @@ export class WaterSurface {
     this.uRainRate.value = Math.max(0.2, Math.min(5, v))
   }
 
-  /** ☔ SCOPE — bán kính loang max (đơn vị ô) [0.02–0.6]. Lab tính từ scope-mm/cell (chặn theo cỡ ô). */
-  setRainMaxR(v: number): void {
+  /** ☔ SCOPE — dải bán kính loang [min,max] (đơn vị ô) [0.02–0.6]. Mỗi giọt RANDOM cỡ vòng trong dải này (không
+   *  cố định). Lab tính từ scope-mm/cell (clamp ≤0.6 = chặn theo cỡ ô — scope mm to cần density thấp/ô lớn). */
+  setRainScopeRange(minR: number, maxR: number): void {
     if (this.isDisposed) return
-    this.uRainMaxR.value = Math.max(0.02, Math.min(0.6, v))
+    this.uRainMaxRMin.value = Math.max(0.02, Math.min(0.6, minR))
+    this.uRainMaxRMax.value = Math.max(0.02, Math.min(0.6, maxR))
   }
 
   /** ☔ k = 2π/λ (đơn vị ô) — tần số lăn-tăn [1–2500]. Lab tính từ λ-mm. Cao = bước sóng ngắn/dày (λ tới ~1mm). */
@@ -410,6 +438,18 @@ export class WaterSurface {
   setRainWidth(v: number): void {
     if (this.isDisposed) return
     this.uRainWidth.value = Math.max(0.005, Math.min(3, v))
+  }
+
+  /** 👑 Gain đốm sáng "vương miện" tâm giọt mưa [0–8] — loé sáng NGẪU NHIÊN lúc giọt đâm. 0 = tắt. Default 3 (trần cao). */
+  setRainGlint(v: number): void {
+    if (this.isDisposed) return
+    this.uRainGlint.value = Math.max(0, Math.min(8, v))
+  }
+
+  /** 👑 Cỡ đốm glint (× bề rộng dải sóng) [0.02–1] — nhỏ = chấm gọn, 1 = quầng to bằng dải. Default 0.2. */
+  setRainGlintSize(v: number): void {
+    if (this.isDisposed) return
+    this.uRainGlintScale.value = Math.max(0.02, Math.min(1, v))
   }
 
   /** Đổi mặt nước sang polygon tự do (m, LOCAL). <3 đỉnh → về chữ nhật. LIVE: chỉ dựng lại geometry
@@ -486,6 +526,13 @@ export class WaterSurface {
     return normalize(vec3(fx, float(1), fz)) as TSLNode
   }
 
+  // 💦 Slope lõi "bắn tâm": dome lồi (=0 ở tâm & rìa coreR, đỉnh ở giữa = độ nghiêng mặt dome) × pulse (tắt nhanh
+  // theo tuổi/cycle) × uSplashAmp. Caller nhân thêm dir RA NGOÀI → mặt lồi bắt sáng = đọc ra "nẩy lên" trước khi tỏa.
+  private _splashSlope(d: TSLNode, coreR: TSLNode, pulse: TSLNode): TSLNode {
+    const inside = smoothstep(float(0), coreR, d)
+    return inside.mul(oneMinus(inside)).mul(pulse).mul(this.uSplashAmp)
+  }
+
   // 🌊 Tổng nghiêng normal từ N vòng gợn va chạm (build-time unroll, slot rỗng strength=0 → cộng 0). Mỗi vòng:
   // front = d − age·SPEED (loang ra); dải sóng quanh front (smoothstep WIDTH) × tắt theo tuổi (smoothstep LIFE) ×
   // cos(front·WAVES) → lăn tăn; nghiêng theo HƯỚNG ra tâm. uRippleAmp = núm tổng (0 = băng → tắt gợn).
@@ -508,6 +555,13 @@ export class WaterSurface {
       const dir = delta.div(max(d, float(1e-3)))
       sx = sx.add(dir.x.mul(slope))
       sz = sz.add(dir.y.mul(slope))
+      // 💦 Lõi "bắn tâm": dome lồi mạnh ở age≈0, tắt sau life×SPLASH_FRAC_POOL (trước khi vòng tách ra lan đi)
+      const splashPulse = oneMinus(
+        smoothstep(float(0), this.uRippleLife.mul(float(SPLASH_FRAC_POOL)), age)
+      ).mul(step(float(0), age))
+      const core = u.w.mul(this._splashSlope(d, float(RIPPLE_WIDTH * SPLASH_CORE), splashPulse))
+      sx = sx.add(dir.x.mul(core))
+      sz = sz.add(dir.y.mul(core))
     }
     return { x: sx.mul(this.uRippleAmp), z: sz.mul(this.uRippleAmp) }
   }
@@ -536,17 +590,71 @@ export class WaterSurface {
         )
         const delta = p.sub(center)
         const d = length(delta)
-        const cycle = fract(this.uTime.mul(this.uRainRate).add(hash(sd))) // 0..1 đời 1 giọt
-        const front = d.sub(cycle.mul(this.uRainMaxR))
+        const phase = this.uTime.mul(this.uRainRate).add(hash(sd))
+        const cycle = fract(phase) // 0..1 đời 1 giọt
+        // 🎲 cỡ vòng NGẪU NHIÊN per-giọt trong [min,max] (đổi mỗi chu kỳ) — vòng to/nhỏ khác nhau, không cố định
+        const maxR = mix(
+          this.uRainMaxRMin,
+          this.uRainMaxRMax,
+          hash(sd.add(floor(phase).mul(float(5.31))))
+        )
+        const front = d.sub(cycle.mul(maxR))
         const env = oneMinus(smoothstep(float(0), this.uRainWidth, front.abs()))
-        const slope = env.mul(oneMinus(cycle)).mul(cos(front.mul(this.uRainWaves))) // giọt mới mạnh, tắt khi cycle→1
+        const radial = oneMinus(smoothstep(float(0), maxR, d)) // 📉 size sóng nhỏ DẦN khi ra xa tâm giọt (d→maxR→0)
+        const slope = env
+          .mul(oneMinus(cycle))
+          .mul(radial)
+          .mul(cos(front.mul(this.uRainWaves))) // giọt mới mạnh + nhỏ dần ra xa, tắt khi cycle→1
         const dir = delta.div(max(d, float(1e-3)))
         sx = sx.add(dir.x.mul(slope))
         sz = sz.add(dir.y.mul(slope))
+        // 💦 Lõi "bắn tâm" giọt mưa: dome lồi mạnh ở cycle≈0 (giọt vừa đâm), tắt sau SPLASH_FRAC_RAIN rồi tỏa
+        const splashPulse = oneMinus(smoothstep(float(0), float(SPLASH_FRAC_RAIN), cycle))
+        const core = this._splashSlope(d, this.uRainWidth.mul(float(SPLASH_CORE)), splashPulse)
+        sx = sx.add(dir.x.mul(core))
+        sz = sz.add(dir.y.mul(core))
       }
     }
     const g = this.uRainWet.mul(this.uRainAmp)
     return { x: sx.mul(g), z: sz.mul(g) }
+  }
+
+  // 👑 Đốm sáng "vương miện" NGẪU NHIÊN tại TÂM mỗi giọt mưa rain-cell: loé lúc giọt vừa đâm (cycle≈0), cường độ
+  // ngẫu-nhiên per-giọt (pow(hash,3) → đa số nhẹ, thi thoảng loé to = lấp lánh). Trả scalar → _buildColor cộng × sunColor.
+  private _rainGlint(): TSLNode {
+    const p = positionWorld.xz.div(this.uRainCell)
+    const baseCell = floor(p.sub(float(0.5)))
+    let g: TSLNode = float(0)
+    for (let ox = 0; ox < 2; ox++) {
+      for (let oz = 0; oz < 2; oz++) {
+        const cell = baseCell.add(vec2(float(ox), float(oz)))
+        const sd = cell.x.add(cell.y.mul(float(113))).add(float(1e5))
+        const center = cell.add(vec2(float(0.5), float(0.5))).add(
+          vec2(
+            hash(sd.add(float(31)))
+              .sub(float(0.5))
+              .mul(float(0.7)),
+            hash(sd.add(float(67)))
+              .sub(float(0.5))
+              .mul(float(0.7))
+          )
+        )
+        const delta = p.sub(center)
+        const d = length(delta)
+        const phase = this.uTime.mul(this.uRainRate).add(hash(sd))
+        const rnd = pow(hash(sd.add(floor(phase).mul(float(7.13)))), float(3)) // ngẫu nhiên per-giọt (đổi mỗi chu kỳ)
+        // ✦ Hình TIA SAO (thay hình tròn): góc quanh tâm (+ xoay ngẫu nhiên per-ô) → GLINT_RAYS cánh nhọn
+        const ang = atan2(delta.y, delta.x).add(hash(sd.add(float(17))).mul(float(6.2831)))
+        const ray = pow(cos(ang.mul(float(GLINT_RAYS * 0.5))).abs(), float(GLINT_RAY_SHARP))
+        const star = mix(ray, float(1), float(GLINT_CORE)) // giữ chút nền giữa cánh (không tối hẳn)
+        const disc = oneMinus(
+          smoothstep(float(0), this.uRainWidth.mul(this.uRainGlintScale), d)
+        ).mul(star) // đốm TIA-SAO quanh tâm
+        const flash = oneMinus(smoothstep(float(0), float(SPLASH_FRAC_RAIN), fract(phase))) // loé lúc giọt vừa đâm
+        g = g.add(disc.mul(flash).mul(rnd))
+      }
+    }
+    return g.mul(this.uRainWet).mul(this.uRainGlint)
   }
 
   private _buildColor(sm: ReturnType<typeof reflector>): TSLNode {
@@ -583,7 +691,8 @@ export class WaterSurface {
     // Đốm nắng theo mặt trời
     const refl = reflect(this.uSunDir.negate(), n)
     const spec = pow(max(dot(eye, refl), float(0)), this.uShininess).mul(this.uSunColor)
-    return mix(refr, sm.rgb, fres).add(spec) as TSLNode
+    const crown = this._rainGlint().mul(this.uSunColor) // 👑 loé "vương miện" tâm giọt mưa (ngẫu nhiên per-giọt)
+    return mix(refr, sm.rgb, fres).add(spec).add(crown) as TSLNode
   }
 }
 

@@ -120,6 +120,7 @@
 | `ShockwaveRing`      | Ring mở rộng theo thời gian — shockwave, impact, explosion    | shockwave, ring, impact, explosion    | 🗄 idle |
 | `Precipitation`      | Mưa/tuyết field — rain LineSegments streak / snow Points, trụ bám camera, 1 draw | weather, rain, snow, points, field | ✅ active |
 | `SnowCover`          | Tuyết đọng nền — overlay phẳng, opacity noise×accum mọc dần phủ kín, 1 draw | weather, snow, accumulation, overlay | ✅ active |
+| `SplashBurst`        | Vương miện + giọt nước tung tóe tại va-chạm rời — pool birth-per-particle, bay đạn-đạo, 0 CPU/frame | splash, water, particles, ballistic, impact | ✅ active |
 
 ---
 

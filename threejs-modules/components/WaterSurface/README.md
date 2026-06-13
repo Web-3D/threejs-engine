@@ -74,7 +74,10 @@ water.emitRipple(worldX, worldZ, 0.4)
 // 🏓 va chạm tại điểm LOCAL (so tâm hồ) — reflect=true (hồ CHỮ NHẬT) → thêm 4 vòng dội tường (ping-pong)
 water.emitImpact(localX, localZ, 0.7, true)
 water.setRippleAmp(0) // 🧊 TẮT toàn bộ gợn — mặt băng phẳng lì (đóng băng); 1 = bật lại
+water.setSplashAmp(1) // 💦 "bắn tâm": dome lồi nẩy NGAY TÂM trước khi vòng tỏa (chung pool + rain); 0 = tắt
 ```
+
+> **💦 Splash-core (bắn tâm):** ngay tâm va-chạm/giọt, TRƯỚC khi vòng tỏa, dome lồi nẩy lên rồi tắt nhanh (`setSplashAmp`, chung pool + rain-cell). Vẫn normal-only → "đọc ra nẩy" bằng ánh sáng. **Hạt nước dựng đứng + bụi tung tóe THẬT** không dựng được trong normal → dùng module bạn **`effects/SplashBurst`** (GPU sprite, gọi `burst(x,y,z,s)` kèm `emitImpact`).
 
 > **🏓 Phản xạ tường (method of images):** `emitImpact(localX, localZ, s, reflect)` bắn vòng gốc + (nếu `reflect`) **4 vòng-ẢNH** = gương của điểm qua 4 tường (`±width/2`, `±depth/2`), strength ×`RIPPLE_REFLECT` (0.6). Ảnh xa hơn → wavefront tới TRỄ = **đúng quãng dội** (tự khớp, không cần timer). Chỉ chuẩn cho **hồ chữ nhật**; tròn/ellipse/free → `reflect=false`.
 
@@ -92,13 +95,16 @@ water.setRainWet(0.7) // ☔ cường độ mưa nền [0..1] — caller set = �
 // 6 tham số HÌNH-DẠNG live (đơn vị Ô — caller quy từ mm/density): cell · amp · rate · maxR(scope) · waves(k=2π/λ) · width(dải)
 water.setRainCell(0.34) // cạnh ô (m) — nhỏ = mưa dày hơn
 water.setRainAmp(1.4); water.setRainRate(1.3)
-water.setRainMaxR(0.42) // bán kính loang (ô) — bị chặn ≤0.6 (vòng không vượt cỡ ô)
+water.setRainScopeRange(0.21, 0.42) // 🎲 dải bán kính [min,max] (ô) — mỗi giọt RANDOM cỡ vòng trong dải; chặn ≤0.6
 water.setRainWaves(22) // k = 2π/λ (ô); water.setRainWidth(0.12) // bề rộng dải = số-bước-sóng × λ
+water.setRainGlint(3); water.setRainGlintSize(0.2) // 👑 đốm "vương miện" TIA SAO loé ngẫu nhiên tâm giọt: trần sáng + cỡ(×dải)
 ```
 
 - Mỗi ô: `cycle = fract(uTime·RAIN_RATE + hash(ô))` (đời 1 giọt) → `front = d − cycle·RAIN_MAXR` (loang trong ô) × dải × `(1−cycle)` (giọt mới mạnh) × `cos` → nghiêng normal ra tâm. ×`uRainWet`.
-- **Hybrid:** ambient lo nền-mưa-dày (rẻ) + pool 50 vòng lo va-chạm-rời (cá/vật). Mật độ mưa nền = `RAIN_CELL` (ô nhỏ = dày hơn), KHÔNG đụng `RIPPLE_SLOTS`.
-- **Cost:** 4 ô × (~2 `hash` + `sqrt` + `cos` + `smoothstep`)/fragment — rẻ hơn pool, **không tăng theo độ dày**.
+- **Hybrid:** ambient lo nền-mưa-dày (rẻ) + pool 16 vòng lo va-chạm-rời (cá/vật). Mật độ mưa nền = `RAIN_CELL` (ô nhỏ = dày hơn), KHÔNG đụng `RIPPLE_SLOTS`.
+- **🎲 Scope random + 📉 falloff:** mỗi giọt `maxR = mix(min,max, hash(drop))` (cỡ vòng to/nhỏ khác nhau mỗi chu kỳ, không cố định) — `setRainScopeRange`; biên độ × `oneMinus(smoothstep(0,maxR,d))` → **nhỏ dần khi lan ra xa tâm**. + 💦 splash-core (dome nẩy tâm, `setSplashAmp`).
+- **👑 Đốm vương miện (`_rainGlint`):** loé sáng cộng `× sunColor` tại TÂM mỗi giọt lúc vừa đâm, cường độ NGẪU NHIÊN per-giọt (`pow(hash,3)` → đa số nhẹ, thi thoảng loé to = lấp lánh), **hình TIA SAO** (`atan2` + `cos(ang·rays)`, xoay ngẫu nhiên per-ô) thay hình tròn. `setRainGlint`(trần sáng [0–8]) + `setRainGlintSize`(cỡ ×dải [0.02–1]).
+- **Cost:** 4 ô × 2 vòng-lặp (normal + glint) × (~`hash`/`sqrt`/`cos`/`atan2`/`smoothstep`)/fragment — rẻ hơn pool, **không tăng theo độ dày**.
 
 ## Performance
 
