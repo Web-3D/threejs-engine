@@ -400,10 +400,10 @@ export class WaterSurface {
     this.uRainMaxR.value = Math.max(0.02, Math.min(0.6, v))
   }
 
-  /** ☔ k = 2π/λ (đơn vị ô) — tần số lăn-tăn [1–600]. Lab tính từ λ-mm. Cao = bước sóng ngắn/dày. */
+  /** ☔ k = 2π/λ (đơn vị ô) — tần số lăn-tăn [1–2500]. Lab tính từ λ-mm. Cao = bước sóng ngắn/dày (λ tới ~1mm). */
   setRainWaves(v: number): void {
     if (this.isDisposed) return
-    this.uRainWaves.value = Math.max(1, Math.min(600, v))
+    this.uRainWaves.value = Math.max(1, Math.min(2500, v))
   }
 
   /** ☔ Bề rộng dải sóng (đơn vị ô) [0.005–3] = số-bước-sóng × λ. Lab tính. Rộng = nhiều gợn trong vòng. */
