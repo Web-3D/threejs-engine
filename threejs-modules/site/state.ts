@@ -390,6 +390,9 @@ export interface FishSchool {
   colorPatch: number // 🎨 màu mảng koi (hex)
   colorSpot: number // 🎨 màu đốm (hex)
   patchAmount: number // 🎨 tỉ lệ mảng 0..1 — LIVE setPatchAmount
+  swayAmp: number // 🐟 hành vi: biên độ lượn chữ S (×, 0..2) — LIVE setSwayAmp
+  wanderAmp: number // 🐟 hành vi: độ lăng xăng (×, 0..2) — LIVE setWanderAmp
+  bobAmp: number // 🐟 hành vi: nhấp nhô dọc (×, 0..3) — LIVE setBobAmp
 }
 
 // 🌉 1 CẦU bắc ngang (bridge) — instance ĐẶT TỰ DO trong lô (thường bắc ngang hồ, nhưng đặt đâu cũng được).
@@ -613,6 +616,9 @@ export function makeFishSchool(): FishSchool {
     colorPatch: 0xe36112, // cam koi
     colorSpot: 0x141312, // đốm đậm
     patchAmount: 0.5,
+    swayAmp: 1, // 🐟 hành vi mặc định = gốc
+    wanderAmp: 1,
+    bobAmp: 1,
   }
 }
 

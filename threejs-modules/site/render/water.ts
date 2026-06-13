@@ -128,6 +128,9 @@ export function buildFishSchool(fs: FishSchool, site: SiteState, ctx: SiteRender
     patchColor: fs.colorPatch,
     spotColor: fs.colorSpot,
     patchAmount: fs.patchAmount,
+    swayAmp: fs.swayAmp, // 🐟 hành vi
+    wanderAmp: fs.wanderAmp,
+    bobAmp: fs.bobAmp,
   })
   fish.getMesh().position.set(fs.offsetX / 1000, site.groundThick / 1000, fs.offsetZ / 1000)
   ctx.group.add(fish.getMesh())

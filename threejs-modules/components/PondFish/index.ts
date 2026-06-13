@@ -59,6 +59,12 @@ export interface PondFishOptions {
   spotColor?: number
   /** 🎨 Tỉ lệ MẢNG màu 0..1 (cao = nhiều mảng cam, thấp = nhiều nền). Default: 0.5 */
   patchAmount?: number
+  /** 🐟 Biên độ LƯỢN chữ S (×) — 0 = bơi thẳng, cao = uốn mạnh. Default: 1 */
+  swayAmp?: number
+  /** 🐟 Độ LĂNG XĂNG (× random dart) — thấp = điềm tĩnh, cao = đổi hướng bất chợt. Default: 1 */
+  wanderAmp?: number
+  /** 🐟 NHẤP NHÔ dọc (× biên ±3cm) — 0 = phẳng, cao = trồi sụt. Default: 1 */
+  bobAmp?: number
 }
 
 // Trạng thái wander 1 con (CPU) — toạ độ LOCAL quanh gốc mesh.
@@ -188,6 +194,9 @@ export class PondFish {
   private fishLength: number
   private speed: number
   private swimDepth: number // m — bề dày bơi đứng (0 = đĩa phẳng như cũ)
+  private swayAmp = 1 // 🐟 biên độ lượn chữ S (×) — hành vi, dùng trong _steer
+  private wanderAmp = 1 // 🐟 độ lăng xăng (× random dart)
+  private bobAmp = 1 // 🐟 nhấp nhô dọc (× ±3cm)
   private readonly rng: () => number
 
   // Uniform nodes — update qua .value (shader-tsl), KHÔNG material.uniforms.
@@ -210,7 +219,7 @@ export class PondFish {
     this.swimDepth = Math.max(0, opts.swimDepth ?? 0)
     this.uSeed.value = opts.colorSeed ?? 0
     this.uWidth.value = Math.max(0.2, opts.bodyWidth ?? 1)
-    this._initColors(opts) // 🎨 3 màu + tỉ lệ mảng — tách giữ complexity ≤10
+    this._initTuning(opts) // 🎨 3 màu + tỉ lệ + 🐟 hành vi (sway/wander/bob) — tách giữ constructor ≤10
     this.setSpeed(this.speed)
     this.rng = makeRng(1)
 
@@ -223,12 +232,15 @@ export class PondFish {
     this.update(0) // đặt matrix lần đầu (kẻo frame 0 dồn về gốc)
   }
 
-  // 🎨 Init 3 màu + tỉ lệ mảng từ opts (thiếu → giữ default uniform). Tách giữ constructor complexity ≤10.
-  private _initColors(opts: PondFishOptions): void {
+  // 🎨 Init 3 màu + tỉ lệ mảng + 🐟 hành vi (sway/wander/bob) từ opts. Tách giữ constructor complexity ≤10.
+  private _initTuning(opts: PondFishOptions): void {
     if (opts.baseColor !== undefined) this.uColBase.value.setHex(opts.baseColor)
     if (opts.patchColor !== undefined) this.uColPatch.value.setHex(opts.patchColor)
     if (opts.spotColor !== undefined) this.uColSpot.value.setHex(opts.spotColor)
     this.uPatchAmt.value = Math.max(0, Math.min(1, opts.patchAmount ?? 0.5))
+    this.swayAmp = Math.max(0, opts.swayAmp ?? 1)
+    this.wanderAmp = Math.max(0, opts.wanderAmp ?? 1)
+    this.bobAmp = Math.max(0, opts.bobAmp ?? 1)
   }
 
   // ── Material: vẫy đuôi (vertex) + màu koi (fragment) — tất cả per-instance từ hash(instanceIndex) ──
@@ -308,9 +320,9 @@ export class PondFish {
       f.heading += angleDelta(desired, f.heading) * Math.min(1, 2.5 * dt)
       return
     }
-    f.wander += (this.rng() - 0.5) * 7 * dt
+    f.wander += (this.rng() - 0.5) * 7 * this.wanderAmp * dt // 🐟 lăng xăng (random dart)
     f.wander = Math.max(-1.5, Math.min(1.5, f.wander))
-    f.heading += (f.wander + Math.sin(t * f.swayF + f.bob) * 0.9) * dt
+    f.heading += (f.wander + Math.sin(t * f.swayF + f.bob) * 0.9 * this.swayAmp) * dt // 🐟 lượn chữ S
   }
 
   /** Gọi mỗi frame với dt giây — tiến thời gian vẫy + dời đàn (CPU rẻ, ≤40 matrix compose). */
@@ -326,8 +338,9 @@ export class PondFish {
       const sp = f.speed * (0.8 + 0.25 * Math.sin(t * 0.6 + f.bob * 2)) * this.speed
       f.x += Math.cos(f.heading) * sp * d
       f.z -= Math.sin(f.heading) * sp * d
-      // Y = đỉnh khối (depthY) − mức đứng per-con trong bề dày swimDepth + nhấp nhô ±3cm.
-      const yLevel = this.depthY - f.yFrac * this.swimDepth + Math.sin(t * 0.7 + f.bob) * 0.03
+      // Y = đỉnh khối (depthY) − mức đứng per-con trong bề dày swimDepth + nhấp nhô ±3cm × bobAmp.
+      const yLevel =
+        this.depthY - f.yFrac * this.swimDepth + Math.sin(t * 0.7 + f.bob) * 0.03 * this.bobAmp
       _pos.set(f.x, yLevel, f.z)
       _quat.setFromAxisAngle(_UP, f.heading)
       _scl.setScalar(this.fishLength * f.size)
@@ -391,6 +404,22 @@ export class PondFish {
   setPatchAmount(v: number): void {
     if (this.isDisposed || Number.isNaN(v)) return
     this.uPatchAmt.value = Math.max(0, Math.min(1, v))
+  }
+
+  /** 🐟 Hành vi (×, ≥0): biên độ lượn chữ S / lăng xăng / nhấp nhô dọc — field CPU, áp frame kế. */
+  setSwayAmp(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.swayAmp = Math.max(0, v)
+  }
+
+  setWanderAmp(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.wanderAmp = Math.max(0, v)
+  }
+
+  setBobAmp(v: number): void {
+    if (this.isDisposed || Number.isNaN(v)) return
+    this.bobAmp = Math.max(0, v)
   }
 
   getMesh(): THREE.InstancedMesh {

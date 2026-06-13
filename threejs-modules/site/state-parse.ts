@@ -507,6 +507,9 @@ function parseFishSchool(raw: unknown): FishSchool {
     colorPatch: parseColor(r.colorPatch, d.colorPatch),
     colorSpot: parseColor(r.colorSpot, d.colorSpot),
     patchAmount: clamp(num(r.patchAmount, d.patchAmount), 0, 1),
+    swayAmp: clamp(num(r.swayAmp, d.swayAmp), 0, 2), // 🐟 hành vi — save cũ → 1
+    wanderAmp: clamp(num(r.wanderAmp, d.wanderAmp), 0, 2),
+    bobAmp: clamp(num(r.bobAmp, d.bobAmp), 0, 3),
   }
 }
 
