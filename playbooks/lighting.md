@@ -46,6 +46,7 @@ thấp thì mặt ngang gần như chỉ sống bằng fill: `hemi=(0.06+0.29·d
 - `2026-06-12` — Phase A: `fill` vào SunOpts + ENV_PRESETS (☀️🌇☁️🌙) + khay 🌅 utilTray + dock ☀ sync theo preset; chữa nền tổng tối (tier A)
 - `2026-06-13` — Sky bám preset: SkyGradient 1.1 `setOvercast` (trục u ám — xám + nuốt đĩa nắng, nền cho thời tiết) + `setDayOverride` (sun TẮT = trời đêm); `SunOpts.overcast` + slider ☁ khay 🌅
 - `2026-06-13` — Thời tiết Phase A: module `effects/Precipitation` (mưa/tuyết field-paradigm) + tab 🧪 Lab ▸ 🌧️ Thời tiết (preview xoay-ngắm). CHƯA ráp scene (Phase B). Playbook MẢNG riêng tạo ở Phase B khi ráp thật.
+- `2026-06-13` — Khay 🌅 redesign + 🌫️ Sương mù: layout DỌC 2 mục (Bầu trời / Thời tiết), slider CÓ NHÃN (Sáng nền/Mây mù/Sương mù · Nặng hạt/Cỡ hạt), dedupe icon (weather "tắt" ☀️→🚫). Thêm `SunOpts.fog` → `scene.fogNode` (density-fog, màu lerp xanh↔xám theo overcast + tối theo đêm); preset gắn fog (Trưa 0/Chiều .15/Âm u .35/Đêm .2/Bão .5)
 
 ## 6. Liên hệ
 
