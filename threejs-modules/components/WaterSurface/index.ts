@@ -175,6 +175,12 @@ export class WaterSurface {
   private readonly uRippleLife = uniform(RIPPLE_LIFE)
   private readonly uRippleWaves = uniform(RIPPLE_WAVES)
   private readonly uRainWet = uniform(0) // ☔ cường độ ambient rain-ripple [0..1] (0 = khô)
+  // ☔ 5 tham số LIVE lớp ambient (slider khay Mưa ▸ rain-cell): cell(mật độ) · amp(size) · rate(nhịp) · maxR(cỡ vòng) · waves(bước sóng).
+  private readonly uRainCell = uniform(RAIN_CELL)
+  private readonly uRainAmp = uniform(RAIN_AMP)
+  private readonly uRainRate = uniform(RAIN_RATE)
+  private readonly uRainMaxR = uniform(RAIN_MAXR)
+  private readonly uRainWaves = uniform(RAIN_WAVES)
   private _rippleHead = 0
   // |uViewDirY| → 1 khi CAMERA nhìn gần thẳng đứng (top-down): virtualCamera reflector suy biến → ảnh ĐƠ.
   // Fade gương theo HƯỚNG-NHÌN-CAMERA (uniform, mọi fragment chung) — KHÔNG theo eye-tới-fragment (pool lệch
@@ -350,6 +356,36 @@ export class WaterSurface {
     this.uRainWet.value = Math.max(0, Math.min(1, v))
   }
 
+  /** ☔ Cạnh ô lưới ambient (m) [0.08–1.2] — NHỎ = mưa nền dày hơn. Default 0.34. */
+  setRainCell(v: number): void {
+    if (this.isDisposed) return
+    this.uRainCell.value = Math.max(0.08, Math.min(1.2, v))
+  }
+
+  /** ☔ SIZE/gain biên độ mưa nền [0–4]. Default 1.4. */
+  setRainAmp(v: number): void {
+    if (this.isDisposed) return
+    this.uRainAmp.value = Math.max(0, Math.min(4, v))
+  }
+
+  /** ☔ Nhịp giọt (chu kỳ/giây mỗi ô) [0.2–5]. Cao = giọt rơi nhanh hơn. Default 1.3. */
+  setRainRate(v: number): void {
+    if (this.isDisposed) return
+    this.uRainRate.value = Math.max(0.2, Math.min(5, v))
+  }
+
+  /** ☔ Cỡ vòng mưa nền (bán kính max, đơn vị ô) [0.1–0.5]. Default 0.42. */
+  setRainMaxR(v: number): void {
+    if (this.isDisposed) return
+    this.uRainMaxR.value = Math.max(0.1, Math.min(0.5, v))
+  }
+
+  /** ☔ Bước sóng lăn-tăn mưa nền (k, đơn vị ô) [6–40]. Cao = lăn tăn dày. Default 22. */
+  setRainWaves(v: number): void {
+    if (this.isDisposed) return
+    this.uRainWaves.value = Math.max(6, Math.min(40, v))
+  }
+
   /** Đổi mặt nước sang polygon tự do (m, LOCAL). <3 đỉnh → về chữ nhật. LIVE: chỉ dựng lại geometry
    *  (giữ nguyên material + reflector → KHÔNG tốn RTT mới). Mesh giữ rotation/position cũ. */
   setShape(points: { x: number; z: number }[]): void {
@@ -454,7 +490,7 @@ export class WaterSurface {
   // tâm jitter (không xếp lưới). Sample 2×2 ô quanh fragment (base=floor(p−0.5)) → vòng cắt biên ô vẫn liền.
   // Phủ KHẮP mặt nước, mật độ vô hạn, chi phí CỐ ĐỊNH 4 ô (≠ pool 50 vòng rời). Cường độ × uRainWet (0=khô).
   private _rainNormal(): { x: TSLNode; z: TSLNode } {
-    const p = positionWorld.xz.div(float(RAIN_CELL)) // toạ độ theo đơn vị ô
+    const p = positionWorld.xz.div(this.uRainCell) // toạ độ theo đơn vị ô (cell live)
     const base = floor(p.sub(float(0.5)))
     let sx: TSLNode = float(0)
     let sz: TSLNode = float(0)
@@ -474,16 +510,16 @@ export class WaterSurface {
         )
         const delta = p.sub(center)
         const d = length(delta)
-        const cycle = fract(this.uTime.mul(float(RAIN_RATE)).add(hash(sd))) // 0..1 đời 1 giọt
-        const front = d.sub(cycle.mul(float(RAIN_MAXR)))
+        const cycle = fract(this.uTime.mul(this.uRainRate).add(hash(sd))) // 0..1 đời 1 giọt
+        const front = d.sub(cycle.mul(this.uRainMaxR))
         const env = oneMinus(smoothstep(float(0), float(RAIN_WIDTH), front.abs()))
-        const slope = env.mul(oneMinus(cycle)).mul(cos(front.mul(float(RAIN_WAVES)))) // giọt mới mạnh, tắt khi cycle→1
+        const slope = env.mul(oneMinus(cycle)).mul(cos(front.mul(this.uRainWaves))) // giọt mới mạnh, tắt khi cycle→1
         const dir = delta.div(max(d, float(1e-3)))
         sx = sx.add(dir.x.mul(slope))
         sz = sz.add(dir.y.mul(slope))
       }
     }
-    const g = this.uRainWet.mul(float(RAIN_AMP))
+    const g = this.uRainWet.mul(this.uRainAmp)
     return { x: sx.mul(g), z: sz.mul(g) }
   }
 
