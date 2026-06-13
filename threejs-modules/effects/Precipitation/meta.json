@@ -1,12 +1,12 @@
 {
   "name": "Precipitation",
   "category": "effects",
-  "version": "1.1.0",
-  "description": "Mưa/tuyết procedural field — N hạt Points trong trụ bám camera, rơi + wrap modulo hoàn toàn vertex shader (0 CPU/frame), 1 draw. Mode rain (nhanh/nhỏ/nghiêng gió) vs snow (chậm/to/drift sin). Cỡ hạt theo khoảng cách camera (gần=max, xa=min)",
+  "version": "1.2.0",
+  "description": "Mưa/tuyết procedural field — trụ bám camera, rơi + wrap modulo hoàn toàn vertex shader (0 CPU/frame), 1 draw. Mode rain = LineSegments (vệt streak dọc quỹ đạo) / snow = Points (chấm bông, cỡ theo distance camera). Drift sin (tuyết), nghiêng gió (mưa)",
   "tags": ["weather", "rain", "snow", "particles", "points", "tsl", "field", "vertex-animation", "webgpu", "thời-tiết"],
   "complexity": "low",
   "performance-cost": "low",
-  "performance": "Points 1 draw cho cả màn. Rơi/wrap/gió/drift = vertex shader (0 CPU ngoài 1 uniform time/frame). Chi phí thật = overdraw transparent → cap count (mưa 6k / tuyết 2.5k mặc định, trần 30k). depthWrite false. Mọi prop trừ count = uniform LIVE (0 recompile); count = rebuild geometry. frustumCulled false (trụ bám camera).",
+  "performance": "1 draw cho cả màn (rain LineSegments 2 vertex/hạt · snow Points 1 vertex/hạt). Rơi/wrap/gió/drift/vệt = vertex shader (0 CPU ngoài 1 uniform time/frame). Chi phí thật = overdraw transparent → cap count (mưa 6k / tuyết 2.5k mặc định, trần 30k). depthWrite false. Mọi prop trừ count/mode = uniform LIVE (0 recompile); count/mode = rebuild. frustumCulled false (trụ bám camera).",
   "three-version": ">=0.174",
   "status": "unit-pass",
   "dependencies": ["three"],
@@ -21,7 +21,8 @@
     { "name": "color",   "type": "ColorRepresentation", "default": "rain 0xaeb8c4 / snow 0xfafcff", "description": "Màu hạt — live setColor" },
     { "name": "opacity", "type": "number", "default": "rain 0.35 / snow 0.8", "description": "Độ mờ [0..1] — live setOpacity" },
     { "name": "wind",    "type": "[number, number]", "default": "rain [2.4,0] / snow [0.6,0]", "description": "Gió ngang (m) lệch XZ theo quãng rơi — live setWind" },
-    { "name": "drift",   "type": "number", "default": "rain 0 / snow 0.5", "description": "Biên độ drift sin ngang (m), bông tuyết lắc — live setDrift" }
+    { "name": "drift",   "type": "number", "default": "rain 0 / snow 0.5", "description": "Biên độ drift sin ngang (m), bông tuyết lắc — live setDrift" },
+    { "name": "streak",  "type": "number", "default": "0.9", "description": "Độ dài vệt mưa (m, CHỈ rain = LineSegments) — live setStreak" }
   ],
   "usage": "const w = new Precipitation({ mode: 'rain', count: 6000 }); scene.add(w.getObject()); /* mỗi frame */ w.update(dt)"
 }

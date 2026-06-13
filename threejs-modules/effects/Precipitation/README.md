@@ -1,6 +1,6 @@
 # Precipitation
 
-Mưa / tuyết **procedural field** — N hạt `Points` rải trong **trụ bám camera**, rơi + wrap modulo chạy **hoàn toàn vertex shader** (0 CPU/frame ngoài 1 uniform `time`), **1 draw** cho cả màn.
+Mưa / tuyết **procedural field** rải trong **trụ bám camera**, rơi + wrap modulo chạy **hoàn toàn vertex shader** (0 CPU/frame ngoài 1 uniform `time`), **1 draw** cho cả màn. Mode `rain` = **LineSegments** (vệt streak dọc quỹ đạo) · `snow` = **Points** (chấm bông).
 
 ## Usage
 
@@ -36,8 +36,9 @@ rain.setOpacity(0.5)
 | `opacity` | number | 0.35 / 0.8 | Độ mờ — live |
 | `wind` | [number, number] | [2.4,0] / [0.6,0] | Gió ngang (m) lệch theo quãng rơi — live |
 | `drift` | number | 0 / 0.5 | Biên độ drift sin ngang (m) — live |
+| `streak` | number | 0.9 | Độ dài vệt mưa (m, **chỉ `rain`**) — live |
 
-Setter live: `setSpeed/setRadius/setHeight/setGroundY/setSize/setOpacity/setColor/setWind/setDrift`.
+Setter live: `setSpeed/setRadius/setHeight/setGroundY/setSize/setOpacity/setColor/setWind/setDrift/setStreak`.
 
 ## Dispose
 
@@ -55,5 +56,5 @@ rain.dispose() // geometry + material + gỡ points khỏi parent
 ## Ghi chú thiết kế
 
 - **KHÔNG reuse `effects/GPUParticleSystem`**: đó là **emitter-paradigm** (hạt phát từ 1 điểm theo `aDir` + bell-envelope lifecycle). Mưa/tuyết là **field** (hạt rải đều thể tích, rơi cùng hướng, spawn theo VỊ TRÍ). Base class hardcode `sampleDir` → không cấp spawn-position; tự viết là đúng paradigm.
-- **Giới hạn Phase A (MVP):** mưa = chấm Points tròn, **chưa có vệt kéo dài (streak)** — `Points` không stretch được; streak cần Line/quad → để Phase C polish. Phân biệt rain↔snow hiện dựa vào tốc độ + drift + cỡ + màu (đủ đọc ra trong chuyển động).
-- **Chưa có:** tuyết ĐỌNG trên mái/nền, mưa gợn mặt hồ, sét — các thứ này đụng material/scene khác → Phase C.
+- **Vệt mưa (streak, v1.2):** `rain` = `LineSegments`, 2 vertex/hạt. Đuôi (aEnd=1) lấy vị trí tại `tFall − streak/height` — tức điểm CAO hơn `streak` mét dọc CHÍNH quỹ đạo rơi → vệt nối liền, nghiêng đúng theo gió, 0 thêm CPU. `snow` giữ `Points` (chấm tròn hợp bông tuyết).
+- **Chưa có (Phase C tiếp):** tuyết ĐỌNG trên mái/nền, mưa gợn mặt hồ — đụng material/scene khác. (Sét flash đã làm ở tầng archplan, không trong module.)

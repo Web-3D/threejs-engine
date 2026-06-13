@@ -39,7 +39,7 @@ suốt nhờ depthWrite=false. Storm dùng cột cao 30m + radius 32 + gió 6.5.
 
 | Triệu chứng | Nguyên nhân (1 dòng) | Chi tiết & fix |
 | --- | --- | --- |
-| Đổi mode lag giật | mode đổi = dispose + new Points (recompile) | chỉ khi BẤM nút, không kéo — chấp nhận |
+| Đổi mode lag giật | mode đổi = dispose + new (recompile, rain↔snow khác Line/Points) | chỉ khi BẤM nút, không kéo — chấp nhận |
 | Mưa "trượt ngang" khi pan nhanh | trụ bám cam tịnh tiến cứng, cam nhanh hơn hạt | tăng radius / chấp nhận (archviz cam chậm) |
 
 ## 5. Lịch sử nâng cấp
@@ -47,6 +47,7 @@ suốt nhờ depthWrite=false. Storm dùng cột cao 30m + radius 32 + gió 6.5.
 - `2026-06-13` — Phase A: module `effects/Precipitation` (mưa/tuyết Points field, vertex-shader rơi) + tab 🧪 Lab preview (tier A)
 - `2026-06-13` — Phase B: ráp scene archplan (1 instance) + hàng nút khay 🌅 (☀️🌧️❄️⛈️ + slider Nặng) + ⛈️ Bão combo liên động overcast SkyGradient; persist `archplan:weather` (tier A)
 - `2026-06-13` — Precipitation 1.1: cỡ hạt GẦN camera = max, XA = min (×0.28) theo `distance()` shader (sizeAttenuation=false, tự clamp); default ×2 (rain 3.2/snow 8); slider 🔍 Cỡ hạt (× hệ số) khay 🌅
+- `2026-06-13` — Phase C1: Precipitation 1.2 mưa = **LineSegments VỆT streak** (đuôi tại `tFall−streak/height` dọc quỹ đạo, snow giữ Points) + **⚡ sét flash** ⛈️ Bão (AmbientLight lóe, archplan, không đụng `_applySun`). Hoãn C2: tuyết đọng mái / mưa gợn hồ (tier A)
 
 ## 6. Liên hệ
 
