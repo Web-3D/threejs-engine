@@ -6,40 +6,105 @@
  *            archplan/build/build.ts là SHIM re-export file này (Phase 1a thin-out, 2026-06-01).
  */
 
-import type { ShapeInstance, WallConfig } from './state'
+import type { BaySpec, SegmentState, ShapeInstance, WallConfig } from './state'
 import { planBbox, planOutline, planWalls, type SegPlan } from './turtle'
 
-// Editor lưu mm; turtle core dùng m → convert ở biên (chỉ chỗ này).
-function toSegPlans(inst: ShapeInstance): SegPlan[] {
-  return inst.segments.map((s) => ({ length: s.length / 1000, turnBefore: s.turnBefore }))
+// 🧱 Cấp 2: segment EXPANDED (sau khi tách bay) + index segment GỐC (bay-walls đều trỏ cha cho pick/focus).
+interface ExpSeg {
+  seg: SegmentState
+  srcIdx: number
+}
+
+// segment có bay → tách thành các đoạn jog (footprint biến dạng); không bay → pass-through. Đoạn jog cuối
+// rỗng (vd bay sát mép tường) dồn turn sang segment kế qua `carry` → heading sau bay luôn về gốc.
+export function expandBays(segments: SegmentState[]): ExpSeg[] {
+  const out: ExpSeg[] = []
+  let carry = 0
+  segments.forEach((seg, i) => {
+    const b = seg.bay
+    if (b && b.w > 1 && Math.abs(b.depth) > 1) {
+      carry = expandOneBay(out, seg, i, carry, b)
+    } else {
+      out.push({ seg: carry ? { ...seg, turnBefore: seg.turnBefore + carry } : seg, srcIdx: i })
+      carry = 0
+    }
+  })
+  return out
+}
+
+// 1 segment + bay → ≤5 jog-wall ĐẶC (cùng material/wallH, openings/panels RỖNG = bay solid MVP). Jog ra
+// `dep` rồi quay lại path gốc (lateral huỷ nhau) → footprint còn lại không đổi. depth<0 = lõm vào.
+// Đoạn rỗng (len≤1) dồn turn vào `pending` → đoạn kế (giữ heading đúng); trả pending sót cuối cho carry.
+function expandOneBay(
+  out: ExpSeg[],
+  seg: SegmentState,
+  srcIdx: number,
+  carryIn: number,
+  b: BaySpec
+): number {
+  const L = seg.length
+  const a = Math.max(0, Math.min(b.x, L))
+  const bw = Math.max(0, Math.min(b.w, L - a))
+  const dir = b.depth >= 0 ? 1 : -1
+  const dep = Math.abs(b.depth)
+  const steps: [number, number][] = [
+    [a, seg.turnBefore + carryIn], // flank trái (mang turnBefore gốc + carry)
+    [dep, 90 * dir], // jog ra
+    [bw, -90 * dir], // mặt bay (heading về như gốc)
+    [dep, -90 * dir], // jog vào
+    [L - a - bw, 90 * dir], // flank phải (heading về như gốc)
+  ]
+  let pending = 0
+  for (const [len, turn] of steps) {
+    pending += turn
+    if (len <= 1) continue // đoạn rỗng → dồn turn vào đoạn kế
+    out.push({
+      seg: { ...seg, length: len, turnBefore: pending, openings: [], panels: [], bay: undefined },
+      srcIdx,
+    })
+    pending = 0
+  }
+  return pending
+}
+
+// Editor lưu mm; turtle core dùng m → convert ở biên (chỉ chỗ này). Nhận EXPANDED segments (đã tách bay).
+function toSegPlans(exp: ExpSeg[]): SegPlan[] {
+  return exp.map((e) => ({ length: e.seg.length / 1000, turnBefore: e.seg.turnBefore }))
 }
 
 export function computeWallConfigs(inst: ShapeInstance, wallBase: number): WallConfig[] {
   const depth = inst.wallDepth / 1000
   const xform = { posX: inst.posX / 1000, posZ: inst.posZ / 1000, rotY: inst.rotY }
-  return planWalls(toSegPlans(inst), xform).map((p) => {
-    const seg = inst.segments[p.index]
+  const exp = expandBays(inst.segments)
+  return planWalls(toSegPlans(exp), xform).map((p) => {
+    const e = exp[p.index]
     return {
       w: p.w,
-      h: seg.wallH / 1000, // per-segment height
+      h: e.seg.wallH / 1000, // per-segment height
       depth,
       rotationY: p.rotationY,
       xOffset: p.xOffset,
       zOffset: p.zOffset,
       yBase: wallBase,
-      seg,
+      seg: e.seg,
+      segIdx: e.srcIdx, // 🧱 index segment GỐC (bay-walls trỏ cha) cho pick/focus
     }
   })
 }
 
 export function computeLocalBbox(inst: ShapeInstance): { w: number; d: number } {
-  return planBbox(toSegPlans(inst))
+  return planBbox(toSegPlans(expandBays(inst.segments)))
 }
 
 // Outline footprint LOCAL (m, đã center, TRƯỚC rotY/pos — khớp frame local của slab/móng trước khi
-// mesh tự xoay rotY). Shape 'round' dùng để slab/móng theo đúng đa giác thay AABB chữ nhật.
+// mesh tự xoay rotY). Shape 'round' + bay dùng để slab/móng theo đúng đa giác thay AABB chữ nhật.
 export function instOutlineLocal(inst: ShapeInstance): [number, number][] {
-  return planOutline(toSegPlans(inst))
+  return planOutline(toSegPlans(expandBays(inst.segments)))
+}
+
+// 🧱 Có segment nào bật bay không → renderer bật outline-following cho slab/móng (như shape 'round').
+export function instHasBay(inst: ShapeInstance): boolean {
+  return inst.segments.some((s) => s.bay !== undefined && Math.abs(s.bay.depth) > 1 && s.bay.w > 1)
 }
 
 // ── Cầu thang: footprint world (AABB) + map sang lỗ slab tầng trên ───────────

@@ -317,8 +317,8 @@ export interface PositionedPanel {
   y: number // mép dưới panel từ chân tường
   w: number
   h: number
-  depth: number // độ nhô / bề dày khung
-  mode: 'recessed' | 'raised'
+  depth: number // độ nhô (raised) / độ sâu hốc (niche) / bề dày khung (recessed)
+  mode: 'recessed' | 'raised' | 'niche' // niche = hốc lõm vào thật (carve lỗ + back-plug)
   material: THREE.Material
   matKey: string
 }
@@ -343,18 +343,43 @@ export interface PositionedWallOpts {
 }
 
 export function makePositionedWall(opts: PositionedWallOpts): PartResult {
-  const { w, h, depth, openings } = opts
-  const sorted = [...openings].sort((a, b) => a.x - b.x)
+  const { w, h, depth } = opts
+  const panels = opts.panels ?? []
+  const niches = panels.filter((p) => p.mode === 'niche')
+  const decor = panels.filter((p) => p.mode !== 'niche')
+  // Niche (push-in) = vùng KHOÉT như opening (carve sẵn lo void + vách) + back-plug bịt sau → hốc lõm
+  // sâu đúng `depth`, KHÔNG CSG. Gộp niche vào danh sách lỗ để body tự khoét; plug + decor add sau.
+  const carveOps = [...opts.openings, ...niches.map(_nicheToOpening)]
 
   const group = new THREE.Group()
   const geos: THREE.BufferGeometry[] = []
   const mats: THREE.Material[] = []
-
   const wallMat: THREE.Material = opts.wallMaterial ?? _mkDefaultWallMat()
   if (!opts.wallMaterial) mats.push(wallMat)
 
-  // Lỗ tròn (round) → post-and-lintel box không tạo ellipse được → dựng 1 custom geo khoét lỗ
-  // (front/back + reveal, rect+ellip). Tường chỉ-chữ-nhật giữ post-and-lintel cũ (đã ổn).
+  _buildWallBody(group, geos, carveOps, { w, h, depth }, wallMat)
+  _buildNichePlugs(group, geos, niches, w, depth, wallMat)
+  _buildDecorPanels(group, geos, decor, w, depth)
+
+  group.position.set(opts.xOffset ?? 0, opts.yBase ?? 0, opts.zOffset ?? 0)
+  group.rotation.y = ((opts.rotationY ?? 0) * Math.PI) / 180
+  return { geos, mats, meshes: [group] }
+}
+
+// Niche → PositionedOpening để body carve void (rect; round-niche để phase sau). y = mép dưới hốc.
+function _nicheToOpening(p: PositionedPanel): PositionedOpening {
+  return { type: 'window', x: p.x, w: p.w, h: p.h, yOffset: p.y, round: false }
+}
+
+// Thân tường KHOÉT lỗ: round → custom holes-geo (front/back + reveal ellip); chỉ-rect → post-and-lintel.
+function _buildWallBody(
+  group: THREE.Group,
+  geos: THREE.BufferGeometry[],
+  openings: PositionedOpening[],
+  dim: { w: number; h: number; depth: number },
+  wallMat: THREE.Material
+): void {
+  const { w, h, depth } = dim
   if (openings.some((o) => o.round)) {
     const geo = _buildWallHolesGeo(w, h, depth, openings)
     geos.push(geo)
@@ -362,16 +387,40 @@ export function makePositionedWall(opts: PositionedWallOpts): PartResult {
     mesh.castShadow = true
     mesh.receiveShadow = true
     group.add(mesh)
-  } else {
-    const addBox = _mkBoxAdder(group, geos, depth, w)
-    _buildWallSegments(sorted, w, h, wallMat, addBox)
+    return
   }
-  _buildDecorPanels(group, geos, opts.panels ?? [], w, depth)
+  const addBox = _mkBoxAdder(group, geos, depth, w)
+  _buildWallSegments(
+    [...openings].sort((a, b) => a.x - b.x),
+    w,
+    h,
+    wallMat,
+    addBox
+  )
+}
 
-  group.position.set(opts.xOffset ?? 0, opts.yBase ?? 0, opts.zOffset ?? 0)
-  group.rotation.y = ((opts.rotationY ?? 0) * Math.PI) / 180
-
-  return { geos, mats, meshes: [group] }
+// Back-plug mỗi hốc: box bịt phần sau (z∈[−D/2, D/2−d]) → pocket nhìn từ ngoài sâu d; 4 vách = mặt cắt
+// segment/holes-geo có sẵn, đáy hốc = mặt trước plug. Dùng wallMat → đọc như khoét vào tường.
+function _buildNichePlugs(
+  group: THREE.Group,
+  geos: THREE.BufferGeometry[],
+  niches: PositionedPanel[],
+  wallW: number,
+  wallDepth: number,
+  wallMat: THREE.Material
+): void {
+  for (const p of niches) {
+    const d = Math.min(Math.max(0.01, p.depth), wallDepth - 0.01) // clamp: chừa vách sau ≥10mm
+    const plugD = wallDepth - d
+    if (p.w < 0.001 || p.h < 0.001 || plugD < 0.001) continue
+    const geo = new THREE.BoxGeometry(p.w, p.h, plugD)
+    geos.push(geo)
+    const mesh = new THREE.Mesh(geo, wallMat)
+    mesh.position.set(p.x + p.w / 2 - wallW / 2, p.y + p.h / 2, -d / 2)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    group.add(mesh)
+  }
 }
 
 // Decor panels trên mặt ngoài +Z. raised = 1 box nhô; recessed = 4 thanh khung gờ nổi quanh ô

@@ -58,7 +58,7 @@ export interface AsmPanel {
   w: number
   h: number
   depth: number
-  mode: 'recessed' | 'raised'
+  mode: 'recessed' | 'raised' | 'niche' // raised=nhô ra · niche=hốc lõm vào thật · recessed=khung giả lõm
   material: WallMatInput['material']
   colorIndex: number
 }

@@ -23,6 +23,7 @@ import {
   computeWallConfigs,
   footprintXZ,
   type FootXZ,
+  instHasBay,
   instOutlineLocal,
   instWorldAABB,
   stairFootprintWorld,
@@ -244,10 +245,12 @@ class StateRenderer {
       if (instHm > maxFloorH) maxFloorH = instHm
       if (hidden) continue // tầng ẩn → bỏ dựng (chiều cao maxLift/maxFloorH đã cộng ở trên cho stacking)
       if (this.filter && !this.filter(inst.id)) continue // split-render: instance bị lọc → bỏ dựng (chiều cao đã cộng)
+      // keyBase = loop index `si` (duy nhất/tường, giữ leaf-key cho non-bay vì si===segIdx). pick/focus
+      // dùng cfg.segIdx = segment GỐC (bay tách nhiều jog-wall → đều trỏ segment cha trong GUI). 🧱 Cấp 2.
       computeWallConfigs(inst, wallBase).forEach((cfg, si) => {
         this.assembleFromConfig(cfg, `${inst.id}:${si}`)
-        this.pushWallPick(cfg, inst.id, si)
-        this.pushOpeningPicks(cfg, inst.id, si)
+        this.pushWallPick(cfg, inst.id, cfg.segIdx)
+        this.pushOpeningPicks(cfg, inst.id, cfg.segIdx)
       })
       this.buildStructure(inst, wallBase, isGround, instHm, holes)
     }
@@ -348,7 +351,8 @@ class StateRenderer {
 
   // Shape 'round': slab/móng theo ĐÚNG đa giác N-gon — bbox chữ nhật sẽ thò 4 góc ra ngoài chân tường tròn.
   private instOutline(inst: ShapeInstance): [number, number][] | undefined {
-    return inst.shapeKey === 'round' ? instOutlineLocal(inst) : undefined
+    // 🧱 bay biến dạng footprint → slab/móng phải theo outline (như shape 'round'), không thì bbox over-cover.
+    return inst.shapeKey === 'round' || instHasBay(inst) ? instOutlineLocal(inst) : undefined
   }
 
   private buildFoundation(inst: ShapeInstance, wallBase: number, fp: FootXZ): void {

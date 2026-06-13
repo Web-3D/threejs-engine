@@ -14,7 +14,7 @@ Import alias: `@world/building/parts/[Name]`.
 | [Joinery.ts](Joinery.ts) | frameGeosLocal, leafGeoLocal | C1 KHUNG BAO quanh lỗ (chữ nhật = box butt-joint; tròn/bán nguyệt = sweep op #2 dọc spine ellipse, CLIP biên tường khớp carve) + C2 CÁNH GỖ panel (stiles/rails + ô lõm, gốc tại trục bản lề, mirror cho French). Caller wallAssembly: khung → bucket DoubleSide `frame:color`; cánh → mesh riêng trên PIVOT (Mở % live xoay) |
 | [Wall.ts](Wall.ts) | makeWall | 4 mặt tường cơ bản (toàn bộ building box) |
 | [WallDetail.ts](WallDetail.ts) | makeWallReveal, makeWallPanel | Tường groove + curtain wall grid |
-| [WallSingle.ts](WallSingle.ts) | makePositionedWall, makeWallSingleSet, presetLShape/UShape | Tường đơn 1 mặt + preset L/U-shape |
+| [WallSingle.ts](WallSingle.ts) | makePositionedWall, makeWallSingleSet, presetLShape/UShape | Tường đơn 1 mặt + preset L/U-shape + khoét lỗ (rect post-and-lintel / round holes-geo). **Push/Pull khối** (`seg.panels[]`): `raised`=nhô box · `niche`=lõm THẬT (carve+back-plug `_buildNichePlugs`, KHÔNG CSG) · `recessed`=khung giả lõm. Playbook `wall-pushpull.md` |
 | [Roof.ts](Roof.ts) | makeGabledRoof | Mái dốc 2 phía (kirizuma) |
 | [RoofDetail.ts](RoofDetail.ts) | makeHipRoof, makeFlatRoof, makeShedRoof, makeEave | Mái hip / bằng / 1 dốc / hiên |
 | [RoofShape.ts](RoofShape.ts) | makeRoof, RoofType, RidgeDir | Unified roof API dùng bởi ArchPlanLab |

@@ -51,18 +51,27 @@ export const FRAME_DEFAULTS = {
 // archplan khác (gui/sections.ts…) import từ đây như cũ. 'brick-3d'/'wood-3d'/'wood-strip' = geometry THẬT.
 export type { WallMaterial }
 
-// Task A — tấm decor khắc trên mặt NGOÀI tường (+Z local). Geometry THẬT (box) → đổ bóng thật,
-// vật liệu riêng từng panel. 'raised' = ô nhô hẳn ra; 'recessed' = khung gờ molding nổi quanh ô
-// (tâm phẳng → nhìn như lõm vào, không cần CSG). Lõm-khoét-thật (CSG) để deferred.
+// Task A / Push-Pull — vùng KHỐI trên mặt tường. Geometry THẬT (box) → đổ bóng thật, vật liệu riêng
+// từng panel. 'raised' = ô NHÔ RA (push-out); 'niche' = HỐC LÕM VÀO THẬT (push-in: vùng khoét như lỗ
+// + back-plug bịt sau, sâu = depth — KHÔNG CSG); 'recessed' = khung gờ molding nổi quanh ô (giả lõm, legacy).
 export interface DecorPanel {
   x: number // mm — mép trái panel tính từ đầu trái tường
   y: number // mm — mép dưới panel tính từ chân tường
   w: number // mm
   h: number // mm
-  depth: number // mm — độ nhô (raised) / bề dày khung gờ (recessed)
-  mode: 'recessed' | 'raised'
+  depth: number // mm — độ NHÔ (raised) / độ SÂU hốc (niche, clamp < wallDepth) / bề dày khung gờ (recessed)
+  mode: 'recessed' | 'raised' | 'niche'
   material: WallMaterial // vật liệu riêng (vd 'wood')
   colorIndex: number // index WALL_COLORS — màu chính panel
+}
+
+// 🧱 Cấp 2 Push/Pull MASS — bay: khoanh sub-range [x, x+w] của tường rồi đẩy RA/VÀO `depth` → footprint
+// BIẾN DẠNG (jog 5 đoạn, expandBays ở build.ts) → CÓ không gian bên trong (sàn/móng bám outline; mái bbox
+// phình). MVP: bay = ĐẶC (cửa/sổ của segment đó ẩn khi bay bật — state giữ nguyên, hiện lại khi tắt bay).
+export interface BaySpec {
+  x: number // mm — mép trái vùng bay tính từ đầu trái tường
+  w: number // mm — bề rộng vùng bay (dọc tường)
+  depth: number // mm — đẩy RA (>0, phía mặt ngoài) / VÀO (<0, lõm vào footprint = hốc/sảnh thụt)
 }
 
 export interface SegmentState {
@@ -90,6 +99,7 @@ export interface SegmentState {
   // 🎨 MIX mặt tường (PhotoGroundMix mapping 'wall' — NgQuan 2026-06-11 "kể cả tường wall trong building").
   // Bật = THAY material surface (chỉ nhánh surface; *-3d giữ geometry thật). Optional → backward-compat.
   mix?: GroundMixParams
+  bay?: BaySpec // 🧱 Cấp 2 — đẩy mass ra/vào (expandBays tách jog). Optional → không bay = phẳng như cũ.
 }
 
 export interface ColumnState {
@@ -212,6 +222,7 @@ export interface WallConfig {
   zOffset: number
   yBase: number // world Y of wall bottom — lifted by foundH when foundation is shown
   seg: SegmentState
+  segIdx: number // 🧱 index segment GỐC trong inst.segments (bay tách 5 jog-wall → đều trỏ segment cha) cho pick/focus
 }
 
 // ── Shape config types ─────────────────────────────────────────────────────────
@@ -356,6 +367,7 @@ function copySegExtras(to: SegmentState[], from: SegmentState[] | undefined): vo
     s.woodStepTilt = from[i].woodStepTilt
     s.paintColor = from[i].paintColor
     s.mix = from[i].mix // 🎨 mix mặt tường sống qua reshape dims (toSegments dựng segs mới)
+    s.bay = from[i].bay // 🧱 Cấp 2 bay sống qua reshape (expandOneBay tự clamp nếu length đổi nhỏ hơn)
   })
 }
 
@@ -574,6 +586,11 @@ export function defaultPanel(): DecorPanel {
     material: 'wood',
     colorIndex: 0,
   }
+}
+
+// 🧱 Cấp 2 — bay mặc định: vùng giữa tường, đẩy RA 800mm. Editor flip dấu depth để đẩy VÀO.
+export function defaultBay(): BaySpec {
+  return { x: 1000, w: 1500, depth: 800 }
 }
 
 // ── Save / Load — snapshot ĐẦY ĐỦ BuildingState (round-trip lossless) ─────────────
