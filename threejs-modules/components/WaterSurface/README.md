@@ -71,8 +71,12 @@ Khi **bất cứ gì chạm mặt nước** (giọt mưa, cá trồi/xác dập 
 ```typescript
 // tại điểm (x,z) WORLD, biên độ strength 0..1 (caller tự quy từ kích thước/khối lượng/vận tốc)
 water.emitRipple(worldX, worldZ, 0.4)
+// 🏓 va chạm tại điểm LOCAL (so tâm hồ) — reflect=true (hồ CHỮ NHẬT) → thêm 4 vòng dội tường (ping-pong)
+water.emitImpact(localX, localZ, 0.7, true)
 water.setRippleAmp(0) // 🧊 TẮT toàn bộ gợn — mặt băng phẳng lì (đóng băng); 1 = bật lại
 ```
+
+> **🏓 Phản xạ tường (method of images):** `emitImpact(localX, localZ, s, reflect)` bắn vòng gốc + (nếu `reflect`) **4 vòng-ẢNH** = gương của điểm qua 4 tường (`±width/2`, `±depth/2`), strength ×`RIPPLE_REFLECT` (0.6). Ảnh xa hơn → wavefront tới TRỄ = **đúng quãng dội** (tự khớp, không cần timer). Chỉ chuẩn cho **hồ chữ nhật**; tròn/ellipse/free → `reflect=false`.
 
 - **Pool 16 vòng** (`RIPPLE_SLOTS`) — CHỈ cho va-chạm RỜI (cá/vật; mưa-dày do lớp ambient rain-cell lo): mỗi `emitRipple` ghi 1 slot **xoay vòng** (uniform `vec4` = tâm X, Z, t0, strength) → bắn liên tục thì vòng cũ nhất bị đè. **0 CPU/frame** trừ lúc bắn (chỉ ghi 1 uniform); shader đọc `uTime` so với `t0`.
 - Mỗi vòng: `front = d − age·SPEED` (loang ra 1.3 m/s) × dải sóng quanh front (smoothstep WIDTH) × tắt theo tuổi (LIFE ~2.6s) × `cos(front·WAVES)` (lăn tăn) → nghiêng normal **theo hướng ra tâm** (×`RIPPLE_AMP`). Tự tắt sau ~2.6s.

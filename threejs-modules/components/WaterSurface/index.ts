@@ -86,6 +86,7 @@ const RIPPLE_SPEED = 0.65 // m/s — tốc độ vòng loang ra (đã giảm N�
 const RIPPLE_LIFE = 2.6 // s — thời gian vòng tồn tại (decay tuyến tính)
 const RIPPLE_WAVES = 15 // sóng/m (k = 2π/λ → λ ≈ 0.42m) — gợn lăn tăn trong dải
 const RIPPLE_AMP = 2.2 // gain biên độ (= uRippleAmp): cao = gợn rõ trên fresnel/glint/gương; 0 = tắt (băng)
+const RIPPLE_REFLECT = 0.6 // 🏓 strength vòng-ảnh phản xạ tường (method of images) so vòng gốc — mất năng lượng
 
 // ☔ AMBIENT rain-ripple thủ tục (hybrid với pool analytic): chia world-XZ thành ô lưới, mỗi ô tự phát vòng
 // theo fract(time+hash(ô)) — lệch pha, vô số giọt, sample 2×2 ô/fragment → O(1) (4 ô) phủ KHẮP, mật độ vô hạn
@@ -187,6 +188,7 @@ export class WaterSurface {
   // tâm → eye.y không đạt ngưỡng → fade trượt). Cập nhật mỗi frame trong setTime từ _camera.
   private readonly uViewDirY = uniform(0)
   private readonly _tmpDir = new THREE.Vector3()
+  private readonly _tmpPos = new THREE.Vector3() // 🏓 tâm hồ world cho emitImpact (phản xạ tường)
 
   constructor(opts: WaterSurfaceOptions = {}) {
     const o = { ...DEFAULTS, ...opts }
@@ -323,6 +325,23 @@ export class WaterSurface {
     const u = this._rippleU[this._rippleHead]
     ;(u.value as THREE.Vector4).set(x, z, this.uTime.value as number, s)
     this._rippleHead = (this._rippleHead + 1) % RIPPLE_SLOTS
+  }
+
+  /** 🏓 Va chạm tại điểm LOCAL (so tâm hồ, m). reflect=true (hồ CHỮ NHẬT) → bắn thêm 4 vòng-ẢNH gương qua 4 tường
+   *  (method of images: ảnh xa hơn → wavefront tới TRỄ = đúng quãng dội; strength ×RIPPLE_REFLECT). Tường cong/free
+   *  KHÔNG phản xạ chuẩn → reflect=false. Caller (cá/vật/demo) gọi cái này thay emitRipple để có ping-pong dội tường. */
+  emitImpact(localX: number, localZ: number, strength: number, reflect = false): void {
+    if (this.isDisposed || !this.mesh) return
+    const c = this.mesh.getWorldPosition(this._tmpPos)
+    this.emitRipple(c.x + localX, c.z + localZ, strength)
+    if (!reflect) return
+    const hw = this._w / 2
+    const hd = this._d / 2
+    const a = strength * RIPPLE_REFLECT
+    this.emitRipple(c.x + (hw * 2 - localX), c.z + localZ, a) // dội tường +X
+    this.emitRipple(c.x - (hw * 2 + localX), c.z + localZ, a) // dội tường −X
+    this.emitRipple(c.x + localX, c.z + (hd * 2 - localZ), a) // dội tường +Z
+    this.emitRipple(c.x + localX, c.z - (hd * 2 + localZ), a) // dội tường −Z
   }
 
   /** 🌊 SIZE/gain biên độ gợn va chạm [0–6] (= "size sóng"). 0 = TẮT (mặt băng phẳng lì). Default 2.2. */
