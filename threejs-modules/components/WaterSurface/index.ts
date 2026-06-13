@@ -27,6 +27,9 @@ import {
   cos,
   dot,
   float,
+  floor,
+  fract,
+  hash,
   length,
   max,
   mix,
@@ -83,6 +86,16 @@ const RIPPLE_SPEED = 0.65 // m/s — tốc độ vòng loang ra (đã giảm N�
 const RIPPLE_LIFE = 2.6 // s — thời gian vòng tồn tại (decay tuyến tính)
 const RIPPLE_WAVES = 15 // sóng/m (k = 2π/λ → λ ≈ 0.42m) — gợn lăn tăn trong dải
 const RIPPLE_AMP = 2.2 // gain biên độ (= uRippleAmp): cao = gợn rõ trên fresnel/glint/gương; 0 = tắt (băng)
+
+// ☔ AMBIENT rain-ripple thủ tục (hybrid với pool analytic): chia world-XZ thành ô lưới, mỗi ô tự phát vòng
+// theo fract(time+hash(ô)) — lệch pha, vô số giọt, sample 2×2 ô/fragment → O(1) (4 ô) phủ KHẮP, mật độ vô hạn
+// (≠ pool 50 vòng rời cho cá/vật). Cường độ = uRainWet (0=khô). Vòng NHỎ/lăn-tăn (giọt mưa nền).
+const RAIN_CELL = 0.34 // m — cạnh ô lưới (nhỏ = mưa dày hơn)
+const RAIN_MAXR = 0.42 // bán kính max vòng (đơn vị ô) — vòng loang trong 1 ô
+const RAIN_WIDTH = 0.12 // bề rộng dải sóng (đơn vị ô)
+const RAIN_WAVES = 22 // k = số lăn-tăn trong dải (đơn vị ô)
+const RAIN_RATE = 1.3 // chu kỳ giọt/giây mỗi ô (fract speed)
+const RAIN_AMP = 1.4 // gain nghiêng normal (× uRainWet)
 
 export interface WaterSurfaceOptions {
   /** Bề ngang hồ (m, X). Default: 12 */
@@ -161,6 +174,7 @@ export class WaterSurface {
   private readonly uRippleSpeed = uniform(RIPPLE_SPEED)
   private readonly uRippleLife = uniform(RIPPLE_LIFE)
   private readonly uRippleWaves = uniform(RIPPLE_WAVES)
+  private readonly uRainWet = uniform(0) // ☔ cường độ ambient rain-ripple [0..1] (0 = khô)
   private _rippleHead = 0
   // |uViewDirY| → 1 khi CAMERA nhìn gần thẳng đứng (top-down): virtualCamera reflector suy biến → ảnh ĐƠ.
   // Fade gương theo HƯỚNG-NHÌN-CAMERA (uniform, mọi fragment chung) — KHÔNG theo eye-tới-fragment (pool lệch
@@ -330,6 +344,12 @@ export class WaterSurface {
     this.uRippleWaves.value = (Math.PI * 2) / lam
   }
 
+  /** ☔ Cường độ ambient rain-ripple [0–1] (phủ KHẮP mặt nước khi mưa; 0 = khô). Caller set = độ nặng mưa. */
+  setRainWet(v: number): void {
+    if (this.isDisposed) return
+    this.uRainWet.value = Math.max(0, Math.min(1, v))
+  }
+
   /** Đổi mặt nước sang polygon tự do (m, LOCAL). <3 đỉnh → về chữ nhật. LIVE: chỉ dựng lại geometry
    *  (giữ nguyên material + reflector → KHÔNG tốn RTT mới). Mesh giữ rotation/position cũ. */
   setShape(points: { x: number; z: number }[]): void {
@@ -397,8 +417,11 @@ export class WaterSurface {
     const amp = this.uDistortion.mul(float(2))
     const nx = nx1.add(nx2.mul(this.uDetail))
     const nz = nz1.add(nz2.mul(this.uDetail))
-    const rip = this._rippleNormal() // 🌊 gợn va chạm — nghiêng normal theo bán kính vòng (cộng SAU amp sóng nền)
-    return normalize(vec3(nx.mul(amp).add(rip.x), float(1), nz.mul(amp).add(rip.z))) as TSLNode
+    const rip = this._rippleNormal() // 🌊 gợn va chạm (pool analytic) — cộng SAU amp sóng nền
+    const rn = this._rainNormal() // ☔ ambient rain-ripple thủ tục (phủ khắp khi mưa)
+    const fx = nx.mul(amp).add(rip.x).add(rn.x)
+    const fz = nz.mul(amp).add(rip.z).add(rn.z)
+    return normalize(vec3(fx, float(1), fz)) as TSLNode
   }
 
   // 🌊 Tổng nghiêng normal từ N vòng gợn va chạm (build-time unroll, slot rỗng strength=0 → cộng 0). Mỗi vòng:
@@ -425,6 +448,43 @@ export class WaterSurface {
       sz = sz.add(dir.y.mul(slope))
     }
     return { x: sx.mul(this.uRippleAmp), z: sz.mul(this.uRippleAmp) }
+  }
+
+  // ☔ Ambient rain-ripple (hybrid): ô lưới world-XZ, mỗi ô 1 giọt loang theo fract(time+hash(ô)) — lệch pha,
+  // tâm jitter (không xếp lưới). Sample 2×2 ô quanh fragment (base=floor(p−0.5)) → vòng cắt biên ô vẫn liền.
+  // Phủ KHẮP mặt nước, mật độ vô hạn, chi phí CỐ ĐỊNH 4 ô (≠ pool 50 vòng rời). Cường độ × uRainWet (0=khô).
+  private _rainNormal(): { x: TSLNode; z: TSLNode } {
+    const p = positionWorld.xz.div(float(RAIN_CELL)) // toạ độ theo đơn vị ô
+    const base = floor(p.sub(float(0.5)))
+    let sx: TSLNode = float(0)
+    let sz: TSLNode = float(0)
+    for (let ox = 0; ox < 2; ox++) {
+      for (let oz = 0; oz < 2; oz++) {
+        const cell = base.add(vec2(float(ox), float(oz)))
+        const sd = cell.x.add(cell.y.mul(float(113))).add(float(1e5)) // seed >0 (né toUint âm)
+        const center = cell.add(vec2(float(0.5), float(0.5))).add(
+          vec2(
+            hash(sd.add(float(31)))
+              .sub(float(0.5))
+              .mul(float(0.7)),
+            hash(sd.add(float(67)))
+              .sub(float(0.5))
+              .mul(float(0.7))
+          )
+        )
+        const delta = p.sub(center)
+        const d = length(delta)
+        const cycle = fract(this.uTime.mul(float(RAIN_RATE)).add(hash(sd))) // 0..1 đời 1 giọt
+        const front = d.sub(cycle.mul(float(RAIN_MAXR)))
+        const env = oneMinus(smoothstep(float(0), float(RAIN_WIDTH), front.abs()))
+        const slope = env.mul(oneMinus(cycle)).mul(cos(front.mul(float(RAIN_WAVES)))) // giọt mới mạnh, tắt khi cycle→1
+        const dir = delta.div(max(d, float(1e-3)))
+        sx = sx.add(dir.x.mul(slope))
+        sz = sz.add(dir.y.mul(slope))
+      }
+    }
+    const g = this.uRainWet.mul(float(RAIN_AMP))
+    return { x: sx.mul(g), z: sz.mul(g) }
   }
 
   private _buildColor(sm: ReturnType<typeof reflector>): TSLNode {
