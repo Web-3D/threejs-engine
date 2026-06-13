@@ -185,6 +185,10 @@ export interface WaterConfig {
   // (vách đứng — uv mét chu-vi×cao baked, cọ vẽ theo isect.uv). Optional → tắt (material đơn như cũ).
   floorMix?: GroundMixParams
   wallMix?: GroundMixParams
+  // 🏔️ GÒ ĐÁY HỒ (NgQuan 2026-06-13 "thêm chế độ gò sân vườn vào đáy hồ") — DÙNG CHUNG TerrainConfig với nền
+  // sân vườn (heightAt FBM + mounds). Bật = đáy basin grid hóa + nhô gò từ yBot LÊN (đảo/cồn ngầm), kẹp dưới
+  // mặt nước/rim; taper về 0 ở mép → đáy gặp chân vách phẳng. Optional → tắt = đáy phẳng như cũ (backward-compat).
+  floorTerrain?: TerrainConfig
 }
 
 // Chất liệu bề mặt hồ (đáy/tường): 'none' = màu phẳng bottomColor; 'tile' = caro hồ bơi (procedural

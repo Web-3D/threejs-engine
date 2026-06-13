@@ -403,6 +403,9 @@ function parseWater(raw: Partial<WaterConfig> | undefined, d: WaterConfig): Wate
     // 🎨 mix đáy/vách hồ — thiếu = tắt (material đơn floorMaterial/wallMaterial như cũ)
     floorMix: optMix(r.floorMix),
     wallMix: optMix(r.wallMix),
+    // 🏔️ gò đáy hồ — thiếu (save cũ) = undefined (đáy phẳng); có = parse như terrain zone (backward-compat)
+    floorTerrain:
+      r.floorTerrain !== undefined ? parseTerrain(r.floorTerrain, defaultTerrain()) : undefined,
   }
 }
 
