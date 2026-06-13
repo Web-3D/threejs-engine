@@ -26,21 +26,30 @@ fish.update(dt) // tiến vẫy đuôi + dời đàn (CPU rẻ)
 | Option | Type | Default | Description |
 | ------ | ---- | ------- | ----------- |
 | `count` | number | 8 | Số cá (cap 40). **Constructor-only** — đổi = tạo instance mới |
-| `areaRadius` | number | 1.6 | Bán kính vùng bơi (m) — live `setAreaRadius` |
-| `depthY` | number | -0.25 | Cao độ bơi so với gốc mesh (m, âm = chìm) — live `setDepthY` |
+| `areaRadius` | number | 1.6 | Bán kính vùng bơi NGANG (m) — live `setAreaRadius` |
+| `swimDepth` | number | 0 | Bề DÀY bơi ĐỨNG (m) — cá rải khối trụ radius×swimDepth (0 = đĩa phẳng) — live `setSwimDepth` |
+| `depthY` | number | -0.25 | Cao độ ĐỈNH khối bơi so gốc mesh (m, âm = chìm) — live `setDepthY` |
 | `fishLength` | number | 0.28 | Chiều dài cá (m), per-con ±20% — live `setFishLength` |
+| `bodyWidth` | number | 1 | Độ MẬP thân (×tiết diện, ≥0.2) — live `setBodyWidth` |
 | `speed` | number | 0.25 | Tốc độ bơi (m/s), tần vẫy theo tốc — live `setSpeed` |
-| `colorSeed` | number | 0 | Xáo bộ màu cam/đốm cả đàn — live `setColorSeed` |
+| `colorSeed` | number | 0 | Xáo bộ mảng/đốm cả đàn — live `setColorSeed` |
+| `baseColor`/`patchColor`/`spotColor` | number | kem/cam/đốm | 3 màu koi (hex) — live `setColors(base,patch,spot)` |
+| `patchAmount` | number | 0.5 | Tỉ lệ mảng 0..1 (cao = nhiều mảng) — live `setPatchAmount` |
+| `swayAmp` | number | 1 | Hành vi: biên độ lượn chữ S (×) — live `setSwayAmp` |
+| `wanderAmp` | number | 1 | Hành vi: độ lăng xăng / random dart (×) — live `setWanderAmp` |
+| `bobAmp` | number | 1 | Hành vi: nhấp nhô dọc (×±3cm) — live `setBobAmp` |
 
 API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
 
-## Hành vi bơi (v1.1)
+## Hành vi bơi (v1.2)
 
-- **Lượn chữ S liên tục** (sine heading per-con — cá thật không bao giờ bơi thẳng) + wander random-walk
-  mạnh (đổi hướng bất chợt) trong đĩa `areaRadius`; sát biên (85%) tự lượn về tâm.
+- **Lượn chữ S liên tục** (sine heading per-con — cá thật không bao giờ bơi thẳng, biên độ ×`swayAmp`) +
+  wander random-walk (đổi hướng bất chợt, ×`wanderAmp`) trong vùng `areaRadius`; sát biên (85%) tự lượn về tâm.
+- **Khối bơi ĐỨNG** (v1.2): cá rải mức `yFrac` per-con trong bề dày `swimDepth` (radius×swimDepth = trụ),
+  không còn dẹp 1 mặt. `depthY` = đỉnh khối.
 - **Tốc nhấp nhô** theo thời gian (lướt ↔ rướn) — phá đều tăm tắp giữa các con.
-- Mỗi con: tốc/cỡ/pha vẫy/tần lượn/bộ màu riêng (deterministic — LCG seed cố định, tái lập).
-- Nhấp nhô Y nhẹ ±3cm. Heading → `rotation.y` (forward local = +X).
+- Mỗi con: tốc/cỡ/pha vẫy/tần lượn/mức-đứng/bộ màu riêng (deterministic — LCG seed cố định, tái lập).
+- Nhấp nhô Y ±3cm ×`bobAmp`. Heading → `rotation.y` (forward local = +X).
 - ⚠️ Gotcha TSL đã vá (v1.1): pattern màu phải sample `positionGeometry` (attribute gốc) — `positionLocal`
   là varying bị `positionNode` ghi đè → sample theo toạ độ đang vẫy = hoạ tiết "trượt khỏi thân".
 
