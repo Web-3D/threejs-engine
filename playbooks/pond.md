@@ -5,7 +5,7 @@ status: building
 tier: B
 modules:
   - threejs-modules/components/WaterSurface
-  - threejs-modules/components/PondFish     # 🐟 đàn cá koi trong lòng hồ (Phase B 2026-06-11)
+  - threejs-modules/components/PondFish     # 🐟 đàn cá koi = WaterConfig.fish, vùng bơi = lòng hồ (bounds 2026-06-13)
   - threejs-modules/site/render/fromState   # basin + khoét lỗ nền (không phải module rời)
 issues:
   - KI-004
@@ -15,7 +15,7 @@ issues:
   - KI-008
   - KI-012
   - KI-014
-updated: 2026-06-11
+updated: 2026-06-13
 ---
 
 # Playbook — Hồ nước
@@ -100,6 +100,42 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-13` — **🐟 refine hồi sinh + tô màu slider Đói** (NgQuan): hồi sinh dùng CHUNG `DEATH_DUR` + công thức
+  `flip` 2 chiều → **xoay bụng đúng tốc xoay khi chết**; giật hồi sinh nhịp GIÃN (window [1,0.8], π3); **KHÔNG rớt Y**
+  — `rise=1` giữ đúng XYZ chết ở mặt suốt hồi sinh, xong đặt `wake=1` → ease 0 qua `WAKE_DUR`≈2.6s = bơi xuống từ
+  từ (bỏ pha lặn `[0.22,0]` cũ). Slider Đói: `sliderRow` thêm `bands` (gradient cứng cạnh trên wrap + track trong
+  suốt `ensureBandSliderCss`) → **đỏ 0-6 (vùng chết) · vàng 6-10** (hiệu ứng vàng để sau). `mmBox` tách (rule-50).
+- `2026-06-13` — **🐟 CHẾT THEO TỈ LỆ + per-con + tinh chỉnh** (NgQuan): chết KHÔNG còn cả đàn cùng lúc → `_deadCount`
+  từ slider (level ≤6 = vùng chết: 6→1/6 đàn, 5→2/6,…,0→cả đàn; >6 sống). Mỗi con `dp` ramp RIÊNG (con `i<deadCount`
+  chết). **Đuôi LIMP per-con** = `uniformArray` `aLife` ×biên độ vẫy (đọc `instanceIndex`, re-pack `NodeUpdateType.RENDER`)
+  → con chết duỗi đuôi, con sống vẫn vẫy (uniform đuôi vốn global, không làm per-con được). Tốc CHẾT chậm (`DEATH_DUR`
+  2.6→7s; giật `_throe` tần số+biên độ ≈½: π2.5/×0.25; nổi [0.6,1] chậm hơn); HỒI SINH NHANH (`REVIVE_DUR`≈1.6s, giật
+  dứt khoát ease-in, KHÔNG rung sau — float chỉ khi chết). Biên độ nổi XZ/Y 0.02→0.03. GUI: mốc đỏ ở mức 6 (markerWrap
+  trong sliderRow — ngưỡng chết).
+- `2026-06-13` — **🐟 ĐÓI / CHẾT (satiation) — master hành vi** (NgQuan "slide ~20 mức gọi Đói: max=không bâu;
+  càng min càng nhiều cá bâu; **bình thường đói thì bơi CHẬM**, lao nhanh CHỈ khi click-thả-mồi; 0=chết — đứng
+  yên→xoay bụng→trồi lên (KHÔNG teleport); tiền đề click-mồi + auto-giảm theo giờ — sau"): `FishSchool.satiation`
+  (0..1; default 1=no, parse clamp). **Bơi-thường** ×`(0.35+0.65·satiation)` → đói = lờ đờ chậm (lao nhanh khi đói
+  = phần feeding sau, rush ∝ `1−satiation`). **Chết/sống = 1 CODE-PATH blend `deadProgress`** (update KHÔNG đổi path
+  → hết giật/teleport; ramp `DEATH_DUR`≈5s — CHẬM ~½ tốc). Pose `_deathPose(p)` ĐÚNG THỨ TỰ: **CHẾT** [0,0.3] GIẬT
+  TRƯỚC (đứng, `_throe` ~3-4 cú chậm dần ease-out) → [0.3,1] xoay bụng lên chậm (roll 0→π) → nửa xoay (p≈0.65) MỚI
+  trồi thẳng lên dưới `surfaceY` (buoyancy G≪9.8); đuôi `uFlap+uAmp`→0 (duỗi mềm); nổi hẳn = bồng bềnh (đung đưa
+  XZ±2cm + Y±2cm + lắc bụng, pha ×con). **HỒI SINH** (KHÔNG chìm, giữ ở mặt): [p1→0.55] giật nhẹ ~2-3 cú NHANH dần
+  (ease-in) → [0.55,0.2] xoay bụng xuống tại chỗ → [0.2,0] lặn xuống = `_swim` bơi tiếp. GUI slider **"Đói (no→chết)"** [0,20]
+  tab Hành vi. Swarm thật (click mặt nước/thả mồi) + auto-decay = **deferred** [water-type-ecosystem-features].
+- `2026-06-13` — **🐟 CÁ = CON CỦA POND + vùng bơi = LÒNG HỒ THẬT + bứt tốc** (NgQuan "đàn cá chuyển vào tab
+  pond… vùng hoạt động lệ thuộc không gian trong hồ giới hạn bằng chiều sâu + độ lồi lõm đáy + form hồ, đụng
+  vách phải quay lại"; luật 3 loại nước → [[pool]] sạch / pond sinh thái / puddle): **GỠ `SiteState.fishSchools[]`
+  độc lập** (+ tab 🐟 Cá + Move-handle/drag/area-ghost ở Lab) → cá thành **`WaterConfig.fish?: FishSchool`** (CHỈ
+  pond; pool/puddle `undefined`). `FishSchool` bỏ `offsetX/Z/radius/depth/swimDepth` (vùng = hồ), thêm
+  **`burstRate`**. GUI cá = **tab CON trong pane Pond** (Hình thái · Hành vi). **PondFish.bounds** {polygon local +
+  surfaceY + floorYAt}: ngang = `pointInPoly` + lái quay-về-centroid khi sát vách (không xuyên); đứng = rải giữa
+  mặt↔đáy theo **gò** (`floorYAt` = `heightAt` đáy terrain, taper+cap khớp `basinFloorTerrainGeometry`); fallback
+  vòng tròn nếu thiếu bounds. **Bứt tốc**: mỗi con cooldown random (∝1/burstRate) → dart ×4 (0.55s) rồi khựng
+  ×0.08 (0.35s). `buildFishSchool(w,site,ctx)` dựng từ `w.fish` + `fishBoundsFor`. `floorTerrain` (gò đáy) +
+  render `basinFloorGeo` **gate `kind==='pond'`** (pool đáy phẳng). Migrate save cũ: `fishSchools[]` → gán pond
+  gần nhất (`migrateLegacyFish`) + bật pond. Click cá 3D → mở tab hồ chứa (`navigateToWater`). Gates tsc 0 +
+  eslint 0 (file vùng cá) + TS transform OK.
 - `2026-06-11` — **🐟 REDESIGN cùng ngày: BẦY CÁ = INSTANCE ĐỘC LẬP HỒ (tab riêng F1 F2…)**: NgQuan ("cần 1 hàng tab riêng cho cá, mỗi tab 1 bầy chỉnh riêng" + bug cá chỉ hiện tab Pond) → gỡ `fishOn/fishCount/fishSpeed/fishSeed` khỏi WaterConfig (ship sáng cùng ngày), thay bằng **`SiteState.fishSchools: FishSchool[]`** (enabled/offsetX/Z/radius/depth/count/size/speed/seed — parse MIGRATE save cũ có fishOn → bầy tại tâm hồ đó). GUI: type-tab thứ 4 **🐟 Cá** cạnh Pool|Pond|Puddle, hàng tab F1 F2… + ＋ (mirror instanceTabs); pane per-bầy 8 slider — TẤT CẢ live qua tuneFish (X/Z move gốc mesh — cả đàn dời theo, wander local giữ; R/Sâu/Cỡ/Tốc/Màu = setter PondFish) trừ Số cá (commit rebuild). `buildFishSchool` (render/water.ts): gốc tại (offsetX, MẶT NỀN rim, offsetZ), depth đo xuống — không phụ thuộc hồ, default rơi đúng lòng hồ default. ⚠️ Quá trình: gui/site.ts bị watcher/format touch dưới-giây (session Factory đang build tab Cầu cùng file) → Edit tool thua race 4 lần liên tiếp, kể cả Read+Edit cùng block — chuyển **vá atomic node script** (đọc-vá-ghi 1 shot, 7 anchor assert-unique) thành công.
 - `2026-06-11` — **🐟 ĐÀN CÁ KOI trong lòng hồ (PondFish Phase B)**: `WaterConfig` +`fishOn/fishCount/fishSpeed/fishSeed` (parse tolerant 0 bump; chỉ pool/pond — puddle không lòng). `buildPondFish` (render/water.ts): gốc mesh = TÂM hồ tại MẶT nước (cùng công thức baseY buildWater), cá bơi giữa cột nước (kẹp không chạm đáy/mặt), areaRadius = nội-tiếp×0.75 (shape cong dùng bbox nên chừa lề — cá không thò vành), cỡ cá theo hồ nhỏ; dispose theo `ctx.shaders` chain. `SiteHandle.fish` (cfg+instance — KHÔNG zip index vì chỉ hồ bật cá mới có); Lab `onUpdate` gọi `fish.update(dt)` mỗi frame (vẫy = GPU vertex; CPU ≤40 matrix — rẻ). GUI tab Surface: toggle 🐟 + Số cá (commit rebuild) + Tốc bơi/Xáo màu (LIVE `tuneFish` — 0 rebuild, đúng PERFORMANCE.md). Nhìn cá QUA mặt nước = refraction sẵn có của WaterSurface — không thêm pass nào.
 - `2026-06-11` — **TOGGLE 💧 Mặt nước (perf)** (NgQuan: "nút bật tắt cho surface… để bớt lag tuột fps"): `WaterConfig.surfaceOn` (default true, parse tolerant) — false = hồ GIỮ NGUYÊN (đáy/lỗ/viền/cỏ-né) nhưng mesh nước ẨN → reflector ngừng render RTT (**đỡ 1 lần render scene/frame MỖI hồ** — nguồn lag #1). Verify source three 0.174: `projectObject` skip `visible=false` → `updateBefore` (chỗ render RTT) không chạy; RTT **lazy** (`getRenderTarget` chỉ gọi trong updateBefore) → ẩn từ đầu = không cấp VRAM. Render vẫn BUILD WaterSurface (không skip) → `handle.waters` thẳng hàng zip cfg↔surf. GUI: toggle đầu tab Surface, LIVE thuần `tuneWater` visible (0 rebuild); bật lại = frame đầu compile + cấp RTT (khựng 1 lần). Khác `enabled` (tắt CẢ hồ).

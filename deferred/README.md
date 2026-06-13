@@ -67,6 +67,7 @@ deferred/
 | [non-bo-rockery-builder.md](systems/non-bo-rockery-builder.md) | **🗑️ 2026-06-10** — procedural "chưa ra dáng" (bướu tròn đều, giới hạn paradigm) → **CODE ĐÃ XÓA** (RockCluster + tab Rock + state/render; git history giữ). File giữ làm LESSON | Hồi sinh non bộ = **Houdini bake** ([houdini-bake-accents](systems/houdini-bake-accents.md)) — KHÔNG quay lại procedural |
 | [houdini-bake-accents.md](systems/houdini-bake-accents.md) | **📐 2026-06-09** — bản đồ chèn Houdini-bake cho ĐIỂM NHẤN: ①đá non bộ/vách thác ②viên đá variants (layout giữ TS) ③heightmap erosion gò hero ④bonsai; live-editable/animated GIỮ TSL. ⚠️ Apprentice khóa export → học/prototype; bake thật = Indie hoặc vòng Blender | Bắt tay vách đá thác (waterfall Phase B) / hồi sinh non bộ / Factory Phase E |
 | [audio-web-procedural.md](systems/audio-web-procedural.md) | **🔊 2026-06-13** — âm thanh web-3D: SFX môi trường tự synth Web Audio (mưa/gió/SẤM đồng bộ sét), KHÔNG cần ElevenLabs; chỉ GIỌNG NÓI mới cần TTS. Gotcha: AudioContext cần user-gesture | Sau khi xong hình ảnh thời tiết — WeatherAudio khớp `_weather.mode` + `_updateLightning` |
+| [water-type-ecosystem-features.md](systems/water-type-ecosystem-features.md) | **💧 2026-06-13** — luật 3 loại nước (pool sạch / pond sinh thái / puddle) ĐÃ enforce; hoãn tính năng đặc trưng: pool (thang/lằn bơi) · pond (cây thủy sinh/đá đáy) · puddle (gợn mưa/khô dần) | NgQuan gọi làm 1 loại cụ thể — MVP slice 1 tính năng trước |
 
 ---
 
