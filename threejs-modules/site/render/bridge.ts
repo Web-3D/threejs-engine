@@ -244,5 +244,26 @@ export function buildSiteBridge(
     railSide(sub, ctx, mat, b, -1, mats)
   }
   if (b.pierOn) piers(sub, ctx, mat, b, site)
+  addPickBox(sub, ctx, b)
   ctx.group.add(sub)
+}
+
+// 🤚 PICK BOX vô hình ôm cả cầu (deck span × rộng × cao tới đỉnh lan can) — vùng click/move RỘNG hơn ván
+// thưa + giúp cầu THẮNG hồ nước phía sau (raycast trúng box gần camera trước mặt nước). visible=false → 0
+// render, Raycaster vẫn hit. Tag bridgeRef (KHÔNG bridgePart) → Focus/Move walk-up ra cầu; mix 🎯 bỏ qua
+// (hit không part → _selBridge continue tới ván/vành thật phía sau). NgQuan 2026-06-13.
+function addPickBox(g: THREE.Group, ctx: SiteRenderCtx, b: BridgeConfig): void {
+  const m = 0.08 // nới 8cm mỗi phía cho dễ tóm
+  const span = b.span / 1000
+  const w = b.deckWidth / 1000
+  const top = b.rise / 1000 + (b.railOn ? b.railHeight / 1000 : 0.3) + m
+  const geo = new THREE.BoxGeometry(span + 2 * m, top + m, w + 2 * m)
+  ctx.geos.push(geo)
+  const pickMat = new THREE.MeshBasicMaterial()
+  ctx.mats.push(pickMat)
+  const mesh = new THREE.Mesh(geo, pickMat)
+  mesh.visible = false // không render, vẫn raycast được
+  mesh.position.set(0, (top - m) / 2, 0)
+  mesh.userData = { bridgeRef: b } // Focus/Move walk-up; mix bỏ qua (không bridgePart)
+  g.add(mesh)
 }
