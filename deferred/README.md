@@ -71,6 +71,7 @@ deferred/
 | [water-type-ecosystem-features.md](systems/water-type-ecosystem-features.md) | **💧 2026-06-13** — luật 3 loại nước (pool sạch / pond sinh thái / puddle) ĐÃ enforce; hoãn tính năng đặc trưng: pool (thang/lằn bơi) · pond (cây thủy sinh/đá đáy) · puddle (gợn mưa/khô dần) | NgQuan gọi làm 1 loại cụ thể — MVP slice 1 tính năng trước |
 | [fish-tier-taxonomy.md](systems/fish-tier-taxonomy.md) | **🐟 2026-06-13** — chuỗi thức ăn 6 bậc (voi→phù du) + predation lớn-ăn-bé theo BẦY (cluster-gulp). Chốt: ăn reversible · đói riêng mỗi đàn · tier set size/count. Mở: sea water-kind cho voi · partial-bite · bậc nhỏ = points · boids đàn thật | NgQuan ra lệnh build predation / chốt fork sea water-kind |
 | [progressive-scene-assembly.md](systems/progressive-scene-assembly.md) | **🏗️ IDEA 2026-06-14** — hệ "câu giờ": vật hiện TUẦN TỰ (nhanh ra trước, nặng ra sau) + animation lắp-ráp → latency thành "xem cảnh dựng lên". Viên gạch đầu: mặt nước defer 3s + fill-up đổ-đầy/sóng-sánh | Sau khi defer/fill nước ổn, hoặc đánh bóng UX load production |
+| [animal-behavior-system.md](systems/animal-behavior-system.md) | **🧠 CHUYÊN ĐỀ 2026-06-15** — bộ môn + kiến trúc mô phỏng hành vi động vật CHÍNH XÁC (cá = ca #1). Phương pháp quan-sát→ethogram→tầng→validate; 6 tầng sensorimotor (L0 motor…L5 social); neo Artificial Fishes + boids + ethology + Couzin metrics. Thang A đúng-hành-vi (default) vs B đúng-cơ-sinh. ⚠ mới 1 instance → chưa rút engine generic | Lấp gap cá (forage/perception/action-selection), dựng validation harness, hoặc thêm loài #2 (chim) |
 
 ---
 
