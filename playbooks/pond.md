@@ -100,6 +100,19 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-14` — **🪞 PERF LOAD: mặt nước OFF lúc load → auto-fill khi texture xong + 🩹 gỡ gate Fn vỡ** (NgQuan
+  "load chậm lúc đầu, sau mượt"; A/B: tắt surface = load nhanh). **Thủ phạm load = MẶT NƯỚC** (compile shader TO
+  reflector+FBM+ripple+rain+glint + render RTT lần đầu ×N hồ), KHÔNG phải gương-runtime hay texture-nền (texture chỉ
+  async, không block). Fix (`ArchPlanLab._buildSceneInitial`): ẩn mặt nước lúc load → AUTO bật khi cascade texture IM
+  HẲN = `texturesPending()===0` + `textureIdleMs()>1.2s` (đếm + đồng-hồ-im TẬP TRUNG trong `scene/texture-set.ts` —
+  MỌI texture ground/mix/path/fence/border/foundation/đáy-hồ chui qua 1 cửa `loadSurfaceTextureSet` → bắt HẾT, tự co
+  giãn tương lai; fallback 30s). ⚠ **Root bug** (lý do mọi cách trước lọt): `_rebuildSite` chạy MỖI lần 1 texture xong
+  (cascade) DỰNG LẠI mặt nước `visible=surfaceOn=true` → hiện sớm, bỏ qua mọi reveal → fix `_hideWater()` gọi LẠI sau
+  mỗi rebuild (giữ ẩn XUYÊN cascade). + texture nạp SONG SONG (`Promise.all` thay await tuần tự). 🩹 Gỡ **gate
+  `Fn(()=>{If})()` rain/glint** (commit 6959608 chưa verify → WGSL vỡ = ĐỨNG app khi bật nước; revert `bd3d7a4`) +
+  `atan2→atan` (TSL deprecated). Memory `feedback-tsl-if-fn-gate-eager-material`. Vision câu-giờ (fill-up/cá-thả/profiler):
+  `deferred/systems/progressive-scene-assembly.md`.
+
 - `2026-06-13` — **🐟 SINH ĐỘNG: bank/pitch + boids + mặt cá (mắt/miệng há) + 🪶 perf Lambert + ☔ gate rain-ripple**
   (NgQuan, nhiều vòng test + "đánh giá vs hãng lớn"). **Predation tinh chỉnh:** BỎ gate `CHASE_MIN` cứng → độ-trễ +
   cơ-hội-thoát dời sang PREY = **cửa sổ SPRINT 2s** tốc NGẪU NHIÊN (`SPRINT_MIN`2.1..`MAX`3.4 — roll thấp bị đớp ngay /

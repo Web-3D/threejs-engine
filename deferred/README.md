@@ -44,6 +44,7 @@ deferred/
 | [water-bottom-refraction.md](rendering/water-bottom-refraction.md) | Đáy hồ (Shape-holes khoét nền + basin extrude) + mặt nước vừa phản chiếu vừa nhìn xuyên (Fresnel reflect↔refract: trong suốt / `viewportSharedTexture` / PBR transmission) | Chốt mức refraction + chấp nhận cost tier-C++ |
 | [underwater-immersive.md](rendering/underwater-immersive.md) | **DEFERRED 2026-06-11** — môi trường NGẬP NƯỚC nhập vai (B): camera LẶN xuống dưới mặt nước. Paradigm khác A (mặt nước 2-mặt/Snell window · fog volumetric toàn cục · godray · caustics mọi mặt) | Có môi trường nước RỘNG thật (hồ lớn/biển) — sau E-series, KHÔNG hợp lô nhà |
 | [per-zone-vuilap-detail.md](rendering/per-zone-vuilap-detail.md) | **2026-06-08** — toggle "vùi lấp" (detail-normal sần) RIÊNG mỗi zone — vướng per-key-material-cache (cần 2 variant/key). Loang-lổ geometry (drape) đã che phần lớn nhu cầu | Cần bề-mặt-cát-mịn-sần TÁCH BIỆT patches (chấp nhận 2-variant cache) |
+| [water-reflection-probe-tier.md](rendering/water-reflection-probe-tier.md) | **📐 PLANNED 2026-06-14** — tier nước PROBE (cubemap update hiếm) thay planar reflector cho production web: xóa pass/frame, không đổi theo scene, port WebGL2 dễ, tái dùng ~80% fragment. Far-clip BẤT KHẢ THI (reflector ghi đè far); layer-exclude rớt shadow | Bake site lên web product, hoặc cần nhiều hồ/máy yếu |
 
 ---
 
@@ -69,6 +70,7 @@ deferred/
 | [audio-web-procedural.md](systems/audio-web-procedural.md) | **🔊 2026-06-13** — âm thanh web-3D: SFX môi trường tự synth Web Audio (mưa/gió/SẤM đồng bộ sét), KHÔNG cần ElevenLabs; chỉ GIỌNG NÓI mới cần TTS. Gotcha: AudioContext cần user-gesture | Sau khi xong hình ảnh thời tiết — WeatherAudio khớp `_weather.mode` + `_updateLightning` |
 | [water-type-ecosystem-features.md](systems/water-type-ecosystem-features.md) | **💧 2026-06-13** — luật 3 loại nước (pool sạch / pond sinh thái / puddle) ĐÃ enforce; hoãn tính năng đặc trưng: pool (thang/lằn bơi) · pond (cây thủy sinh/đá đáy) · puddle (gợn mưa/khô dần) | NgQuan gọi làm 1 loại cụ thể — MVP slice 1 tính năng trước |
 | [fish-tier-taxonomy.md](systems/fish-tier-taxonomy.md) | **🐟 2026-06-13** — chuỗi thức ăn 6 bậc (voi→phù du) + predation lớn-ăn-bé theo BẦY (cluster-gulp). Chốt: ăn reversible · đói riêng mỗi đàn · tier set size/count. Mở: sea water-kind cho voi · partial-bite · bậc nhỏ = points · boids đàn thật | NgQuan ra lệnh build predation / chốt fork sea water-kind |
+| [progressive-scene-assembly.md](systems/progressive-scene-assembly.md) | **🏗️ IDEA 2026-06-14** — hệ "câu giờ": vật hiện TUẦN TỰ (nhanh ra trước, nặng ra sau) + animation lắp-ráp → latency thành "xem cảnh dựng lên". Viên gạch đầu: mặt nước defer 3s + fill-up đổ-đầy/sóng-sánh | Sau khi defer/fill nước ổn, hoặc đánh bóng UX load production |
 
 ---
 
