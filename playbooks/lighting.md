@@ -9,7 +9,7 @@ modules:
   - threejs-modules/site/render/lamp.ts
   - threejs-modules/site/state.ts
 issues: []
-updated: 2026-06-14
+updated: 2026-06-15
 ---
 
 # Playbook — Ánh sáng môi trường
@@ -49,6 +49,7 @@ thấp thì mặt ngang gần như chỉ sống bằng fill: `hemi=(0.06+0.29·d
 - `2026-06-13` — Sky bám preset: SkyGradient 1.1 `setOvercast` (trục u ám — xám + nuốt đĩa nắng, nền cho thời tiết) + `setDayOverride` (sun TẮT = trời đêm); `SunOpts.overcast` + slider ☁ khay 🌅
 - `2026-06-13` — Thời tiết Phase A: module `effects/Precipitation` (mưa/tuyết field-paradigm) + tab 🧪 Lab ▸ 🌧️ Thời tiết (preview xoay-ngắm). CHƯA ráp scene (Phase B). Playbook MẢNG riêng tạo ở Phase B khi ráp thật.
 - `2026-06-13` — Khay 🌅 redesign + 🌫️ Sương mù: layout DỌC 2 mục (Bầu trời / Thời tiết), slider CÓ NHÃN (Sáng nền/Mây mù/Sương mù · Nặng hạt/Cỡ hạt), dedupe icon (weather "tắt" ☀️→🚫). Thêm `SunOpts.fog` → `scene.fogNode` (density-fog, màu lerp xanh↔xám theo overcast + tối theo đêm); preset gắn fog (Trưa 0/Chiều .15/Âm u .35/Đêm .2/Bão .5)
+- `2026-06-15` — **GUI hệ đèn (code3) + Focus click (code1).** code3: sub-tab 💡 Đèn nâng thành Tabs LỒNG folder-style **gold/brass** (`ap-lamp-*`) — cấp NGOÀI = LOẠI đèn (🏮 Trụ sân; chừa 🔆 Hắt tường cho Phase 2 building-lights), cấp TRONG = instance Đ1/Đ2/＋ (`buildLampDomain` nested). code1: vỏ đèn tag `userData.lampRef` (lõi `lamp.ts`, mirror bridgeRef) → `_tryClickLamp` raycast siteGroup → `navigateToLamp(idx)` (drawer Ground ▸ 💡 Đèn ▸ Trụ sân ▸ Đn). Còn 3 tương tác (Pick/Paint/Move) chưa cần cho đèn (chỉ click-Focus) (tier A)
 - `2026-06-14` — **Phase B-đèn P1: đèn fixture trụ + tự-bật ban đêm.** `SiteState.lamps[]` (LampConfig x/z/height/color/intensity/range) + module `site/render/lamp.ts` (vỏ trụ+nón+bóng glow, trả LampTip cho editor) + GUI sub-tab 💡 Đèn (đa-instance Đ1/Đ2…, mirror Cầu). **Perf-an-toàn:** POOL N=8 `PointLight` editor tạo 1 LẦN (`castShadow=false`), gán N tip GẦN gốc nhất mỗi rebuild + bật/tắt bằng `intensity` (KHÔNG add/remove → né recompile); đèn xa cap = chỉ glow. **Tự đêm:** `_applySunToLamps` (cascade `_applySun`) — real-light intensity + bóng glow × `nightFactor`(1−day, hoặc 1 khi sun tắt), LIVE trên sun-drag. Bóng glow = `MeshBasicMaterial` editor-owned (lerp warm→tối, bơm qua `opts.lampGlowMat`). Hoãn P2: gán theo gần-CAMERA · đèn tường/dây · IES/spot · TiledLightsNode (>16) · `applyLampLive` (rebuild-chỉ-đèn) (tier A)
 
 ## 6. Liên hệ
