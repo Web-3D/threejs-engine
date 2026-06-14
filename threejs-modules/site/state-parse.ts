@@ -21,6 +21,7 @@ import type {
   GroundMaterialKey,
   GroundMixParams,
   GroundMixSlot,
+  LampConfig,
   PavingParams,
   SiteState,
   StonePathParams,
@@ -45,6 +46,7 @@ import {
   makeFence,
   makeFishSchool,
   makeGroundMixParams,
+  makeLamp,
   makePavingParams,
   makeStonePathParams,
   makeWallCurveParams,
@@ -475,6 +477,7 @@ export function parseSite(raw: unknown): SiteState {
     waters,
     bridges: parseBridges(o.bridges), // 🌉 cầu — design cũ không có → []
     fences: parseFences(o.fences, o.fence, d.fences[0]),
+    lamps: parseLamps(o.lamps), // 💡 đèn — design cũ không có → []
     // key `rocks` (non bộ cũ, gỡ 2026-06-09) trong design lưu cũ: KHÔNG parse → biến mất khi save lại (an toàn)
   }
 }
@@ -579,6 +582,32 @@ function parseBridge(raw: unknown): BridgeConfig {
     rimMix: optMix(r.rimMix), // 🎨 mix vành / tay vịn / trụ con — thiếu = gỗ/đá đơn
     railMix: optMix(r.railMix),
     postMix: optMix(r.postMix),
+  }
+}
+
+// 💡 Đèn: parse mảng tolerant (design cũ không có key lamps → []). Tối đa 32 đèn (vỏ rẻ; chỉ N gần được real-light).
+function parseLamps(raw: unknown): LampConfig[] {
+  if (!Array.isArray(raw)) return []
+  const out: LampConfig[] = []
+  for (const l of raw) {
+    out.push(parseLamp(l))
+    if (out.length >= 32) break
+  }
+  return out
+}
+
+function parseLamp(raw: unknown): LampConfig {
+  const d = makeLamp()
+  if (!raw || typeof raw !== 'object') return d
+  const r = raw as Partial<LampConfig>
+  return {
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    x: clamp(num(r.x, d.x), -30000, 30000),
+    z: clamp(num(r.z, d.z), -30000, 30000),
+    height: clamp(num(r.height, d.height), 500, 12000),
+    color: typeof r.color === 'number' ? r.color : d.color,
+    intensity: clamp(num(r.intensity, d.intensity), 0, 50),
+    range: clamp(num(r.range, d.range), 0, 40000),
   }
 }
 

@@ -47,6 +47,7 @@ import {
 import { heightAt, type HeightField, makeHeightField, type MaskRect } from '../terrain' // 🏔️ height-field gò
 import { buildSiteFence } from './fence'
 import { buildVegetation } from './grass'
+import { buildSiteLamp, type LampTip } from './lamp'
 import {
   allWaterCarvePolygons,
   buildFishSchool,
@@ -74,6 +75,8 @@ export interface SiteHandle {
   // 🐟 Bầy cá CON của hồ pond (kèm cfg + water chứa — caller tune live + navigate). Caller drive update(dt)
   // mỗi frame; dispose theo ctx.shaders.
   fish: { cfg: FishSchool; water: WaterConfig; fish: PondFish }[]
+  // 💡 Đỉnh BÓNG mỗi đèn enabled (world m + màu) → editor gán pool PointLight vào N tip gần nhất (perf).
+  lampTips: LampTip[]
 }
 
 // Tùy chọn render lô (do caller=editor bơm; site-kit không tự biết building).
@@ -123,6 +126,9 @@ export interface SiteRenderOpts {
   // 🏔️ Footprint nhà (m, world XZ, rect có xoay) — terrain GIỮ PHẲNG pad dưới nhà (mask=0). Caller bơm
   // `_foundationRects()` (= GrassExcludeRect, khớp MaskRect). Thiếu → không pad nhà (chỉ pad hồ + viền lô).
   buildingFootprint?: MaskRect[]
+  // 💡 Material BÓNG đèn (MeshBasic emissive) editor-sở-hữu + CACHE 1 lần (KHÔNG recompile/dispose ở lõi) —
+  // editor lerp color theo nightFactor (tắt ngày, sáng đêm) trên sun-drag mà KHÔNG rebuild. Thiếu (lib) → fallback.
+  lampGlowMat?: THREE.Material
 }
 
 // Dựng lô vào ctx. show=false → không dựng gì (caller để building về y=0). Trả handle (grass) cho live-tune.
@@ -131,7 +137,7 @@ export function renderSiteState(
   ctx: SiteRenderCtx,
   opts: SiteRenderOpts = {}
 ): SiteHandle {
-  if (!site.show) return { grass: null, waters: [], ground: null, fish: [] }
+  if (!site.show) return { grass: null, waters: [], ground: null, fish: [], lampTips: [] }
   const ground = buildGround(site, ctx, opts)
   buildGroundLayers(site, ctx, opts) // TẦNG surface chồng (xếp lớp 3D) lên base
   const pools = renderWaters(site) // pool + pond ĐANG BẬT (puddle placeholder bỏ qua)
@@ -149,7 +155,24 @@ export function renderSiteState(
   // để per-fence material cache + dirty-check riêng. Headless (lib) path: mọi lớp dùng chung opts (fenceWallTextures).
   if (!opts.skipFence)
     for (const f of site.fences) if (f.enabled) buildSiteFence(f, site, ctx, opts)
-  return { grass, waters, ground, fish }
+  const lampTips = buildLamps(site, ctx, opts) // 💡 vỏ đèn + tip cho editor gán pool real-light
+  return { grass, waters, ground, fish, lampTips }
+}
+
+// 💡 Dựng vỏ MỌI đèn enabled (trụ+chụp+bóng) — material trụ CHUNG (1 đẩy ctx.mats). glow editor-owned ưu
+// tiên (chỉnh theo đêm); thiếu (lib path) → fallback emissive warm. Trả tip cho caller gán real-light pool.
+function buildLamps(site: SiteState, ctx: SiteRenderCtx, opts: SiteRenderOpts): LampTip[] {
+  const lamps = (site.lamps ?? []).filter((l) => l.enabled)
+  if (lamps.length === 0) return []
+  const post = new THREE.MeshToonMaterial({ color: 0x2b2b30 }) // trụ/chụp kim loại tối — chung mọi đèn
+  ctx.mats.push(post)
+  let glow = opts.lampGlowMat
+  if (!glow) {
+    const m = new THREE.MeshBasicMaterial({ color: 0xffe6b0 }) // fallback bóng ấm (lib path không có editor)
+    ctx.mats.push(m)
+    glow = m
+  }
+  return lamps.map((l) => buildSiteLamp(l, ctx, { post, glow }))
 }
 
 // 🐟 Dựng cá cho mọi hồ pond đang bật: loop w.fishSchools[] (NHIỀU đàn/hồ — chuỗi bậc), mỗi đàn enabled = 1 PondFish
@@ -1092,4 +1115,5 @@ function resolveGroundMat(
 // ── Barrel re-export — sub-domain tách file 2026-06-11, consumer giữ NGUYÊN import từ fromState ──
 export { buildSiteFence, type GateWorldSpec, gateWorldSpec } from './fence'
 export { buildSiteGrass, grassBuildSig } from './grass'
+export { buildSiteLamp, type LampTip } from './lamp'
 export { buildBasinFloorGeometry, pondWorldXZ, waterPolygons } from './water'

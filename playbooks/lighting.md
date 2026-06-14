@@ -1,13 +1,15 @@
 ---
 domain: lighting
 title: Ánh sáng môi trường — rig sun/hemi/IBL/sky + preset, tiến tới đèn fixture
-status: seed
+status: building
 tier: A
 modules:
   - archplan/src/archplan/scene/scene.ts
   - archplan/src/archplan/interaction/sunGizmo.ts
+  - threejs-modules/site/render/lamp.ts
+  - threejs-modules/site/state.ts
 issues: []
-updated: 2026-06-12
+updated: 2026-06-14
 ---
 
 # Playbook — Ánh sáng môi trường
@@ -47,10 +49,11 @@ thấp thì mặt ngang gần như chỉ sống bằng fill: `hemi=(0.06+0.29·d
 - `2026-06-13` — Sky bám preset: SkyGradient 1.1 `setOvercast` (trục u ám — xám + nuốt đĩa nắng, nền cho thời tiết) + `setDayOverride` (sun TẮT = trời đêm); `SunOpts.overcast` + slider ☁ khay 🌅
 - `2026-06-13` — Thời tiết Phase A: module `effects/Precipitation` (mưa/tuyết field-paradigm) + tab 🧪 Lab ▸ 🌧️ Thời tiết (preview xoay-ngắm). CHƯA ráp scene (Phase B). Playbook MẢNG riêng tạo ở Phase B khi ráp thật.
 - `2026-06-13` — Khay 🌅 redesign + 🌫️ Sương mù: layout DỌC 2 mục (Bầu trời / Thời tiết), slider CÓ NHÃN (Sáng nền/Mây mù/Sương mù · Nặng hạt/Cỡ hạt), dedupe icon (weather "tắt" ☀️→🚫). Thêm `SunOpts.fog` → `scene.fogNode` (density-fog, màu lerp xanh↔xám theo overcast + tối theo đêm); preset gắn fog (Trưa 0/Chiều .15/Âm u .35/Đêm .2/Bão .5)
+- `2026-06-14` — **Phase B-đèn P1: đèn fixture trụ + tự-bật ban đêm.** `SiteState.lamps[]` (LampConfig x/z/height/color/intensity/range) + module `site/render/lamp.ts` (vỏ trụ+nón+bóng glow, trả LampTip cho editor) + GUI sub-tab 💡 Đèn (đa-instance Đ1/Đ2…, mirror Cầu). **Perf-an-toàn:** POOL N=8 `PointLight` editor tạo 1 LẦN (`castShadow=false`), gán N tip GẦN gốc nhất mỗi rebuild + bật/tắt bằng `intensity` (KHÔNG add/remove → né recompile); đèn xa cap = chỉ glow. **Tự đêm:** `_applySunToLamps` (cascade `_applySun`) — real-light intensity + bóng glow × `nightFactor`(1−day, hoặc 1 khi sun tắt), LIVE trên sun-drag. Bóng glow = `MeshBasicMaterial` editor-owned (lerp warm→tối, bơm qua `opts.lampGlowMat`). Hoãn P2: gán theo gần-CAMERA · đèn tường/dây · IES/spot · TiledLightsNode (>16) · `applyLampLive` (rebuild-chỉ-đèn) (tier A)
 
 ## 6. Liên hệ
 
 - **Modules:** `archplan/scene/scene.ts` · `archplan/interaction/sunGizmo.ts` · `threejs-modules/effects/Precipitation` (mưa/tuyết)
-- **Phase B-đèn (kế):** đèn fixture parametric (LampConfig[] site-kit — trụ sân vườn/tường/dây) = prefab mesh + emissive + real light KHÔNG shadow, cap ~8–16, xa rớt emissive-only; >16 mới cần `TiledLightsNode` (examples/jsm, verified 0.174). IES: `src/lights/webgpu/IESSpotLight.js` ✓
+- **Phase B-đèn:** ✅ **P1 XONG (trụ + tự đêm)** — `site/render/lamp.ts` + `SiteState.lamps[]` + pool N=8 `PointLight` editor (no shadow, gán N gần gốc, ×nightFactor) + GUI 💡 Đèn. **P2 (kế):** đèn tường/dây · gán theo gần-CAMERA · IES spot (`src/lights/webgpu/IESSpotLight.js` ✓) · `TiledLightsNode` (>16, examples/jsm 0.174) · `applyLampLive` (rebuild-chỉ-đèn cho kéo mượt)
 - **Phase B-thời-tiết:** ráp Precipitation vào archplan (1 instance/scene) + preset 🌧️❄️⛈️ liên động `SunOpts.overcast` (bão = overcast 1 + mưa dày + gió mạnh + fill thấp). Phase C: streak mưa (Line), tuyết đọng mái, mưa gợn hồ, sét.
 - **Memory:** [[per-key-material-cache-tradeoff]] (vỏ đèn ăn material per-key)

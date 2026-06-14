@@ -533,6 +533,19 @@ export interface BridgeConfig {
   postMix?: GroundMixParams // 🎨 MIX trụ con lan can ('wall')
 }
 
+// 💡 1 ĐÈN sân vườn (trụ đèn). Vỏ = mesh (trụ+chụp+bóng glow emissive) site-kit dựng lại mỗi rebuild; REAL
+// light = POOL editor-sở-hữu gán N fixture gần nhất (perf: KHÔNG add/remove light → né recompile NodeMaterial;
+// xa cap = chỉ glow). Tự bật ban đêm: real-light intensity + glow × nightFactor (1−day, hoặc 1 khi sun tắt).
+export interface LampConfig {
+  enabled: boolean
+  x: number // mm — world X tâm trụ (gốc tâm lô)
+  z: number // mm — world Z
+  height: number // mm — cao trụ (đất → bóng đèn)
+  color: number // hex — màu ánh sáng (real light + tint glow)
+  intensity: number // cường độ real light ban đêm (×nightFactor; PointLight)
+  range: number // mm — tầm sáng (PointLight.distance); 0 = vô hạn
+}
+
 export interface SiteState {
   show: boolean // bật/tắt hiện nền lô (tắt → building về y=0, không đôn)
   lotWidth: number // mm — bề ngang lô (trục X)
@@ -551,6 +564,7 @@ export interface SiteState {
   // (SiteState.fishSchools[] top-level GỠ 2026-06-13 — cá thành CON của hồ pond: WaterConfig.fishSchools[]. Migrate ở parseSite.)
   bridges: BridgeConfig[] // 🌉 cầu đa-instance đặt TỰ DO (tab C1 C2… — thường bắc ngang hồ)
   fences: FenceConfig[] // hàng rào đa-lớp — mỗi lớp 1 vòng đồng tâm ở inset riêng (render mọi lớp enabled)
+  lamps: LampConfig[] // 💡 đèn sân vườn đa-instance (trụ đèn) — vỏ mesh + real-light pool editor gán N gần nhất
   // (rocks?: RockConfig[] đã GỠ 2026-06-09 — non bộ procedural "chưa ra dáng", thay bằng Houdini-bake asset
   //  → deferred/systems/houdini-bake-accents.md. Key `rocks` trong design cũ được parseSite bỏ qua an toàn.)
 }
@@ -672,7 +686,13 @@ export function defaultSiteState(): SiteState {
     waters: defaultWaters(), // pond mặc định mang sẵn 1 bầy cá (makeWater gắn fish khi kind='pond')
     bridges: [], // 🌉 chưa có cầu nào — thêm qua ＋ ở tab Cầu
     fences: [makeFence()],
+    lamps: [], // 💡 chưa có đèn nào — thêm qua ＋ ở tab Đèn
   }
+}
+
+// 💡 Đèn mặc định: trụ cao 3m, ánh ấm (warm 2700K-ish), tầm 8m. Đặt gốc lô — user kéo/chỉnh.
+export function makeLamp(): LampConfig {
+  return { enabled: true, x: 0, z: 0, height: 3000, color: 0xffd9a0, intensity: 8, range: 8000 }
 }
 
 // 🌉 Factory 1 cầu — đặt tự do (default rơi vào tâm pool đầu, offsetZ 5000 — user kéo đặt lại). Cầu vòm
