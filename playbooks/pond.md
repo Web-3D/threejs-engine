@@ -100,6 +100,15 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-15` — **💧 FILL-UP: reveal mặt nước = ĐỔ-ĐẦY từ đáy basin (không snap)** (NgQuan, tiếp perf-load — viên
+  gạch đầu chuỗi câu-giờ). `_revealAutoWater` bật hồ → `_startWaterFill`: **pond/pool** (có basin/vách che) HẠ mesh
+  xuống `baseY − cột-nước` (cột = `depthY/1000 − 3cm`, min 5cm) → `_tickWaterFill` mỗi frame NÂNG lên `baseY`,
+  **tuyến tính dâng-chậm-đều** (`rise=x`, `x=t/dur`, **dur 10s** tunable) + **bob sóng-sánh tắt dần**
+  `amp·e^(−6x)·sin(3πx)` biên **≤1.5cm < khe 3cm tới vành** → KHÔNG tràn coping (mọi kích cỡ/độ-sâu); snap đúng
+  `baseY` khi `t≥dur`. **Puddle BỎ QUA** (không basin → hạ = lõm xuyên nền xấu) → hiện thẳng. `_waterFills` clear ở
+  `_rebuildSite`+`_clearSite` (mesh cũ dispose → bỏ ref stale). **Thuần TS, KHÔNG đụng TSL → 0 rủi ro WGSL.** Curve
+  (dur / ease / vị-trí-bob đầu↔cuối) tunable. Vision tổng: `deferred/systems/progressive-scene-assembly.md`.
+
 - `2026-06-14` — **🪞 PERF LOAD: mặt nước OFF lúc load → auto-fill khi texture xong + 🩹 gỡ gate Fn vỡ** (NgQuan
   "load chậm lúc đầu, sau mượt"; A/B: tắt surface = load nhanh). **Thủ phạm load = MẶT NƯỚC** (compile shader TO
   reflector+FBM+ripple+rain+glint + render RTT lần đầu ×N hồ), KHÔNG phải gương-runtime hay texture-nền (texture chỉ

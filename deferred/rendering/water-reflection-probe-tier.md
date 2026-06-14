@@ -41,6 +41,26 @@ Trong `_buildColor`, **chỉ `reflector()` (sm.rgb) là full-pass đắt**. Ph�
 
 **CubeCamera (probe):** đặt tâm hồ, hơi trên mặt nước. `cubeCam.update(renderer, scene)` render 6 mặt → **chỉ gọi khi cần**: 1 lần lúc dựng (scene tĩnh) hoặc khi đổi mặt trời/đổi scene (cờ `dirty`). Amortize ≈ 0/frame. **Sky = `scene.backgroundNode` (SkyGradient, KHÔNG geometry)** → probe vẫn bắt được trời (đã verify cách dựng sky 2026-06-14). 1 probe **sky-dominant có thể CHIA chung mọi hồ** (rẻ nữa).
 
+## ★ Quyết định TIER (NgQuan 2026-06-14) — áp triết lý "hero vs mass" của building cho hồ
+Giống building (chỉ ~20% nhà có nội thất tương tác, còn lại khối rỗng) → áp y hệt cho hồ:
+- **Mặc định MỌI hồ = probe** (cubemap chia chung, ~0/frame, scale khu phố vô tư).
+- **~20% hồ "chính/hero" đánh dấu tay** → planar gương THẬT khi camera **tiến GẦN** (distance-LOD); xa = về probe.
+- 80% còn lại = probe end-to-end (khối "rỗng").
+- **KHÔNG auto-switch-planar cho mọi hồ** (né hitch mỗi-lần-lại-gần) — chỉ hero mới có planar.
+
+**Hitch lại-gần hero** (planar compile lần đầu/hồ → cached sau): chỉ lần ĐẦU áp sát mỗi hero + số hero ít = bounded.
+**Mitigate**: WARM shader hero lúc load (trong load-defer) → lại gần chỉ activate RTT, KHÔNG compile-freeze.
+
+**Tách bạch 2 trục**: `dist-tới-camera` lái (a) LOAD reveal-order (gần trước, mọi hồ) + (b) runtime planar-trigger (CHỈ hero). Đồng bộ [[building-warehouse-pipeline]] (hero-procedural vs mass-baked) + [[neighborhood-block-assembly-lod]].
+
+## ★ Biển + nhiều đảo cao (NgQuan 2026-06-14) — khi probe sky-dominant KHÔNG đủ
+Biển MỞ = sky-dominant → probe chia-chung hoàn hảo. Nhiều ĐẢO CAO quanh biển = **nearby geometry** → shared sky-probe **SAI parallax**: cubemap coi mọi thứ ở ∞ → ảnh đảo lệch, không bám chân đảo, không trượt đúng khi camera dời; 1 probe tâm-biển → bờ xa soi đảo sai góc.
+- **Cứu tinh: đảo STATIC → bake probe 1 LẦN → SỐ ĐẢO không thêm cost runtime** (chỉ bake-time + probe memory). Probe THẮNG ĐẬM planar ở đây: planar render lại MỌI đảo MỖI frame (50 đảo = 50× geo/RTT/frame); probe trả 1 lần.
+- **Sửa parallax: box-projected cubemap** (parallax-corrected — ray ∩ bounding-box thay vì coi ∞) → đảo cự-ly hữu hạn bám đúng. Industry-standard (Source / Unity reflection-probe box projection). Runtime ~free. Nhiều cụm đảo rải xa → **multi-probe blend theo vùng** (vẫn bake-once).
+- **Đảo on-screen + vật ĐỘNG (thuyền/người): SSR** (screen-space reflection) — đúng parallax + bắt vật động; off-screen → fallback cubemap. **Hybrid SSR + cubemap = công thức ocean chuẩn công nghiệp.**
+- **Vùng lỗi KHU TRÚ:** ảnh đảo chỉ hiện ở **dải nước SÁT BỜ**; ra xa → grazing → fresnel cao → soi TRỜI. Probe-sai-parallax chỉ lộ ở near-shore band = đúng dải "hero" dành cho SSR/planar. Biển giữa vẫn probe sạch.
+→ **Sea + đảo: probe box-projected bake-once (nền) + SSR/planar dải sát bờ.** KHÔNG planar full-screen. Càng nhiều đảo, probe-bake-once càng thắng. (Sea water-kind bậc 1-3 đã deferred ở fish-taxonomy.)
+
 ## Tái dùng (reuse map) — đập đi rất ít
 - **GIỮ 100%:** `_surfaceNormal` (FBM normal), `viewportSharedTexture` refraction + tint, fresnel Schlick, `_rippleNormal` pool (+ RIPPLE_SLOTS 8), rain-cell ambient + glint + splash, `setSun`, toàn bộ config/state/parse/GUI, form tự do `points[]`.
 - **THAY ~15–25 dòng:** nguồn reflection trong `_buildColor` + dựng `CubeCamera` thay `reflector()` trong constructor + `setTime`/update cadence.

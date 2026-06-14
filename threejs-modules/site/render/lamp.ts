@@ -48,17 +48,20 @@ export function buildSiteLamp(
   post.position.set(x, H / 2, z)
   post.castShadow = true
   post.receiveShadow = true
+  post.userData.lampRef = lamp // 👆 editor Focus: click vỏ đèn 3D → walk-up đọc ref → tab Đèn (mirror bridgeRef)
   ctx.group.add(post)
   const capGeo = new THREE.ConeGeometry(CAP_R, CAP_H, 10) // nón chụp trên bóng
   ctx.geos.push(capGeo)
   const cap = new THREE.Mesh(capGeo, mats.post)
   cap.position.set(x, H + CAP_H / 2, z)
   cap.castShadow = true
+  cap.userData.lampRef = lamp
   ctx.group.add(cap)
   const bulbGeo = new THREE.SphereGeometry(BULB_R, 10, 8) // bóng glow (emissive) = vị trí real-light
   ctx.geos.push(bulbGeo)
   const bulb = new THREE.Mesh(bulbGeo, mats.glow)
   bulb.position.set(x, bulbY, z)
+  bulb.userData.lampRef = lamp
   ctx.group.add(bulb)
   return { x, y: bulbY, z, color: lamp.color, intensity: lamp.intensity, range: lamp.range / 1000 }
 }
