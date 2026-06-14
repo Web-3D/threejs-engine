@@ -27,6 +27,15 @@ sẵn sàng, có animation vào, theo thứ tự cố ý → latency thành tr�
 - **Animation vào** mỗi item (thư viện entrance tái dùng): fade-in · rise/fill (nước) · scale-in · slide-assemble · drop-in.
 - **Mask compile/hitch** đặt vào khoảnh-khắc ít-lộ (nước ở đáy, vật nhỏ/mờ/xa) — học từ fill-up.
 
+## Thứ tự reveal theo KHOẢNG-CÁCH camera-spawn [NgQuan 2026-06-14]
+Cụ thể hóa "thứ tự reveal" cho ĐA HỒ (mỗi nhà 1 hồ — khu phố): mở trang, camera spawn 1 điểm →
+- **Reveal hồ GẦN nhất TRƯỚC** (cái mắt thấy đầu) → tương tác ngay; rồi **tuần tự xa dần** (sort dist tới camera-spawn), từng hồ 1 → "ripple lan ra từ chỗ mình đứng".
+- **Trải đều spike compile shader nước + RTT-first-render PER-HỒ** (per-instance, KHÔNG share) thay vì N cái nổ cùng lúc = freeze.
+
+**Honest:** (1) Texture phần lớn SHARED-cache → hồ sau tái dùng catalog (nhanh) → cái stagger giúp = compile/RTT, không phải texture. (2) Sequential chỉ dàn LÚC LOAD — **KHÔNG giảm tường RUNTIME** (reveal hết = vẫn N reflector RTT/frame → cần probe/LOD).
+
+**★ Synergy:** `dist-tới-camera` lái CẢ 2 trục — (a) **load**: thứ tự reveal (gần trước); (b) **runtime LOD**: gần = planar gương thật, xa = probe/fake ([[water-reflection-probe-tier]]). 1 thước đo, 2 việc → đây là cách gộp load+runtime cho khu phố. Liên hệ [[neighborhood-block-assembly-lod]].
+
 ## Lớp ĐO — Load profiler (data nền cho dàn dựng) [NgQuan 2026-06-14]
 Bộ kiểm tra/đo để **BIẾT mà dàn, không đoán**:
 - **Per-asset load time** — đứa nào nhanh nhất / chậm nhất (MẦM đã có: log `[tex]` + `texturesPending()` trong `scene/texture-set.ts`).
