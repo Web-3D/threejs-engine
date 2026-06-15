@@ -76,6 +76,14 @@ export interface PondFishOptions {
   burstRate?: number
   /** 🐟 BƠI THEO ĐÀN (boids cohesion+alignment) — true = tụm cụm + bơi đồng hướng. Pond ít con → Default: false */
   schooling?: boolean
+  /** 🍽 MÒ ĂN (forage) — đói thì sinh điểm thức-ăn nổi mặt, cá tới ăn → satiation tự hồi. Default: false */
+  forage?: boolean
+  /** 🍽 Số viên mỗi lần rải (rải tay/click/auto). Default: 10 */
+  foodCount?: number
+  /** 🍽 Giãn cách RƠI giữa các viên (s) — nhỏ = rơi dồn nhanh, lớn = thưa. Default: 0.12 */
+  foodDrop?: number
+  /** 🍽 Độ rộng vùng toả viên quanh điểm rải (m). Default: 0.7 */
+  foodSpread?: number
   /** 🐟 Độ NO (0..1): 1 = no/bơi thường; 0 = đói lả → CHẾT phơi bụng (trôi dưới mặt, behavior off). Default: 1 */
   satiation?: number
   /** 🐟 VÙNG BƠI = lòng hồ THẬT (polygon local + mặt nước + đáy theo gò). Có → cá bám hình hồ, đụng vách
@@ -325,6 +333,20 @@ const SCHOOL_R = 4 // bán kính CẢM NHẬN đàn = chiều dài cá × K — 
 const COH_W = 1 // trọng số COHESION (hướng về tâm cụm) khi tổng hợp hướng đàn
 const ALIGN_W = 1.4 // trọng số ALIGNMENT (theo hướng chung) — nhỉnh hơn → đàn bơi đồng hướng, mượt (không co cụm quá)
 const SCHOOL_TURN = 2.5 // /s — tốc lerp heading về hướng đàn (vừa phải, vẫn để wander/sway phá đều)
+// 🍽 MÒ ĂN (forage) — homeostasis độ-no school-level: đói (drain) → sinh điểm thức-ăn nổi mặt → cá tới ăn → no lại.
+const FORAGE_DRAIN = 0.04 // satiation/s rút khi forageOn (full→cạn ~25s nếu không ăn)
+const FORAGE_HUNGRY = 0.5 // satiation < mức này (= mép VÀNG level 10) → TỰ rải nhúm (đói → ăn ở vùng vàng)
+const FORAGE_BITE = 0.14 // satiation hồi mỗi VIÊN bị ăn (≈7 viên = no lại từ rỗng)
+const FORAGE_DART = 1.35 // ×tốc khi đi mò ăn (nhanh hơn wander, chậm hơn HUNT_DART săn mồi)
+const FORAGE_YFRAC = 0.05 // tầng ăn = sát MẶT (thức-ăn nổi)
+const FOOD_R = 0.022 // m — bán kính viên thức-ăn nổi mặt
+const FOOD_MAX = 16 // 🍽 cap số viên cùng lúc/đàn (= slot InstancedMesh)
+const FORAGE_AUTO_N = 4 // 🍽 tự rải nhúm nhỏ khi đói (forageOn)
+const FOOD_SCATTER_N = 10 // 🍽 nút "Rải thức ăn" / click thả → 1 vốc
+const DROP_H = 0.28 // 🍽 m — viên RƠI từ độ cao này xuống mặt nước (rắc cám)
+const DROP_DUR = 0.5 // 🍽 s — thời gian rơi (gia tốc); rơi xong mới ăn được
+const FOOD_SPREAD = 0.7 // 🍽 m — toả viên quanh ĐIỂM CLICK (tách xa nhau, không chụm 1 đống)
+const FOOD_STAGGER = 0.12 // 🍽 s — giãn cách RƠI giữa các viên (thả TỪNG viên nối tiếp, không cả chùm)
 
 // smoothstep 0..1 — "từ từ" cho lật bụng + trồi lên.
 function smooth01(t: number): number {
@@ -386,6 +408,14 @@ export class PondFish {
   private bankAmp = 1 // 🎢 độ nghiêng thân vào cua (×)
   private pitchAmp = 1 // 🎢 độ chúi mũi khi lặn/ngoi (×)
   private schooling = false // 🐟 boids bơi-theo-đàn (cohesion+alignment) — bật/tắt; separation luôn chạy
+  private forageOn = false // 🍽 MÒ ĂN tự động — đói tự rải nhúm + rút độ-no (opt-in). Nút "Rải" tay chạy BẤT KỂ toggle.
+  private _foodCount = FOOD_SCATTER_N // 🍽 số viên/lần rải (config)
+  private _foodStagger = FOOD_STAGGER // 🍽 giãn rơi giữa viên (s, config)
+  private _foodSpread = FOOD_SPREAD // 🍽 độ rộng vùng toả viên (m, config)
+  private _food: { x: number; z: number; t0: number }[] = [] // 🍽 viên thức-ăn (LOCAL) — t0=lúc THẢ (rơi); cá ăn viên GẦN nhất
+  private _foodNextRelease = 0 // 🍽 mốc thời gian thả viên KẾ (xếp hàng so le → rơi từng viên, không cả chùm)
+  private _foodMesh: THREE.InstancedMesh | null = null // 🍽 N viên nổi (InstancedMesh; slot thừa scale-0)
+  private _onEat: ((x: number, z: number) => void) | null = null // 🌊 callback ĐỚP mồi (x,z local) → caller bắn sóng lan
   private burstRate = 0 // 🐟 tần suất bứt tốc ngẫu nhiên (0..1; 0 = tắt)
   private satiation = 1 // 🐟 độ no (slider Đói). >6/20 = sống; 0..6/20 = vùng CHẾT theo tỉ lệ (xem _deadCount)
   private tier = 4 // 🐟 BẬC (1..6) — Phase 1 chỉ lưu (getTier); predation lớn-ăn-bé dùng ở Phase 3
@@ -452,6 +482,9 @@ export class PondFish {
     this.bobAmp = Math.max(0, opts.bobAmp ?? 1)
     this.bankAmp = Math.max(0, opts.bankAmp ?? 1) // 🎢 nghiêng vào cua
     this.pitchAmp = Math.max(0, opts.pitchAmp ?? 1) // 🎢 chúi mũi khi lặn/ngoi
+    this._foodCount = Math.max(1, Math.round(opts.foodCount ?? FOOD_SCATTER_N)) // 🍽 cách thả mồi
+    this._foodStagger = Math.max(0, opts.foodDrop ?? FOOD_STAGGER)
+    this._foodSpread = Math.max(0, opts.foodSpread ?? FOOD_SPREAD)
   }
 
   // 🎨 Init 3 màu + tỉ lệ mảng + 🐟 hành vi/dáng + 🐟 bứt tốc/đói + bounds từ opts. Giữ constructor ≤10.
@@ -461,6 +494,7 @@ export class PondFish {
     this.uPatchAmt.value = Math.max(0, Math.min(1, opts.patchAmount ?? 0.5))
     this.burstRate = Math.max(0, Math.min(1, opts.burstRate ?? 0))
     this.schooling = opts.schooling ?? false // 🐟 bơi theo đàn (mặc định tắt — pond ít con)
+    this.forageOn = opts.forage ?? false // 🍽 mò ăn (mặc định tắt — opt-in)
     this.satiation = Math.max(0, Math.min(1, opts.satiation ?? 1))
     this.tier = Math.round(opts.tier ?? 4) // 🐟 bậc — lưu cho Phase 3 (predation)
     if (opts.bounds) this.setBounds(opts.bounds) // 🐟 vùng bơi = lòng hồ thật (polygon+mặt+đáy)
@@ -597,12 +631,12 @@ export class PondFish {
     return false
   }
 
-  // 🐟 SỐ con CHẾT theo slider Đói. Vùng chết = level 0..6 (satiation ≤ 6/20). level 6 → 1/6 đàn, 5 → 2/6, …,
-  // 0 → cả đàn (tăng dần khi kéo về min). level > 6 → 0 (chưa con nào chết). NgQuan 2026-06-13.
+  // 🐟 SỐ con CHẾT theo slider Đói. Chết CHỈ ở vùng ĐỎ (level < 6): level 5 → 1/6 đàn, 4 → 2/6, …, 0 → cả đàn.
+  // Vùng VÀNG (6-10) + xanh = SỐNG HẾT (đói nhưng chưa chết → tới đây tất cả đi ăn). NgQuan 2026-06-15 (vàng phải ăn hết).
   private _deadCount(): number {
     const level = Math.round(this.satiation * 20)
-    if (level > 6) return 0
-    return Math.round(Math.min((7 - level) / 6, 1) * this.fish.length)
+    if (level >= 6) return 0 // vàng/xanh: không con nào chết → cả đàn còn bơi (đi ăn được)
+    return Math.round(Math.min((6 - level) / 6, 1) * this.fish.length) // đỏ (<6): chết theo tỉ lệ
   }
 
   // Điểm spawn trong VÙNG: bounds → rejection-sample trong bbox polygon (fallback centroid); else đĩa tròn
@@ -746,6 +780,7 @@ export class PondFish {
     const dc = this._deadCount() // số con chết (theo slider Đói): con i<dc = chết, còn lại sống
     const surfTop = (this.bounds ? this.bounds.surfaceY : this.depthY) - 0.03 // ngay dưới mép surface
     const calmSpeed = 0.35 + 0.65 * this.satiation // đói = bơi chậm (sống)
+    this._tickForage(d) // 🍽 mò ăn: rút no + sinh/ăn điểm thức-ăn nổi (no-op nếu forage tắt)
     this._separate(d) // 🐟 đẩy tách cá chồng nhau (đụng → tách, không nhập) TRƯỚC khi _swim + compose frame này
     for (let i = 0; i < this.fish.length; i++) {
       const f = this.fish[i]
@@ -830,6 +865,13 @@ export class PondFish {
       this._huntStep(f, d, t)
       return
     }
+    if (this._food.length > 0) {
+      const fp = this._nearestFood(f) // chỉ viên ĐÃ THẢ; chưa thả → null → rơi xuống wander
+      if (fp) {
+        this._forageStep(f, fp, d, t) // 🍽 có thức-ăn đã thả → tới ăn viên gần nhất (ưu tiên dưới flee/hunt)
+        return
+      }
+    }
     this._steer(f, d, t)
     // tốc NHẤP NHÔ theo thời gian (lướt↔rướn) × bứt tốc (1 thường; ×4 phóng / ×0.08 khựng) × đói(chậm)
     const sp =
@@ -851,6 +893,142 @@ export class PondFish {
     const sp = f.speed * this.speed * HUNT_DART * (0.9 + 0.2 * Math.sin(t * 9 + f.bob)) // dart + rung tốc
     f.x += Math.cos(f.heading) * sp * d
     f.z -= Math.sin(f.heading) * sp * d
+  }
+
+  // 🍽 MÒ ĂN: bơi tới viên fp + TRỒI lên tầng mặt. Quay vừa (không gấp như săn), tốc ×FORAGE_DART. fp do _swim chọn.
+  private _forageStep(f: FishState, fp: { x: number; z: number }, d: number, t: number): void {
+    const desired = Math.atan2(f.z - fp.z, fp.x - f.x) // hướng tới viên (dir=(cos h,−sin h))
+    f.heading += angleDelta(desired, f.heading) * Math.min(1, 4 * d)
+    f.yFrac += (FORAGE_YFRAC - f.yFrac) * Math.min(1, 2 * d) // trồi lên tầng MẶT
+    const sp = f.speed * this.speed * FORAGE_DART * (0.85 + 0.2 * Math.sin(t * 5 + f.bob))
+    f.x += Math.cos(f.heading) * sp * d
+    f.z -= Math.sin(f.heading) * sp * d
+  }
+
+  // 🍽 Viên ĐÃ THẢ (t ≥ t0) gần con f nhất; bỏ qua viên còn xếp hàng chưa rơi. null = chưa có viên nào thả.
+  private _nearestFood(f: FishState): { x: number; z: number } | null {
+    const t = this.uTime.value as number
+    let best: { x: number; z: number } | null = null
+    let bd = Infinity
+    for (const fp of this._food) {
+      if (t < fp.t0) continue // chưa tới lượt thả
+      const dd = Math.hypot(fp.x - f.x, fp.z - f.z)
+      if (dd < bd) {
+        bd = dd
+        best = fp
+      }
+    }
+    return best
+  }
+
+  // 🍽 1 frame: (forageOn) rút độ-no + đói thì TỰ rải nhúm; LUÔN ăn viên cá chạm (cả khi rải TAY lúc forage tắt);
+  // cập nhật mesh. satiation = school-level → mỗi viên hồi FORAGE_BITE.
+  private _tickForage(d: number): void {
+    if (this.forageOn) {
+      this.satiation = Math.max(0, this.satiation - FORAGE_DRAIN * d) // đói dần (homeostasis)
+      if (this._food.length === 0 && this.satiation < FORAGE_HUNGRY) this.scatterFood(FORAGE_AUTO_N)
+    }
+    if (this._food.length > 0) this._eatFood()
+    this._updateFoodMesh()
+  }
+
+  // 🍽 Cá chạm viên ĐÃ ĐÁP (rơi xong) → ăn viên đó (xoá) + satiation hồi. Quét NGƯỢC để splice an toàn.
+  private _eatFood(): void {
+    const r = this.fishLength * 0.7
+    const t = this.uTime.value as number
+    for (let k = this._food.length - 1; k >= 0; k--) {
+      if (t - this._food[k].t0 < DROP_DUR) continue // còn đang RƠI → chưa ăn được (đợi đáp mặt)
+      if (this._fishNear(this._food[k].x, this._food[k].z, r)) {
+        this._onEat?.(this._food[k].x, this._food[k].z) // 🌊 đớp → sóng lan tại điểm viên (caller: WaterSurface.emitImpact)
+        this._food.splice(k, 1)
+        this.satiation = Math.min(1, this.satiation + FORAGE_BITE)
+      }
+    }
+  }
+
+  // 🍽 Có con SỐNG nào trong bán kính r của (x,z)?
+  private _fishNear(x: number, z: number, r: number): boolean {
+    for (const f of this.fish) {
+      if (f.consumed || f.dp > 0) continue
+      if (Math.hypot(f.x - x, f.z - z) < r) return true
+    }
+    return false
+  }
+
+  /** 🍽 RẢI thức-ăn: n viên (mặc định _foodCount) ở điểm NGẪU NHIÊN trong vùng bơi (tự động khi đói). Viên rơi từ cao. */
+  scatterFood(n?: number): void {
+    if (this.isDisposed) return
+    const k = n ?? this._foodCount
+    for (let i = 0; i < k; i++) {
+      const pt = this._spawnPoint()
+      this._pushFood(pt.x, pt.z)
+    }
+  }
+
+  /** 🍽 THẢ thức-ăn TẠI ĐIỂM (x,z local) — click hồ: toả _foodCount viên trong bán kính _foodSpread. Viên rơi từ cao. */
+  scatterFoodAt(x: number, z: number, n?: number): void {
+    if (this.isDisposed) return
+    const k = n ?? this._foodCount
+    for (let i = 0; i < k; i++) {
+      this._pushFood(
+        x + (this.rng() - 0.5) * this._foodSpread,
+        z + (this.rng() - 0.5) * this._foodSpread
+      )
+    }
+  }
+
+  // 🍽 Thêm 1 viên (cap FOOD_MAX). t0 XẾP HÀNG so le (max giờ, mốc-thả-kế) → các viên RƠI TỪNG cái nối tiếp, không
+  // cả chùm. Gap = _foodStagger (config). Dựng InstancedMesh lần đầu.
+  private _pushFood(x: number, z: number): void {
+    if (this._food.length >= FOOD_MAX) return
+    const t0 = Math.max(this.uTime.value as number, this._foodNextRelease)
+    this._food.push({ x, z, t0 })
+    this._foodNextRelease = t0 + this._foodStagger
+    if (!this._foodMesh) this._buildFoodMesh()
+  }
+
+  /** 🍽 Cách thả mồi (live): số viên/lần · giãn rơi (s) · độ rộng vùng (m). */
+  setFoodCount(n: number): void {
+    if (this.isDisposed || Number.isNaN(n)) return
+    this._foodCount = Math.max(1, Math.round(n))
+  }
+  setFoodDrop(s: number): void {
+    if (this.isDisposed || Number.isNaN(s)) return
+    this._foodStagger = Math.max(0, s)
+  }
+  setFoodSpread(m: number): void {
+    if (this.isDisposed || Number.isNaN(m)) return
+    this._foodSpread = Math.max(0, m)
+  }
+
+  // 🍽 InstancedMesh N viên (sphere nâu-vàng) = CHILD fish mesh → cùng local space (gốc tâm hồ). Slot thừa scale-0.
+  private _buildFoodMesh(): void {
+    if (!this.mesh) return
+    const geo = new THREE.SphereGeometry(FOOD_R, 8, 6)
+    const mat = new MeshLambertNodeMaterial({ color: 0xc89048 }) // viên nâu-vàng (pellet/vụn nổi)
+    this._foodMesh = new THREE.InstancedMesh(geo, mat, FOOD_MAX)
+    this._foodMesh.castShadow = false
+    this._foodMesh.receiveShadow = false
+    this._foodMesh.frustumCulled = false // nhiều viên dẹt nổi → né cull nhầm
+    this.mesh.add(this._foodMesh)
+  }
+
+  // 🍽 Đặt matrix mỗi viên: RƠI từ DROP_H xuống mặt (gia tốc ease-in) rồi bồng bềnh; slot thừa scale-0 (ẩn).
+  private _updateFoodMesh(): void {
+    const m = this._foodMesh
+    if (!m) return
+    const surf = this.bounds ? this.bounds.surfaceY : 0
+    const t = this.uTime.value as number
+    for (let i = 0; i < FOOD_MAX; i++) {
+      const fp = this._food[i]
+      if (fp && t >= fp.t0) {
+        const p = Math.min(1, (t - fp.t0) / DROP_DUR) // 0→1 tiến trình rơi
+        const drop = DROP_H * (1 - p * p) // gia tốc (ease-in): cao→0 (đáp mặt)
+        _mtx.makeTranslation(fp.x, surf - 0.01 + drop + Math.sin(t * 2 + i) * 0.006, fp.z)
+      } else _mtx.makeScale(0, 0, 0) // không có HOẶC chưa tới lượt thả → ẩn
+      m.setMatrixAt(i, _mtx)
+    }
+    m.instanceMatrix.needsUpdate = true
   }
 
   // 🏃 CHẠY TRỐN: bơi NGƯỢC hướng predator (fx,fz) + panic (giật mạnh, quay đầu GẤP). Tốc theo cửa sổ SPRINT:
@@ -1003,6 +1181,18 @@ export class PondFish {
     this.schooling = !!on
   }
 
+  /** 🍽 Bật/tắt MÒ ĂN TỰ ĐỘNG (đói tự rải + rút độ-no). Tắt = no tĩnh; thức-ăn rải TAY vẫn ăn được. Field CPU. */
+  setForage(on: boolean): void {
+    if (this.isDisposed) return
+    this.forageOn = !!on
+  }
+
+  /** 🌊 Đăng ký callback "đớp mồi tại (x,z) LOCAL" → caller (ArchPlanLab) bắn sóng lan trên WaterSurface (emitImpact). */
+  setEatRipple(fn: ((x: number, z: number) => void) | null): void {
+    if (this.isDisposed) return
+    this._onEat = fn
+  }
+
   /** 🐟 Tần suất BỨT TỐC ngẫu nhiên (0..1; 0 = tắt) — field CPU, áp frame kế. */
   setBurstRate(v: number): void {
     if (this.isDisposed || Number.isNaN(v)) return
@@ -1142,6 +1332,13 @@ export class PondFish {
     if (this.mesh) this.mesh.parent?.remove(this.mesh)
     this.geometry?.dispose()
     this.material?.dispose()
+    if (this._foodMesh) {
+      this._foodMesh.geometry.dispose() // 🍽 viên thức-ăn (InstancedMesh child) — geo+mat+buffer riêng
+      ;(this._foodMesh.material as THREE.Material).dispose()
+      this._foodMesh.dispose()
+      this._foodMesh = null
+    }
+    this._onEat = null // 🌊 bỏ ref callback (giữ WaterSurface) → né stale sau dispose
     this.mesh?.dispose() // InstancedMesh giữ buffer instanceMatrix riêng
     this.mesh = null
     this.geometry = null

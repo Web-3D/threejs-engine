@@ -46,10 +46,12 @@ fish.update(dt) // tiến vẫy đuôi + dời đàn (CPU rẻ)
 | `bankAmp`                            | number     | 1           | 🎢 NGHIÊNG thân vào cua (×, ∝ tốc-quay) — đẹp khi lượn/zic-zac — live `setBankAmp`                                                                                                                                                                                                                                 |
 | `pitchAmp`                           | number     | 1           | 🎢 CHÚI mũi khi lặn/ngoi (×, ∝ tốc-đứng) — live `setPitchAmp`                                                                                                                                                                                                                                                      |
 | `schooling`                          | boolean    | false       | 🐟 BƠI THEO ĐÀN (boids cohesion+alignment) — tụm cụm + đồng hướng; separation luôn chạy — live `setSchooling`                                                                                                                                                                                                      |
+| `forage`                             | boolean    | false       | 🍽 MÒ ĂN tự động — đói (satiation<0.5) tự rải viên nổi → cá tới ăn → satiation hồi (homeostasis) — live `setForage`. Rải TAY = caller gọi `scatterFood*`                                                                                                                                                            |
+| `foodCount`·`foodDrop`·`foodSpread`  | number     | 10·0.12·0.7 | 🍽 cách thả mồi: số viên/lần · giãn RƠI giữa viên (s, so-le) · độ rộng vùng toả (m) — live `setFoodCount`/`setFoodDrop`/`setFoodSpread`                                                                                                                                                                            |
 
 `PondBounds = { polygon: {x,z}[]; surfaceY: number; floorYAt: (x,z)=>number }` (đơn vị m, LOCAL so gốc mesh = tâm hồ).
 
-API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)`.
+API khác: `getMesh()` · `getCount()` · `getTriangleCount()` · `update(dt)` · 🍽 `scatterFood(n?)`/`scatterFoodAt(x,z,n?)` (rải viên RƠI từ cao, so-le) · `setEatRipple(fn)` (đớp viên → callback `(x,z)` để caller bắn sóng/giọt = `WaterSurface.emitImpact`+`SplashBurst`).
 
 ## Hành vi bơi (v1.6)
 

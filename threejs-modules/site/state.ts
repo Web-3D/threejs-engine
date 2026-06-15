@@ -404,6 +404,11 @@ export interface FishSchool {
   // 🐟 ĐỘ NO (slider "Đói"): 1 = no/đầy (bơi thường, KHÔNG bâu mồi) · →0 = đói dần (sau: càng bâu nhiều khi thả
   // mồi) · 0 = CHẾT phơi bụng (trôi dưới mặt, mọi hành vi off). Tiền đề click-cho-ăn (swarm = 1−satiation, sau). LIVE setSatiation
   satiation: number
+  forage: boolean // 🍽 hành vi: MÒ ĂN — đói thì sinh điểm thức-ăn nổi mặt, cá tới ăn → satiation tự hồi (opt-in) — LIVE setForage
+  foodCount: number // 🍽 thả mồi: số viên/lần rải (1..30) — LIVE setFoodCount
+  foodDrop: number // 🍽 thả mồi: giãn cách RƠI giữa viên (s, 0.03..0.5; nhỏ=dồn nhanh) — LIVE setFoodDrop
+  foodSpread: number // 🍽 thả mồi: độ rộng vùng toả viên (m, 0.1..2) — LIVE setFoodSpread
+  eatSplash: number // 💦 độ cao giọt nước bắn khi đớp (0..2; 0=tắt) — đọc LIVE trong eat-callback (ArchPlanLab)
 }
 
 // 🐟 PRESET theo BẬC (tier): nhãn loài + size/count mặc định + range. Bậc cao (số nhỏ) = to + ít con; bậc thấp =
@@ -747,6 +752,11 @@ export function makeFishSchool(tier = 4): FishSchool {
     burstRate: p.burstRate, // 🐟 bậc thấp bứt tốc thường hơn (tăng động)
     schooling: false, // 🐟 bơi theo đàn — mặc định TẮT (pond ít con, chưa cần quy mô)
     satiation: 1, // 🐟 no/đầy mặc định (kéo slider Đói về min = cá chết phơi bụng)
+    forage: false, // 🍽 mò ăn — mặc định TẮT (opt-in; bật = đói tự sinh thức-ăn nổi + ăn hồi no)
+    foodCount: 10, // 🍽 thả 10 viên/lần
+    foodDrop: 0.12, // 🍽 giãn rơi 0.12s/viên
+    foodSpread: 0.7, // 🍽 toả rộng 0.7m
+    eatSplash: 0.35, // 💦 giọt bắn nhẹ khi đớp
   }
 }
 

@@ -544,6 +544,11 @@ function parseFishSchool(raw: unknown): FishSchool {
     burstRate: clamp(num(r.burstRate, d.burstRate), 0, 1), // 🐟 bứt tốc — save cũ → 0
     schooling: typeof r.schooling === 'boolean' ? r.schooling : d.schooling, // 🐟 bơi theo đàn — save cũ → false
     satiation: clamp(num(r.satiation, d.satiation), 0, 1), // 🐟 độ no — save cũ → 1 (đầy, sống)
+    forage: typeof r.forage === 'boolean' ? r.forage : d.forage, // 🍽 mò ăn — save cũ → false
+    foodCount: clamp(num(r.foodCount, d.foodCount), 1, 30), // 🍽 số viên/lần
+    foodDrop: clamp(num(r.foodDrop, d.foodDrop), 0.03, 0.5), // 🍽 giãn rơi (s)
+    foodSpread: clamp(num(r.foodSpread, d.foodSpread), 0.1, 2), // 🍽 độ rộng vùng (m)
+    eatSplash: clamp(num(r.eatSplash, d.eatSplash), 0, 2), // 💦 giọt bắn khi đớp
   }
 }
 

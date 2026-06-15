@@ -140,6 +140,10 @@ export function buildFishSchool(
     burstRate: fs.burstRate, // 🐟 bứt tốc
     schooling: fs.schooling, // 🐟 bơi theo đàn (boids cohesion+alignment)
     satiation: fs.satiation, // 🐟 độ no (0 = chết phơi bụng)
+    forage: fs.forage, // 🍽 mò ăn (đói → sinh thức-ăn nổi → ăn hồi no)
+    foodCount: fs.foodCount, // 🍽 cách thả mồi: số viên/lần
+    foodDrop: fs.foodDrop, // 🍽 giãn rơi (s)
+    foodSpread: fs.foodSpread, // 🍽 độ rộng vùng toả (m)
     bounds: fishBoundsFor(w, site), // 🐟 vùng bơi = lòng hồ (polygon + mặt + đáy theo gò) — chung mọi đàn
     occupied, // 🐟 né trùng vị trí spawn cả đàn khác cùng hồ
   })

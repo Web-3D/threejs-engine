@@ -100,6 +100,16 @@ hole, backdrop hole, basin floor, water geo) đều dùng `(q.x, −q.z)` → tr
 
 ## 5. Lịch sử nâng cấp
 
+- `2026-06-15` — **🍽 HỆ CHO-ĂN CÁ + tái cấu trúc tab cá** (NgQuan; ca #1 hệ hành-vi-động-vật `docs/animal-behavior.md`).
+  **Forage** opt-in/đàn: đói (satiation < 0.5 = mép VÀNG) → tự rải viên nổi → ăn → satiation hồi (homeostasis). **Rải
+  tay** = mode 👆 click hồ → viên RƠI từ cao (`DROP_H/DUR`), thả TỪNG viên so-le (`_foodStagger`), toả rộng
+  (`_foodSpread`); cap 16/đàn (InstancedMesh, slot thừa scale-0). **Fix đói:** chết CHỈ vùng ĐỎ (level<6); VÀNG (6-10)
+  = SỐNG HẾT → tới vàng cả đàn đi ăn (`_deadCount`). **Đớp → sóng+giọt:** `PondFish.setEatRipple` callback → ArchPlanLab
+  `_eatFx` = `WaterSurface.emitImpact` (1 vòng, reflect=false → rẻ pool 16) + `SplashBurst.burst` (eatSplash/đàn).
+  **Tab cá:** Hình thái·Hành vi·**Thả mồi** (mới); header icon ↺/🗑 (confirm xoá) ngang Hiện-đàn; select Bậc TÔ MÀU
+  theo bậc (1 lam…6 bạc) bỏ nhãn; bỏ slider nghiêng-cua, chúi-mũi → Hành vi. Cách-thả = config/đàn; nhóm Sóng
+  (bước/rộng/thời-gian/dày) = GLOBAL (`_weather`, mọi hồ).
+
 - `2026-06-15` — **💧 FILL-UP: reveal mặt nước = ĐỔ-ĐẦY từ đáy basin (không snap)** (NgQuan, tiếp perf-load — viên
   gạch đầu chuỗi câu-giờ). `_revealAutoWater` bật hồ → `_startWaterFill`: **pond/pool** (có basin/vách che) HẠ mesh
   xuống `baseY − cột-nước` (cột = `depthY/1000 − 3cm`, min 5cm) → `_tickWaterFill` mỗi frame NÂNG lên `baseY`,
