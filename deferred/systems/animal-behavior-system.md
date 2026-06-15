@@ -132,6 +132,7 @@ Vòng mỗi frame mỗi con: **Perception → Drives → Action-selection → Be
 - **Đa loài shape** — procedural variants / GLB (taxonomy đã nêu).
 
 ## Liên hệ
+- **`docs/animal-behavior.md`** — THƯ VIỆN LOÀI (ethogram + sinh học THẬT để tra cứu); spec này = PHƯƠNG PHÁP mô hình hoá nó. Cặp đôi: loài-làm-gì ↔ cách-build.
 - [[fish-tier-taxonomy]] — NỘI DUNG riêng của cá (6 bậc, predation) = L4/L5 content của ca #1.
 - [[progressive-scene-assembly]] — lớp ĐO/profiler tái dùng cho validation harness.
 - [[building-warehouse-pipeline]] · [[water-reflection-probe-tier]] — cùng triết lý hero-vs-mass (thang A/B + tier perf).
