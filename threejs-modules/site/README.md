@@ -12,9 +12,11 @@ thả vào quy hoạch khu phố. Mirror cấu trúc `building/` (state + render
 ```
 site/
 ├── state.ts              ← SiteState (nền + TẦNG-surface-chồng groundLayers[] + cỏ3D + hồ + rào ĐA-LỚP fences[]) + factory + GROUND_PRESETS + coverageStats + parseSite
-└── render/
-    ├── fromState.ts      ← renderSiteState(site, ctx) — nền slab + TẦNG layer (đục lỗ nước) + rào ĐA-LỚP/cổng + cỏ + hồ, headless
-    └── fromState.example.ts  ← smoke compile-checked
+├── render/
+│   ├── fromState.ts      ← renderSiteState(site, ctx) — nền slab + TẦNG layer (đục lỗ nước) + rào ĐA-LỚP/cổng + cỏ + hồ, headless
+│   ├── lamp.ts           ← buildSiteLamp (đèn trụ sân: vỏ trụ+chụp+bóng glow, trả LampTip cho editor pool)
+│   └── fromState.example.ts  ← smoke compile-checked
+└── lighting/             ← Hệ đèn TÁCH RIÊNG (lighting pattern, stateful): SiteLightingSystem — đèn pha uplight SpotLight no-shadow, night-cascade, pick/move (vỏ editor ở archplan lighting/)
 ```
 
 ## Trạng thái — G0 (nền + rào)
