@@ -16,7 +16,10 @@ site/
 │   ├── fromState.ts      ← renderSiteState(site, ctx) — nền slab + TẦNG layer (đục lỗ nước) + rào ĐA-LỚP/cổng + cỏ + hồ, headless
 │   ├── lamp.ts           ← buildSiteLamp (đèn trụ sân: vỏ trụ+chụp+bóng glow, trả LampTip cho editor pool)
 │   └── fromState.example.ts  ← smoke compile-checked
-└── lighting/             ← Hệ đèn TÁCH RIÊNG (lighting pattern, stateful): SiteLightingSystem — đèn pha uplight SpotLight no-shadow, night-cascade, pick/move (vỏ editor ở archplan lighting/)
+└── lighting/             ← Hệ đèn TÁCH RIÊNG (lighting pattern, stateful — vỏ editor ở archplan lighting/). Mỗi lõi = 1 loại fixture, đều no-shadow/emissive → +0 sampler, interface {pick,getBase,moveBase} chung:
+    ├── SiteLightingSystem  ← F1 đèn pha uplight (SpotLight no-shadow rọi tường/cây), night-cascade
+    ├── BollardLights       ← F2 trụ thấp ven lối (SpotLight rọi XUỐNG, thân scale.y theo height)
+    └── StringLights        ← F3 đèn dây festoon (chuỗi bóng EMISSIVE võng catenary + 1 PointLight hắt, InstancedMesh 1 draw)
 ```
 
 ## Trạng thái — G0 (nền + rào)

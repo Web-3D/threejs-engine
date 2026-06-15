@@ -1,7 +1,39 @@
-# future-postprocessing — SSAOPass · MotionBlurPass
+# future-postprocessing — BloomPass · SSAOPass · MotionBlurPass
 
 > Post-processing passes bổ sung cho `PostProcessing` module.
 > Revisit khi: tích hợp scene thực tế và cần depth cue hoặc speed feel.
+
+---
+
+## BloomPass — quầng glow cho đèn (đèn dây / emissive / cửa sổ đêm)
+
+**Mục đích:** Halo nở quanh vùng sáng rực (đèn dây F3, emissive, cửa sổ ban đêm) → "đèn thật" hơn.
+Gác lại từ **Lighting Pattern Phase 1** (2026-06-15, NgQuan chốt "cắt bloom, defer").
+
+**Category:** post-fx scene-wide | **Complexity:** trung bình (dựng pipeline) + **rủi ro phối hợp Factory** | **Pattern:** `THREE.PostProcessing` node
+
+### Tại sao GÁC (không nhét vào phase đèn)
+- **archplan CHƯA có post-pipeline** (grep `PostProcessing|bloom|outputNode` = 0) → bloom = dựng cả pipeline từ số 0, KHÔNG phải "thêm 1 fixture".
+- **Đụng render-loop** = `main.ts`/BaseWorld (vùng **Factory** đang tối ưu) → nguy cơ clobber. Bloom **scene-wide** (mọi vật sáng quầng), perf **always-on** mỗi frame → ≠ triết lý "đèn fixture tách riêng".
+- **Sai category** (classify-role): bloom = **post-fx environment**, KHÔNG thuộc `site/lighting/`. Trộn vào = phình sai chỗ.
+- Đèn dây hiện dùng **emissive `MeshBasicMaterial toneMapped:false`** → đã tự glow nhìn được; bloom chỉ thêm halo (nice-to-have, không chặn F3).
+
+### Hướng khi làm (WebGPU 0.174)
+```typescript
+// node bloom TSL — verify path trước: three/examples/jsm/tsl/display/BloomNode.js
+import { bloom } from 'three/addons/tsl/display/BloomNode.js' // tên/đường dẫn CHƯA verify — grep trước
+import { pass } from 'three/tsl'
+const post = new THREE.PostProcessing(renderer)
+const scenePass = pass(scene, camera)
+post.outputNode = scenePass.add(bloom(scenePass, strength, radius, threshold))
+// render loop: post.render() THAY renderer.render(scene, camera)
+```
+**Selective bloom** (chỉ đèn quầng, không cả cảnh): layer/emissive-threshold hoặc MRT emissive channel — quyết khi làm.
+
+### Revisit khi
+- Mở **"vòng môi trường"** (Gaea terrain + thời tiết) — cùng lúc dựng post-pipeline chung (bloom + fog + tone) một thể, phối hợp Factory về render-loop.
+- Có cảnh đêm nhiều nguồn sáng (đèn dây + cửa sổ + bollard) đủ để thấy giá trị halo.
+- Trade-off riêng TRƯỚC: scene-wide perf (mấy fullscreen pass) + ai sở hữu render-loop.
 
 ---
 
