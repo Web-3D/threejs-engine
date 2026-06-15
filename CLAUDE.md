@@ -114,8 +114,8 @@ Câu đầu tiên khi mở THREEJS session:
 | Quyết định / context session trước?         | `../SYNC.md`                                   |
 | Tại sao chọn pattern/stack này?             | `decisions/` — ADR index (thay đổi cấu trúc lớn) |
 | Lỗi này gặp rồi? Sửa sao? Sao đừng tái phạm? | `known-issues/README.md` — KI catalog (lỗi thường gặp) |
-| Thêm element live-editable mới mà KHÔNG tụt fps? | `PERFORMANCE.md` — 8 bẫy + checklist BẮT BUỘC; `node check-perf.js` duyệt |
-| Lỗi đen + `exceeds maximum per-stage limit` / pipeline vỡ? Sampler/texture/UBO/shadow ăn gì? Tối ưu binding vs perf? | `GPU-BUDGETS.md` — 2 ngân sách (binding vừa/vỡ vs perf nhanh/chậm) + đếm + pack/atlas |
+| Tụt fps khi **KÉO/SỬA** (live-edit element mới)? | `PERFORMANCE.md` — 8 bẫy rebuild + checklist BẮT BUỘC; `node check-perf.js` duyệt |
+| Tụt fps khi **chạy đều** (đông cảnh/texture-read/đèn-bóng), HOẶC **đen** + `exceeds per-stage limit`? | `GPU-BUDGETS.md` **§8 ROUTER** — binding(vừa/vỡ) vs render-fps(nhanh/chậm) + đếm + pack/atlas |
 | Dựng 1 mảng (hồ/cửa sổ/cỏ/mái…) thế nào? Tầng/toạ độ? Lỗi mảng đó? | `playbooks/<slug>.md` — cẩm nang theo mảng |
 | Tính năng đã nghiên cứu nhưng hoãn?         | `deferred/README.md`                           |
 | Op hình học (resample/sweep/copy/bevel/scatter/boolean)? | `threejs-modules/ops/README.md` — kệ hàm thuần; catalog chọn op KẾ + bảng tiến độ 📊: `c:\Factory\deferred\houdini-algorithms.md` (cập nhật ở đó, không mở catalog song song) |

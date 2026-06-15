@@ -6,6 +6,9 @@
 > Vì sao tồn tại: vụ bật shadow đèn 2026-06-15 làm vỡ pipeline (vượt 16 sampler/stage) → đào ra mới thấy
 > nhiều người (kể cả AI) **lẫn 2 ngân sách khác hẳn nhau**. File này tách rõ 1 lần, nhớ mãi.
 > Anh em: `PERFORMANCE.md` (rebuild-cost live-edit) · `deferred/rendering/lamp-shadow-production.md` (ground-bake).
+>
+> **3 TRỤC đừng lẫn** (router đầy đủ §8): ĐEN+crash = **binding** (vừa/vỡ — đây §2) · chạy-ĐỀU-mà-chậm =
+> **render-fps** (mỗi frame — đây §4) · chỉ-chậm-khi-**KÉO/SỬA** = **rebuild-fps** (`PERFORMANCE.md`, khác hẳn).
 
 ---
 
@@ -72,6 +75,12 @@ ngân sách** (đèn-shadow, lớp mix, RTT, post-fx). Đây là bảng SỐNG, 
 | `maxVertexAttributes` | 16 | thuộc tính / vertex | hiếm |
 
 **Vượt BẤT KỲ dòng nào → pipeline fail → đen + `[Budget] Texture leak` (vì frame lỗi lặp).** Giống hệt sampler.
+
+> **Đếm theo TỪNG pipeline (mỗi material = 1 pipeline), KHÔNG cộng toàn-app.** Mỗi material chỉ kiểm
+> sampler/texture của RIÊNG nó ở fragment stage ⇒ chỉ **pipeline NẶNG NHẤT vỡ trước**. Scene ta: `PhotoGroundMix`
+> (~15, §6) = nặng nhất; nước/mái/building/đèn ít hơn nhiều, đếm RIÊNG (không gộp với ground). **NHƯNG shadow
+> sampler dùng CHUNG mọi material lit** → +1 đèn-shadow = +1 cho **MỌI** pipeline lit, nên ground-mix 15→16 (vừa)
+> →17 (vỡ). ⇒ Trần đèn-shadow thực = `16 − (sampler của pipeline nặng nhất)` = 1.
 
 ### Texture ≠ sampler (vì sao count lệch: vd 18 texture / 17 sampler)
 - **Texture** = dữ liệu ảnh (mảng texel). **Sampler** = CÁCH đọc (linear/nearest · repeat/clamp · so-sánh-depth).
@@ -162,17 +171,16 @@ Mix nền worst-case = BASE + 4 slot + mask vẽ:
 
 ---
 
-## 8. Cheatsheet — chẩn nhanh
+## 8. ROUTER — triệu chứng → đọc đâu (đọc CÁI NÀY trước → nhảy 1 section)
 
-```
-Triệu chứng?
-├─ ĐEN + "exceeds maximum per-stage limit" + texture-leak  → BINDING vỡ (§2)
-│    → đếm sampler/texture/UBO (§6) → GỘP/PACK: ORM, atlas, giảm slot, requiredLimits (§3,§5)
-└─ Vẫn hiện nhưng TỤT FPS khi kéo/đông cảnh            → PERF (§4) hoặc rebuild (PERFORMANCE.md)
-     → giảm tap/mip/LOD · mix-thay-branch · autoUpdate=false shadow · cache material
-```
+| Triệu chứng | Trục | Đọc | Sửa bằng |
+| --- | --- | --- | --- |
+| **ĐEN** + `exceeds maximum per-stage limit` + texture-leak | **binding** (vừa/vỡ · compile-time) | đây §2 §3 §5 §6 | **GỘP/PACK** — ORM · atlas · giảm slot · requiredLimits |
+| Chạy **ĐỀU mà chậm** (đông cảnh · nhiều texture-read · nhiều đèn-bóng) | **render-fps** (runtime · mỗi frame) | đây §4 §5 | **GIẢM** — tap/mip/LOD · mix-thay-branch · autoUpdate=false |
+| Chỉ **chậm khi KÉO/SỬA** (slider/drag/toggle) | **rebuild-fps** (live-edit) | `PERFORMANCE.md` §2 | **DECOUPLE/CACHE** — group riêng · cache material · LOD · throttle |
 
-- **Crash limit** = compile-time, đếm tài nguyên, sửa bằng **gộp**. KHÔNG phải fps.
-- **Tụt fps** = runtime, khối lượng đọc/tính, sửa bằng **giảm**. KHÔNG phải binding.
-- **Shadow** = nạn nhân CỦA CẢ HAI: +1 sampler (binding) + ×6 depth-pass (perf).
-- **Sampler thường cap 16 không nâng**; texture nâng được. Pack (ORM/atlas) là cách duy nhất tăng đèn-bóng mà không bake.
+- **Binding** = compile-time, đếm tài nguyên, sửa bằng **gộp**. KHÔNG phải fps.
+- **Render-fps** = runtime mỗi frame, khối lượng đọc/tính, sửa bằng **giảm**.
+- **Rebuild-fps** = chỉ lúc live-edit (dựng-lại nhiều/thường) → đẩy sang `PERFORMANCE.md`.
+- **Shadow** = nạn nhân CỦA CẢ binding (+1 sampler) lẫn render-fps (×6 depth-pass).
+- **Sampler cap 16 không nâng**; texture nâng được. Pack (ORM/atlas) = cách duy nhất tăng đèn-bóng mà không bake.
