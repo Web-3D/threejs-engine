@@ -6,6 +6,9 @@
 >
 > Vì sao tồn tại: tụt-fps lúc kéo **tái phát hoài** — mỗi lần thêm vật mới (hồ/cỏ/rào/cổng/ban công…) lại
 > vấp đúng 1 trong 8 cái bẫy dưới rồi sửa tới lui. File này = "sửa 1 lần, nhớ mãi". Mỗi luật ↔ 1 KI đã trả giá.
+>
+> File này = **PERF-speed** (rebuild "nhanh/chậm"). Lỗi **đen + `exceeds maximum per-stage limit`** = ngân
+> sách **BINDING** ("vừa/vỡ", khác hẳn) → `GPU-BUDGETS.md` (sampler/texture/UBO/shadow ăn gì, cách pack/atlas).
 
 ---
 

@@ -42,7 +42,7 @@ Effects/VFX → `threejs-modules/effects/` (GPUParticleSystem, SparkSystem ✅ P
 
 **1. Dispose pattern** — mọi class có GPU resource (Geometry, Material, Texture, RenderTarget) phải có `dispose()` đầy đủ. Chi tiết: skill `dispose-pattern`.
 
-**2. Performance budget** — draw calls < 100, triangles < 500k, texture ≤ 2048×2048. `RuntimeGuard` bắt buộc trong mọi World class có animation loop.
+**2. Performance budget** — draw calls < 100, triangles < 500k, texture ≤ 2048×2048. `RuntimeGuard` bắt buộc trong mọi World class có animation loop. **Việc đụng GPU (shadow/texture/material-mix/RTT/post) → TRA [`GPU-BUDGETS.md`](GPU-BUDGETS.md) §0 bảng ngân-sách-trần TRƯỚC: chốt trần + dùng-hiện-tại + headroom + trade-off rồi mới code.** 2 ngân sách KHÁC nhau: binding (sampler 16 CỨNG, vượt=CRASH đen) vs perf (read/fps). Bảng SỐNG — cập nhật khi thêm/bớt nguồn.
 
 **3. Honest-Uncertain** — khi không chắc API tồn tại ở version 0.174, nói rõ trước khi dùng. Không tự bịa method name.
 
@@ -115,6 +115,7 @@ Câu đầu tiên khi mở THREEJS session:
 | Tại sao chọn pattern/stack này?             | `decisions/` — ADR index (thay đổi cấu trúc lớn) |
 | Lỗi này gặp rồi? Sửa sao? Sao đừng tái phạm? | `known-issues/README.md` — KI catalog (lỗi thường gặp) |
 | Thêm element live-editable mới mà KHÔNG tụt fps? | `PERFORMANCE.md` — 8 bẫy + checklist BẮT BUỘC; `node check-perf.js` duyệt |
+| Lỗi đen + `exceeds maximum per-stage limit` / pipeline vỡ? Sampler/texture/UBO/shadow ăn gì? Tối ưu binding vs perf? | `GPU-BUDGETS.md` — 2 ngân sách (binding vừa/vỡ vs perf nhanh/chậm) + đếm + pack/atlas |
 | Dựng 1 mảng (hồ/cửa sổ/cỏ/mái…) thế nào? Tầng/toạ độ? Lỗi mảng đó? | `playbooks/<slug>.md` — cẩm nang theo mảng |
 | Tính năng đã nghiên cứu nhưng hoãn?         | `deferred/README.md`                           |
 | Op hình học (resample/sweep/copy/bevel/scatter/boolean)? | `threejs-modules/ops/README.md` — kệ hàm thuần; catalog chọn op KẾ + bảng tiến độ 📊: `c:\Factory\deferred\houdini-algorithms.md` (cập nhật ở đó, không mở catalog song song) |

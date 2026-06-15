@@ -44,13 +44,20 @@ export abstract class BaseWorld {
   // opts.antialias: MSAA phần cứng. Default true (giữ nguyên mọi consumer cũ). Đặt FALSE khi cảnh có
   // reflector()/RTT — MSAA framebuffer xung khắc reflector RTT depth (GPU từ chối pass = mất gương, KI-007);
   // bù khử răng cưa bằng FXAA post (PostProcessingManager) thay vì MSAA.
+  // opts.requiredLimits: nâng giới hạn device WebGPU (vd maxSampledTexturesPerShaderStage cho nhiều
+  // shadow/texture — mặc định 16). Caller PHẢI clamp theo adapter.limits trước khi truyền (requestDevice
+  // FAIL nếu vượt). undefined = giữ mặc định (mọi module example cũ không truyền → no-op).
   constructor(
     protected readonly canvas: HTMLCanvasElement,
-    opts: { antialias?: boolean } = {}
+    opts: { antialias?: boolean; requiredLimits?: Record<string, number> } = {}
   ) {
     const w = canvas.clientWidth || 300
     const h = canvas.clientHeight || 200
-    this.renderer = new WebGPURenderer({ canvas, antialias: opts.antialias ?? true })
+    this.renderer = new WebGPURenderer({
+      canvas,
+      antialias: opts.antialias ?? true,
+      requiredLimits: opts.requiredLimits,
+    })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.setSize(w, h)
     this.scene = new THREE.Scene()
