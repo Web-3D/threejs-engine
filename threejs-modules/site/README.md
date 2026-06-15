@@ -17,9 +17,11 @@ site/
 │   ├── lamp.ts           ← buildSiteLamp (đèn trụ sân: vỏ trụ+chụp+bóng glow, trả LampTip cho editor pool)
 │   └── fromState.example.ts  ← smoke compile-checked
 └── lighting/             ← Hệ đèn TÁCH RIÊNG (lighting pattern, stateful — vỏ editor ở archplan lighting/). Mỗi lõi = 1 loại fixture, đều no-shadow/emissive → +0 sampler, interface {pick,getBase,moveBase} chung:
-    ├── SiteLightingSystem  ← F1 đèn pha uplight (SpotLight no-shadow rọi tường/cây), night-cascade
-    ├── BollardLights       ← F2 trụ thấp ven lối (SpotLight rọi XUỐNG, thân scale.y theo height)
+    ├── SiteLightingSystem  ← F1 đèn pha uplight (SpotLight rọi tường/cây), night-cascade, ĐỔ BÓNG tuỳ chọn
+    ├── BollardLights       ← F2 trụ thấp ven lối (SpotLight rọi XUỐNG, thân scale.y theo height), ĐỔ BÓNG tuỳ chọn
     └── StringLights        ← F3 đèn dây festoon (chuỗi bóng EMISSIVE võng catenary + 1 PointLight hắt, InstancedMesh 1 draw)
+
+  Shadow (uplight/bollard): spot-shadow autoUpdate=false, controller cap ngân sách CHUNG (vỏ archplan SHADOW_BUDGET=3) — spot-shadow = +1 sampler GLOBAL/đèn (trần 16, xem GPU-BUDGETS §6). Đèn dây = PointLight → không shadow (×6 mặt đắt).
 ```
 
 ## Trạng thái — G0 (nền + rào)

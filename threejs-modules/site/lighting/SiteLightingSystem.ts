@@ -26,6 +26,7 @@ export interface UplightConfig {
   angle: number
   penumbra: number
   range: number
+  shadow: boolean // đổ bóng (spot-shadow) — controller cap theo SHADOW_BUDGET
 }
 
 interface UpEntry {
@@ -53,6 +54,7 @@ export function defaultUplight(x = 0, z = 0): UplightConfig {
     angle: 0.5,
     penumbra: 0.4,
     range: 8,
+    shadow: false,
   }
 }
 
@@ -126,6 +128,19 @@ export class SiteLightingSystem {
     e.light.position.set(x, FIX_H, z)
     e.housing.position.set(x, FIX_H / 2, z)
     e.lens.position.set(x, FIX_H + 0.001, z)
+    if (e.light.castShadow) e.light.shadow.needsUpdate = true // bóng theo lúc kéo (autoUpdate=false)
+  }
+
+  // Spot-shadow tuỳ chọn — mirror pool đèn cũ: autoUpdate=false (vẽ 1 lần, refresh khi đổi/dời) + map 512.
+  // castShadow đổi runtime = recompile NodeMaterial (đắt) → chỉ bật/tắt lúc TOGGLE (commit), không live-drag.
+  private _applyShadow(light: THREE.SpotLight, on: boolean, far: number): void {
+    light.castShadow = on
+    if (!on) return
+    light.shadow.autoUpdate = false
+    light.shadow.mapSize.set(512, 512)
+    light.shadow.camera.near = 0.1
+    light.shadow.camera.far = Math.max(2, far)
+    light.shadow.needsUpdate = true
   }
 
   dispose(): void {
@@ -172,6 +187,7 @@ export class SiteLightingSystem {
     e.light.penumbra = c.penumbra
     e.light.distance = c.range
     e.light.decay = 2
+    this._applyShadow(e.light, c.shadow, c.range > 0 ? c.range : 30)
     this.baseInt[i] = c.intensity
     e.housing.position.set(c.x, FIX_H / 2, c.z)
     e.lens.position.set(c.x, FIX_H + 0.001, c.z)

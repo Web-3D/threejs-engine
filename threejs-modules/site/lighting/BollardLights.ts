@@ -22,6 +22,7 @@ export interface BollardConfig {
   height: number // m — cao thân trụ (đỉnh = vị trí đèn)
   angle: number // rad — nửa-góc côn
   range: number // m — SpotLight.distance (0 = vô hạn)
+  shadow: boolean // đổ bóng (spot-shadow) — controller cap theo SHADOW_BUDGET
 }
 
 interface BoEntry {
@@ -42,7 +43,7 @@ const GLOW_BASE = 0xffe6b0 // màu kính ấm
 
 /** Config mặc định 1 bollard (trụ 0.8m, rọi xuống vũng rộng). */
 export function defaultBollard(x = 0, z = 0): BollardConfig {
-  return { x, z, color: 0xfff0d0, intensity: 8, height: 0.8, angle: 1.0, range: 4 }
+  return { x, z, color: 0xfff0d0, intensity: 8, height: 0.8, angle: 1.0, range: 4, shadow: false }
 }
 
 export class BollardLights {
@@ -160,6 +161,7 @@ export class BollardLights {
     e.light.angle = c.angle
     e.light.distance = c.range
     e.light.decay = 2
+    this._applyShadow(e.light, c.shadow, Math.max(2, c.height + c.range))
     this.baseInt[i] = c.intensity
     this._place(e, c.x, c.z, c.height)
     e.post.userData.bollardIndex = i
@@ -176,5 +178,18 @@ export class BollardLights {
     e.post.scale.y = h
     e.cap.position.set(x, h + CAP_H / 2, z)
     e.glow.position.set(x, h - 0.01, z)
+    if (e.light.castShadow) e.light.shadow.needsUpdate = true // bóng theo lúc kéo/đổi cao (autoUpdate=false)
+  }
+
+  // Spot-shadow tuỳ chọn — mirror pool đèn cũ: autoUpdate=false (vẽ 1 lần, refresh khi đổi/dời) + map 512.
+  // castShadow đổi runtime = recompile NodeMaterial (đắt) → chỉ bật/tắt lúc TOGGLE (commit), không live-drag.
+  private _applyShadow(light: THREE.SpotLight, on: boolean, far: number): void {
+    light.castShadow = on
+    if (!on) return
+    light.shadow.autoUpdate = false
+    light.shadow.mapSize.set(512, 512)
+    light.shadow.camera.near = 0.1
+    light.shadow.camera.far = Math.max(2, far)
+    light.shadow.needsUpdate = true
   }
 }
