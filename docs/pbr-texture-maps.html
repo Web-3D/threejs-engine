@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PBR Texture Maps — bộ 4 map + ORM packing + sampler</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0e1116; color: #d7dde5; font: 16px/1.65 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 24px 96px; }
+  h1, h2, h3 { line-height: 1.25; color: #f0f4f8; margin: 1.8em 0 .6em; }
+  h1 { font-size: 1.9rem; border-bottom: 1px solid #2a313c; padding-bottom: .35em; }
+  h2 { font-size: 1.4rem; border-bottom: 1px solid #20262f; padding-bottom: .25em; margin-top: 2.2em; }
+  h3 { font-size: 1.1rem; color: #9fd0ff; }
+  a { color: #6cb6ff; }
+  code { background: #1b212b; padding: .12em .4em; border-radius: 4px; font: .88em "Cascadia Code", Consolas, monospace; }
+  pre { background: #161b22; border: 1px solid #20262f; border-radius: 8px; padding: 14px 16px; overflow: auto; }
+  pre code { background: none; padding: 0; }
+  blockquote { margin: 1em 0; padding: .4em 1em; border-left: 3px solid #3a4655; background: #141a22; color: #a8b3c0; border-radius: 0 6px 6px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1.1em 0; font-size: .94rem; display: block; overflow-x: auto; }
+  th, td { border: 1px solid #2a313c; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #1b222c; color: #f0f4f8; }
+  tr:nth-child(even) td { background: #12171e; }
+  hr { border: none; border-top: 1px solid #20262f; margin: 2.4em 0; }
+  ::selection { background: #2d4a6b; }
+</style>
+</head>
+<body>
+<main id="out"></main>
+<script id="md" type="text/markdown">
+
+# PBR Texture Maps — bộ 4 + ORM + sampler
+
+> **Tra cứu nền** (cắt ngang ground/wall/surface). Trả lời: mỗi map PBR làm gì, vì sao kho giữ RỜI,
+> sampler tính kiểu gì, và GỘP rough+ao (ORM) ở đâu để giảm sampler. Đọc khi đụng texture/sampler budget.
+> Số liệu verify trong code 2026-06-16 (THREEJS r0.174 WebGPU). Sampler budget chi tiết → [GPU-BUDGETS.md](../GPU-BUDGETS.md) §0 B1.
+
+## 0. TL;DR
+- 1 **production texture set** (PROTOCOL kho) = **bộ 4 map**: albedo · normal · roughness · ao.
+- **1 sampler = 1 THREE.Texture object** (dedup theo `uuid`). Gọi `texture()` 5 lần trên cùng ảnh vẫn 1 sampler.
+- **KHÔNG share được 1 sampler cho nhiều texture** (Three r0.174). Trần **16 sampler/stage** — luật **CỨNG** (vỡ pipeline/không compile), **bite cả trong editor**, không phải fps.
+- Giảm sampler = **giảm số texture object** → chỉ có cách **gộp kênh**. `rough`+`ao` đều xám 1-kênh → nhét chung 1 ảnh **ORM** (R=ao, G=rough) → **−1 sampler**, lossless.
+- **albedo + normal KHÔNG gộp được** (màu sRGB 3-kênh / vector 2-3 kênh).
+- Gộp ở **Factory offline** (`pack-orm.ps1`) → ghi `orm` vào **kho** → editor + viewer chỉ **LOAD**. Kho giữ 4 map gốc làm source-of-truth.
+
+---
+
+## 1. Bộ 4 map PBR — bảng cái
+
+| Map | Vai trò (1 câu) | Kênh dùng | Color space | Sampler | Gộp kênh được? |
+|---|---|---|---|---|---|
+| **albedo** (baseColor) | MÀU bề mặt (diffuse) | RGB (3) | **sRGB** (gamma) | 1 | ❌ màu, chiếm cả RGB |
+| **normal** | hướng VI-bề-mặt (relief giả) | RG(B) vector | linear | 1 | ❌ vector 2–3 kênh |
+| **roughness** | độ NHÁM (bóng↔lì) | 1 (xám) | linear (data) | 1 | ✅ |
+| **ao** (occlusion) | độ TỐI khe (che ambient) | 1 (xám) | linear (data) | 1 | ✅ |
+
+→ **4 texture rời = 4 sampler.** roughness + ao mỗi cái chỉ xài kênh `.r` → **phí toi G/B/A** → đó là chỗ gộp được.
+
+Nguồn: meta.json kho (`assets/textures/*/meta.json`) ship đúng 4 map này; albedo `srgb`, 3 map còn lại `linear`.
+
+---
+
+## 2. Roughness vs AO — 2 đứa hay bị lẫn
+
+Cùng là ảnh xám [0..1] nhưng **vai trò vật lý khác hẳn**, độc lập nhau:
+
+| | **Roughness** | **AO (Ambient Occlusion)** |
+|---|---|---|
+| Bản chất | **độ bóng** (light response) | **mask che sáng gián tiếp** (nướng sẵn) |
+| 0 = | nhẵn bóng → highlight gọn sắc (mặt ướt, đá mài) | đen = kẹt sâu (khe nứt, gầm) → tối |
+| 1 = | nhám → reflection loang mờ (bê tông khô, đất) | trắng = hở thoáng → nhận đủ ambient |
+| Ảnh hưởng | HÌNH/độ sắc của specular + IBL (chọn mip env) | LƯỢNG ambient/IBL diffuse |
+| Đèn trực tiếp | **có** | **KHÔNG** (chỉ nhân vào gián tiếp — chuẩn glTF) |
+
+Trong shader ta (PhotoGround / PhotoGroundMix): `roughnessNode = texture(rough).r`, `aoNode = texture(ao).r`.
+**Lưu ý PhotoGroundMix (stage 1):** rough/ao **chỉ lấy từ BASE** (slot chỉ có albedo+normal) → ORM-pack tiết kiệm trên BASE, **−1/material** bất kể trộn mấy slot.
+
+---
+
+## 3. Sampler — luật CỨNG (verify trong node_modules)
+
+1. **1 sampler = 1 THREE.Texture object.** Dedup theo `texture.value.uuid`
+   (`UniformNode.generate` → `getNodeFromHash(uuid)`; `TextureNode.getHash` = `value.uuid`).
+   Sample 1 ảnh nhiều lần (bombing 4 ô + thẳng = 5 tap) **vẫn 1 sampler**.
+2. **KHÔNG share sampler giữa các texture.** WGSL sinh `${tex}_sampler` RIÊNG mỗi texture
+   (`WGSLNodeBuilder`). Không có API "sample ảnh B bằng sampler của A".
+   → **Lever giảm sampler duy nhất = giảm số texture OBJECT.**
+3. **Trần 16 sampler / shader stage** — ép lúc `createRenderPipeline` **trong browser, runtime**.
+   Là **binding limit** (vỡ/không compile = CRASH), KHÁC fps. **Bite cả editor**, không chỉ production:
+   editor "kịch khung" về fps OK, nhưng vẫn phải ≤16 sampler/material nếu không thêm map/đèn = vỡ.
+
+---
+
+## 4. ORM packing — gộp để giảm sampler
+
+**ORM = Occlusion · Roughness · Metalness** — convention chuẩn glTF/Unreal, gộp 3 map xám vào 3 kênh 1 ảnh:
+
+```
+ORM.R = Occlusion (ao)        ← lấy từ ao.r
+ORM.G = Roughness             ← lấy từ rough.r
+ORM.B = Metalness (=0 ở ta)   ← ground không kim loại → trống (sau này height/parallax)
+```
+
+- 2 ảnh (rough+ao) → **1 ảnh ORM** = **1 sampler** (−1). Shader đọc `orm.r`=ao, `orm.g`=rough — y nguyên giá trị.
+- **Lossless**: mỗi map vốn chỉ 1 kênh → chỉ dùng lại kênh đang phí. Mỗi kênh vẫn 8-bit đầy đủ.
+- ORM là **DATA (linear)** → pack thoải mái. **albedo phải đứng riêng** vì là màu **sRGB**.
+
+**Tier aggressive (−2, chưa làm):** normal chỉ cần RG (z dựng lại `z=√(1−x²−y²)`) → nhét `rough→normal.b`, `ao→normal.a`
+→ bộ 4 còn **2 texture**. Đổi lại: shader reconstruct z + **JPG nén lossy kênh B/A normal** → cần **KTX2 UASTC** cho normal mới sạch.
+
+---
+
+## 5. 3 mức "dính chùm" — chỉ 1 mức cứu sampler
+
+> Hiểu lầm kinh điển: "bake/deploy gói chung file thì tự gộp sampler". **SAI.**
+
+| Mức | "Dính chùm" = | Giảm sampler? |
+|---|---|---|
+| **1. File / deploy** | nhiều file gói chung 1 container (.glb embed, Vite bundle) | ❌ **KHÔNG** — GPU vẫn decode ra N texture riêng |
+| **2. GPU texture** | mỗi ảnh → 1 GPU texture object | đây là cái **trần 16 đếm** |
+| **3. Kênh (ORM)** | ghi vật lý ao+rough **trong cùng 1 ảnh** | ✅ **CÓ** — 2 ảnh → 1 |
+
+Trần 16 là binding **trên GPU**, không phải số file. Phải gộp ở **mức 3** (kênh) mới giảm. Bake/deploy chỉ gói **file** (mức 1).
+
+---
+
+## 6. Pack Ở ĐÂU — Factory gộp, kho chứa, app load
+
+```
+FACTORY  scripts/pack-orm.ps1   ◄── CHỖ GỘP (offline, idempotent — sinh đôi make-thumbs.ps1)
+   │  đọc production/{roughness,ao} → ghi orm (R=ao,G=rough) + chèn "orm" vào meta.json
+   ▼
+KHO  assets/textures/[set]/production/orm.ktx2   (cạnh 4 map gốc — gốc = source-of-truth, vẫn giữ)
+   ▼
+EDITION + VIEWER  chỉ LOAD orm (orm.r=ao, orm.g=rough), fallback rough+ao rời nếu set chưa pack
+```
+
+- **Edition KHÔNG gộp** — chỉ tiêu thụ. Editor hưởng −1 sampler vì **load** orm (không phải merge).
+- Vì sao Factory: gộp = thao tác offline, generic 1 lần/set → mọi engine + viewer xài chung. Đúng vai Factory = xưởng tiền-xử-lý.
+- Vì sao kho giữ 4 gốc: gộp **lossy + một chiều** → gốc rời để sửa/re-pack; orm chỉ là **phái sinh** (chạy lại script tái tạo, như thumb).
+
+**Đừng lẫn với "mix-bake" (②, khác hẳn, deferred):** bake CẢ mix (base+slot+bombing) ra phẳng → 9→3 sampler,
+nhưng mất live-edit nên **chỉ cho production, KHÔNG dùng trong editor**. ORM-pack mới là lever cho editor. Xem [GPU-BUDGETS.md](../GPU-BUDGETS.md).
+
+---
+
+## 7. Vì sao kho TÁCH RỜI từ đầu (không phải sai sót)
+
+Vòng đời chuẩn ngành = **"author separate, ship packed"**:
+1. **Format nguồn**: scan library (ambientCG/Poliigon…) ship map RỜI — nhập vào vốn đã rời.
+2. **Source phải sửa được**: rời = chỉnh rough không đụng ao, swap/soi từng map. Gộp = ảnh đa-kênh khó sửa, một chiều.
+3. **Linh hoạt**: `roughness?`/`ao?` optional độc lập; ORM ép convention cứng.
+4. **Gộp lossy** → làm MUỘN ở bake, không ở authoring.
+5. **Chưa phải bottleneck**: 1-texture = 4 sampler/16 thừa mứa. Áp lực chỉ đến khi **MIX nhiều slot** (4 base + 8 slot). Gộp sớm = tối ưu thứ chưa thiếu.
+
+→ Tách ở source + gộp-khi-bake = đúng vòng đời. **Không sửa cái sai cũ — thêm bước delivery đúng lúc.**
+
+---
+
+## 8. Còn gì ăn sampler — survey chuyên ngành
+
+> Ngoài bộ 4 + IBL + shadow, pipeline AAA còn vô số nguồn ăn sampler. Quan trọng hơn: **vì sao hãng lớn KHÔNG chạm trần 16 như ta**.
+
+### 8.1 Các nguồn ăn sampler khác
+| Nhóm | Gồm |
+|---|---|
+| Material map khác | emissive · opacity/alpha · height/displacement · metalness (nếu không ORM) · detail albedo+normal · clearcoat(+normal) · subsurface/thickness · anisotropy/sheen/transmission/specular |
+| Ánh sáng đầy đủ | **CSM 3–4 cascade** (không phải 1) · IBL = irradiance + prefiltered + **BRDF LUT** (3, không phải 1) · light cookie/IES/gobo · area-light **LTC LUT** (2) · point=cube / spot=2D shadow |
+| GI / scene | lightmap(+directional) · reflection probe (cubemap array) · light-probe volume / DDGI / Lumen · skybox · planar reflection RT |
+| Screen-space / post | G-buffer 3–5 RT (deferred) · depth (soft particle/SSAO/SSR/fog) · SSAO/GTAO · SSR · bloom mip-chain · motion vector (TAA) · TAA history · **color LUT (3D)** · lens dirt |
+| Terrain / world lớn | **terrain 8–16 layer × map** (sampler-killer cổ điển) · splat/control map · **Virtual Texturing** page-table + physical cache |
+| VFX / particle | flipbook · noise · gradient ramp · vector field (3D) · distortion |
+| **Vertex stage** (budget RIÊNG, tách fragment) | bone/skin texture · morph target · **VAT** · heightmap ở vertex/tessellation |
+| Lặt vặt | blue-noise (dither/stochastic) · curve/gradient LUT · deferred decal |
+
+→ **1 master material Unreal phức tạp ăn 16+ sampler chỉ riêng material.**
+
+### 8.2 Vì sao hãng lớn KHÔNG chạm trần (ta CĂNG hơn)
+| Kỹ thuật | Né trần kiểu gì | Ta có? |
+|---|---|---|
+| **Sampler ≠ texture** | native API (D3D11+/Vulkan/Metal): **vài sampler-state** (linear-repeat/clamp, point) dùng chung **hàng trăm texture**. Trần 16 là số **SAMPLER**, không phải texture | ❌ **Three TSL r0.174 = 1 sampler/texture, KHÔNG share** → đụng trần SỚM hơn |
+| Texture array | N ảnh cùng size → 1 binding+sampler, index theo layer (terrain/sprite) | ⚠️ Three có, ground chưa dùng |
+| Texture atlas | nhồi nhiều ảnh nhỏ → 1 ảnh, offset UV | ⚠️ thủ công |
+| **Channel pack (ORM)** | gộp kênh — **cái ta đang làm** | ✅ |
+| **Bindless / descriptor indexing** | D3D12/Vulkan/Metal: index mảng texture **vô giới hạn** → gần vô trần (UE5 Nanite/Lumen, Frostbite) | ❌ WebGPU chưa ship rộng |
+| Virtual Texturing | texel **vô hạn** → 2–3 sampler vật lý | ❌ |
+| Visibility buffer / deferred material | tách eval material khỏi pass hình học | ❌ |
+
+**Insight:** native engine = **ít sampler chung nhiều texture + bindless** → trần 16 gần như vô nghĩa với họ. Three TSL bản này **buộc 1 sampler/texture** → ta phải tiết kiệm thủ công (ORM, cắt slot, array). Đây là **gốc rễ** vì sao ground-mix của ta nhạy sampler.
+
+### 8.3 WebGPU nuance — editor vs production
+- `maxSamplersPerShaderStage` mặc định **16** (sàn WebGPU bảo đảm). Adapter **có thể báo cao hơn**; `gpu-limits.ts` xin theo **adapter max** → **editor trên GPU mạnh có thể vượt 16** (đúng tinh thần "kịch khung").
+- Nhưng **production trên GPU bất kỳ phải coi 16 là sàn** → tối ưu sampler là để **chạy được máy yếu**, không phải máy bác.
+
+---
+
+## 9. Trạng thái hiện tại (2026-06-16)
+
+| Hạng mục | Trạng thái |
+|---|---|
+| Kho ship bộ 4 rời | ✅ hiện hành (PROTOCOL) |
+| Shader đọc rough/ao rời (base) | ✅ PhotoGround + PhotoGroundMix |
+| MAX_MIX_SLOTS = 2 (cắt 4→2, −4 sampler) | ✅ code, **chưa commit** |
+| `pack-orm.ps1` (Factory) | ⏳ **chưa build** |
+| `orm` trong kho + meta.json | ⏳ **chưa có** |
+| Loader/shader đọc orm | ⏳ **chưa có** |
+| Tier aggressive (normal+RA, −2) | 🧊 deferred |
+| Mix-bake (②, production, 9→3) | 🧊 deferred |
+
+> ⚠️ Khi đọc lại: `orm` **chưa tồn tại trong code/kho** tính tới ngày trên — đây là thiết kế đã chốt (ORM −1), chưa thực thi. Verify file thật trước khi tin.
+
+</script>
+<script>
+  document.getElementById('out').innerHTML =
+    marked.parse(document.getElementById('md').textContent.trim());
+</script>
+</body>
+</html>

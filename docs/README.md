@@ -16,6 +16,7 @@
 | Trang | Nội dung | Trạng thái |
 |---|---|---|
 | [animal-behavior.md](animal-behavior.md) | Thư viện HÀNH VI ĐỘNG VẬT theo loài (ethogram + sinh học + vận động) để mô phỏng. Cá = mục đầy đủ; chim/thú/bò-sát/côn-trùng/biển = stub | đang xây |
+| [pbr-texture-maps.md](pbr-texture-maps.md) | Bộ 4 map PBR (albedo/normal/rough/ao) — vai trò từng map, luật sampler (1/texture, trần 16), ORM packing (gộp rough+ao −1 sampler) + gộp ở đâu (Factory→kho→load) | tham chiếu |
 
 ## Thêm trang
 - 1 chủ đề tra-cứu cắt-ngang mới → 1 file `docs/<chủ-đề>.md` + thêm dòng vào bảng trên.
