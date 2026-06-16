@@ -22,7 +22,7 @@
 ### Binding (vượt = CRASH đen + texture-leak) — per fragment stage
 | Ngân sách | Trần | Dùng hiện tại (worst-case đã biết) | Headroom |
 | --- | --- | --- | --- |
-| **Sampler** | **16 — CỨNG, không nâng** | ~15 (mix 4-slot 13 + IBL + sun-shadow) | **~1** → đúng 1 đèn-shadow (`LAMP_SHADOW_N=1`) |
+| **Sampler** | **16 — CỨNG, không nâng** | **~11** (mix **2-slot**: base 4 + 2slot×2 + paint 1 = 9 + IBL + sun-shadow) | **~5** → dư cho ~5 đèn-shadow (cắt mix 4→2 `MAX_MIX_SLOTS` 2026-06-16; `LAMP_SHADOW_N` nâng được) |
 | Sampled texture | 16 → **48** (đã nâng, `main.ts requiredLimits`) | ~15 | dư nhiều |
 | UBO | 12 | (chưa đo — đo khi nghi) | — |
 | Color attachment (MRT) | 8 | 1 (forward) | deferred mới đụng |
@@ -137,23 +137,27 @@ giữ 1 sampler. Đổi `castShadow` runtime = recompile (đắt) → không đ�
 
 ---
 
-## 6. Ví dụ thật — đếm 15 sampler của `PhotoGroundMix` (vật liệu nặng nhất scene)
+## 6. Ví dụ thật — đếm sampler của `PhotoGroundMix` (vật liệu nặng nhất scene)
 
-Mix nền worst-case = BASE + 4 slot + mask vẽ:
+> ⚠️ **2026-06-16: cắt `MAX_MIX_SLOTS` 4→2** (state.ts) để chừa sampler cho đèn → worst-case ground **9 material
+> + IBL + sun = 11** (KHÔNG còn 15). Bảng dưới giữ ví dụ **4-slot LỊCH SỬ** để minh hoạ cách đếm; slot4 (#11-12)
+> nay KHÔNG dựng nữa.
+
+Mix nền worst-case (LỊCH SỬ 4 slot) = BASE + 4 slot + mask vẽ:
 
 | # | Sampler | Nguồn |
 | --- | --- | --- |
 | 1–4 | base **baseColor / normal / roughness / ao** | lớp nền (rough+ao CHỈ của base — "đỡ 8 tap") |
 | 5–6 | slot1 **baseColor + normal** | lớp trộn 1 |
 | 7–8 | slot2 baseColor + normal | lớp trộn 2 |
-| 9–10 | slot3 baseColor + normal | lớp trộn 3 |
-| 11–12 | slot4 baseColor + normal | lớp trộn 4 |
-| 13 | **paint mask** (DataTexture, R/G/B/A = 4 slot) | mask vẽ tay |
-| 14 | **IBL / environment** (RoomEnvironment PMREM) | phản chiếu môi trường (mọi material lit) |
-| 15 | **sun shadow** (directional depth + comparison sampler) | mặt trời (mọi material lit) |
+| ~~9–10~~ | ~~slot3~~ | **CẮT** (MAX_MIX_SLOTS=2) |
+| ~~11–12~~ | ~~slot4~~ | **CẮT** |
+| 9 | **paint mask** (DataTexture, R/G/B/A) | mask vẽ tay |
+| 10 | **IBL / environment** (RoomEnvironment PMREM) | phản chiếu môi trường (mọi material lit) |
+| 11 | **sun shadow** (directional depth + comparison sampler) | mặt trời (mọi material lit) |
 
-= **13 texture vật liệu + IBL + sun-shadow = 15**. +1/đèn-shadow → khớp log lỗi: N=1→16 ✅ · N=2→17 VỠ · N=4→19.
-**Tùy số slot:** zone base+1 slot = 4+2+1 + 2(global) = **9** → nhẹ. Material compile theo số slot nó CÓ; 15 = trần xấu nhất.
+= **9 texture vật liệu (2-slot) + IBL + sun-shadow = 11**. +1/đèn-shadow → N=1→12 · N=5→16 (kịch). Trước cắt:
+4-slot = 13+2 = 15 → chỉ còn 1 đèn (N=2→17 VỠ). **Tùy số slot:** base+1 slot = 4+2+1+2(global) = **9** → nhẹ hơn.
 
 ---
 

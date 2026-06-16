@@ -51,6 +51,7 @@ import {
   makeStonePathParams,
   makeWallCurveParams,
   makeWater,
+  MAX_MIX_SLOTS,
 } from './state'
 
 function num(v: unknown, fallback: number): number {
@@ -74,13 +75,14 @@ function optMix(v: unknown): GroundMixParams | undefined {
   return v !== undefined ? parseGroundMix(v) : undefined
 }
 
-// Parse mix nền — số sai/thiếu → default; slots cap 4, key texture sai → construction-gravel. Backward-safe.
+// Parse mix nền — số sai/thiếu → default; slots cap MAX_MIX_SLOTS (4→2: scene cũ 3-4 slot TRUNCATE còn 2, để
+// hạ sampler cho đèn), key texture sai → construction-gravel. Backward-safe.
 function parseGroundMix(raw: unknown): GroundMixParams {
   const o = (raw ?? {}) as Partial<GroundMixParams>
   const d = makeGroundMixParams()
   const f = (v: unknown, dv: number, lo: number, hi: number): number => clamp(num(v, dv), lo, hi)
   const slots = Array.isArray(o.slots)
-    ? o.slots.slice(0, 4).map((s) => {
+    ? o.slots.slice(0, MAX_MIX_SLOTS).map((s) => {
         const so = (s ?? {}) as Partial<GroundMixSlot>
         return {
           key: parseGround(so.key, 'construction-gravel'),

@@ -304,10 +304,15 @@ export interface GroundMixSlot {
   rule?: MixGravityRule // 🧱 quy luật trọng lực (mặt đứng) — undefined = none. Đổi = rebuild graph (structural)
 }
 
+// 🎨 SỐ SLOT mix TỐI ĐA — HẠ 4→2 (2026-06-16): mỗi material ground bớt 4 sampler (2 slot × albedo+normal) →
+// chừa headroom sampler CHO ĐÈN-BÓNG (B1 cap 16: ground 4-slot = 15 sampler → 2-slot = 11, dư ~5 cho lamp-shadow).
+// Trade-off: tối đa 2 LỚP trộn/bề mặt. GUI add-limit + parse + preset đều cap theo const này. Chi tiết GPU-BUDGETS §6.
+export const MAX_MIX_SLOTS = 2
+
 // 🎨 Tham số mix nền per-zone — khớp 1-1 uniforms PhotoGroundMix (shaders/ground/PhotoGroundMix).
 export interface GroundMixParams {
   base: GroundMaterialKey
-  slots: GroundMixSlot[] // ≤ 4
+  slots: GroundMixSlot[] // ≤ MAX_MIX_SLOTS
   maskScale: number // 1/m world — tần mask fbm
   maskSoft: number // mềm biên smoothstep
   heightK: number // height-lerp proxy (0 = fade đều)
